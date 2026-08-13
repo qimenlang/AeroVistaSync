@@ -11,7 +11,7 @@ namespace aerovista::sync
     namespace sync_json
     {
         // =========================================================================
-        // 校验 / 读取辅助（共享给引擎侧配置解析，见 sync模块化设计.md §4.2）
+        // 校验 / 读取辅助（共享给引擎侧配置解析，见 sync模块化设计.md §3.2）
         // =========================================================================
 
         const JsonValue* find(const JsonObject& obj, const char* key)
@@ -149,7 +149,7 @@ namespace aerovista::sync
                 std::ostringstream oss;
                 oss << in.rdbuf();
                 std::string text = oss.str();
-                // Windows: strip UTF-8 BOM at start.
+                // Windows: 去掉开头的 UTF-8 BOM。
                 if (text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF &&
                     static_cast<unsigned char>(text[1]) == 0xBB && static_cast<unsigned char>(text[2]) == 0xBF)
                 {

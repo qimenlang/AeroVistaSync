@@ -35,8 +35,8 @@ namespace aerovista::sync
             return enuDir.x * east + enuDir.y * north + enuDir.z * upAxis;
         }
 
-        /// R = Rz(yaw)*Rx(pitch)*Ry(roll). Apply axis quats roll→pitch→yaw
-        /// (VSG quat*quat is reverse-Hamilton).
+        /// R = Rz(yaw)*Rx(pitch)*Ry(roll)。按 roll→pitch→yaw 顺序作用轴四元数
+        /// （VSG 四元数乘法是 reverse-Hamilton）。
         vsg::dvec3 rotateByEulerYprDeg(const vsg::dvec3& eulerYprDeg, const vsg::dvec3& v)
         {
             const vsg::dvec3 afterRoll =
@@ -46,14 +46,14 @@ namespace aerovista::sync
             return vsg::dquat(vsg::radians(eulerYprDeg.x), vsg::dvec3(0.0, 0.0, 1.0)) * afterPitch;
         }
 
-        /// Inverse of Engine::setCameraPose rotation Rz(yaw)*Rx(pitch)*Ry(roll), Y-forward Z-up.
-        /// Recover YPR (deg) from an orthonormal forward/up basis.
-        bool extractYprDegFromBasis(const vsg::dvec3& forward, const vsg::dvec3& up, vsg::dvec3& eulerYprDegOut)
-        {
-            const double yawRad = std::atan2(-forward.x, forward.y);
-            const double pitchRad = std::asin(clampd(forward.z, -1.0, 1.0));
+        /// Engine::setCameraPose 旋转 Rz(yaw)*Rx(pitch)*Ry(roll) 的逆，Y-forward Z-up。
+    /// 从正交 forward/up 基恢复 YPR（度）。
+    bool extractYprDegFromBasis(const vsg::dvec3& forward, const vsg::dvec3& up, vsg::dvec3& eulerYprDegOut)
+    {
+        const double yawRad = std::atan2(-forward.x, forward.y);
+        const double pitchRad = std::asin(clampd(forward.z, -1.0, 1.0));
 
-            // yaw+pitch only: apply pitch then yaw (VSG reverse-Hamilton).
+        // yaw+pitch 足够：先 pitch 后 yaw（VSG reverse-Hamilton）。
             const vsg::dvec3 afterPitchUp =
                 vsg::dquat(pitchRad, vsg::dvec3(1.0, 0.0, 0.0)) * vsg::dvec3(0.0, 0.0, 1.0);
             const vsg::dvec3 afterPitchRight =
@@ -68,7 +68,7 @@ namespace aerovista::sync
             return true;
         }
 
-        /// Inverse of Engine::setCameraPose rotation Rz(yaw)*Rx(pitch)*Ry(roll), Y-forward Z-up.
+        /// Engine::setCameraPose 旋转 Rz(yaw)*Rx(pitch)*Ry(roll) 的逆，Y-forward Z-up。
         bool lookAtToWorldLocalEye(const vsg::LookAt& lookAt, HostEyePose& out)
         {
             out.frame = HostEyeCoordFrame::WORLD_LOCAL;
@@ -87,8 +87,8 @@ namespace aerovista::sync
             if (vsg::length(forwardEcef) < 1e-12)
                 return false;
 
-            // Invert write path (§3.3): ENU basis = orthonormal columns of LocalToWorld.
-            // Prefer column dots over worldToLocal*dir — keeps sample inverse of setCameraPoseLla.
+            // 逆写路径（§3.3）：ENU 基 = LocalToWorld 的正交列。
+            // 优先用列点积而非 worldToLocal*dir——保持采样是 setCameraPoseLla 的逆。
             const vsg::dmat4 localToWorld = ellipsoid.computeLocalToWorldTransform(out.position);
             const vsg::dvec3 east = vsg::normalize(vsg::dvec3(localToWorld(0, 0), localToWorld(0, 1), localToWorld(0, 2)));
             const vsg::dvec3 north = vsg::normalize(vsg::dvec3(localToWorld(1, 0), localToWorld(1, 1), localToWorld(1, 2)));
@@ -255,7 +255,7 @@ namespace aerovista::sync
                 return;
         }
 
-        // Anti-echo: compare LookAt to `_lastApplied` rebuild (lla §4.4); do not subtract offset.
+        // 防回声：把 LookAt 与 `_lastApplied` 重建比对（lla §4.4）；不减偏移。
         if (_lastApplied && lookAtMatchesApplied(lookAt, *_lastApplied, _ellipsoidModel.get()))
         {
             _frameSample.reset();
@@ -267,15 +267,14 @@ namespace aerovista::sync
 
     HostEyePose SynchronSystem::compose(const HostEyePose& host, const OffsetDeg& offset)
     {
-        // Rigid-array channel offset: R_ig = R_host · R_offset (Hamilton). For a yaw-only
-        // offset this rotates the Host's forward about the Host's own up axis, so every
-        // channel's up stays parallel to the Host's — edge-to-edge frustum tiling survives
-        // Host roll. Component-wise YPR addition instead yields Rz(δ)·R_host, which tilts the
-        // up axes apart as soon as roll ≠ 0 (the roll-tiling bug; lla设计 §3.4).
+        // 刚性阵列通道偏移：R_ig = R_host · R_offset（Hamilton）。对纯 yaw 偏移，
+        // 绕 Host 自身 up 轴旋转 Host 的 forward，所以每个通道的 up 与 Host 保持平行——
+        // 边缘对边缘的 frustum 拼接在 Host roll 下仍成立。若用分量式 YPR 相加，得到
+        // Rz(δ)·R_host，一旦 roll ≠ 0 各通道 up 轴就分开（roll 撕裂 bug；lla设计 §3.4）。
         //
-        // VSG operator*(a,b) = Hamilton(b⊗a), so write qOffset * qHost to obtain
-        // M(qHost)·M(qOffset) = R_host·R_offset. Each quat is built as Ry(roll)*Rx(pitch)*Rz(yaw)
-        // (VSG) to represent the Hamilton Rz(yaw)*Rx(pitch)*Ry(roll) write convention.
+        // VSG operator*(a,b) = Hamilton(b⊗a)，所以写 qOffset * qHost 得到
+        // M(qHost)·M(qOffset) = R_host·R_offset。每个四元数按 Ry(roll)*Rx(pitch)*Rz(yaw)
+        // （VSG）构建，以表示 Hamilton 的 Rz(yaw)*Rx(pitch)*Ry(roll) 写约定。
         const vsg::dquat qHost =
             vsg::dquat(vsg::radians(host.eulerYprDeg.z), vsg::dvec3(0.0, 1.0, 0.0)) *
             vsg::dquat(vsg::radians(host.eulerYprDeg.y), vsg::dvec3(1.0, 0.0, 0.0)) *
@@ -289,8 +288,8 @@ namespace aerovista::sync
         const vsg::dvec3 forward = vsg::normalize(qIg * vsg::dvec3(0.0, 1.0, 0.0));
         const vsg::dvec3 up = vsg::normalize(qIg * vsg::dvec3(0.0, 0.0, 1.0));
 
-        // Re-extract YPR under the same Rz·Rx·Ry convention so applyHostEye's setCameraPose
-        // writes exactly the composed rotation (write↔sample stay inverse).
+        // 在同一 Rz·Rx·Ry 约定下重新提取 YPR，使 applyHostEye 的 setCameraPose
+        // 精确写入合成后的旋转（写↔采样保持互逆）。
         HostEyePose out = host;
         extractYprDegFromBasis(forward, up, out.eulerYprDeg);
         return out;
@@ -349,15 +348,15 @@ namespace aerovista::sync
             {
                 if (_stalePolicy == HostEyeStalePolicy::REUSE_LAST)
                     applyHostEye(*_cachedHostEye);
-                // Freeze: leave camera as-is
+                // Freeze：相机保持不动
             }
             return;
         }
 
-        // Not linked: discard any injected pending eye (never-connected must not apply).
+        // 未连接：丢弃任何注入的待处理眼点（从未连接不得应用）。
         _hasPendingEye = false;
 
-        // After disconnect (or if we still hold a cache from a prior link), keep last Host eye.
+        // 断线后（或仍持有先前连接的缓存时），保留最后一帧 Host 眼点。
         if (_cachedHostEye)
             applyHostEye(*_cachedHostEye);
     }
@@ -378,14 +377,14 @@ namespace aerovista::sync
             const bool sampleLla = (eyeStorage.frame == HostEyeCoordFrame::LLA);
             if (sampleLla == ellipsoid)
                 sendEye = &eyeStorage;
-            // else drop mismatched sample (should not happen if capture matches scene)
+            // 否则丢弃不匹配的采样（若采样与场景匹配则不应发生）
         }
         else if (_lastSent)
         {
             const bool sentLla = (_lastSent->frame == HostEyeCoordFrame::LLA);
             if (sentLla != ellipsoid)
             {
-                // lla §4.3: type no longer matches scene — discard, do not fan out.
+                // lla §4.3：类型与场景不再匹配 —— 丢弃，不扇出。
                 _lastSent.reset();
             }
             else

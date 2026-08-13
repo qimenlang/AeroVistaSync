@@ -152,7 +152,7 @@ namespace aerovista::sync
         if (_status.load() != HostStatus::RUNNING)
             return;
 
-        // FreeRun: never block on SOF. Barrier reserved for later.
+        // FreeRun：绝不等 SOF。Barrier 留给后续。
         (void)_pace;
 
         const std::uint32_t frameCntr = _frameCounter++;
@@ -568,7 +568,7 @@ namespace aerovista::sync
         if (n <= 0)
             return;
 
-        // Handshake plane (AVSY). Data-plane SOF is CIGI (no AVSY magic).
+        // 握手面（AVSY）。数据面 SOF 是 CIGI（无 AVSY 魔数）。
         if (cigi_wire::isAvsyMagic(buf, n))
         {
             if (n < static_cast<int>(sizeof(sync_proto::WireMsg)))

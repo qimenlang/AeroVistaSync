@@ -27,7 +27,7 @@ namespace aerovista::sync
     using SocketHandle = int;
 #endif
 
-    /// Host-side sync endpoint: UDP sync plane + TCP command listen.
+    /// Host 侧同步端点：UDP 同步面 + TCP 命令监听。
     class HostSync
     {
     public:
@@ -45,10 +45,10 @@ namespace aerovista::sync
         {
             double x = 0, y = 0, z = 0;
             double yawDeg = 0, pitchDeg = 0, rollDeg = 0;
-            /// Maps to cigi_wire::EyeFrame / AttachState (lla设计 §5).
+            /// 映射到 cigi_wire::EyeFrame / AttachState（lla设计 §5）。
             bool isLla = false;
         };
-        /// Fan-out IGCtrl (+ optional Host eye) to all ready IGs.
+        /// 向所有 ready IG 扇出 IGCtrl（可选带 Host 眼点）。
         void update(double simTimeMs = 0.0, const EyePose* eye = nullptr);
         void setPaceConfig(const SyncPaceConfig& pace);
 

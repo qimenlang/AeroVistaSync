@@ -11,60 +11,57 @@
 
 namespace aerovista::sync
 {
-    /// Selects CIGI Attach (WORLD_LOCAL) vs Detach (LLA). See lla位姿传输设计.md §5.
+    /// 选择 CIGI Attach（WORLD_LOCAL）还是 Detach（LLA）。见 lla位姿传输设计.md §5。
     enum class HostEyeCoordFrame : std::uint8_t
     {
         WORLD_LOCAL = 0,
         LLA = 1
     };
 
-    /// Host eye (pos + Euler YPR degrees). `frame` drives wire Attach/Detach (not a private UDP field).
+    /// Host 眼点（位置 + 欧拉 YPR 度）。`frame` 驱动线上的 Attach/Detach（不是私有 UDP 字段）。
     struct HostEyePose
     {
-        vsg::dvec3 position{}; ///< WORLD_LOCAL: XYZ m; LLA: lat°, lon°, alt m
+        vsg::dvec3 position{}; ///< WORLD_LOCAL: XYZ 米；LLA: 纬度°、经度°、海拔 米
         vsg::dvec3 eulerYprDeg{};
         HostEyeCoordFrame frame = HostEyeCoordFrame::WORLD_LOCAL;
     };
 
-    /// Engine-facing sync facade (loop preFrame / update / postFrame).
-    /// Owns IgSync and optionally HostSync. See doc/design/多通道同步模块设计.md.
+    /// 引擎侧同步门面（preFrame / update / postFrame 循环）。
+    /// 持有 IgSync，可选持有 HostSync。见 doc/design/多通道同步模块设计.md。
     ///
-    /// Data-flow contract (sync模块化设计.md §7): the facade computes the camera pose
-    /// each frame; the host engine reads it via takePendingCameraPose() and drives its
-    /// own camera. Scene mode / ellipsoid / channel are injected by the host, and the
-    /// authority LookAt is fed via captureAuthorityEye() — the facade never touches the
-    /// engine's camera directly.
+    /// 数据流契约（sync模块化设计.md §3.1）：门面每帧计算相机位姿，
+    /// 宿主引擎经 takePendingCameraPose() 取走并驱动自己的相机。
+    /// 场景模式 / 椭球 / 通道号由宿主注入，权威 LookAt 经 captureAuthorityEye() 喂入——
+    /// 门面从不直接触碰宿主的相机对象。
     class SynchronSystem : public vsg::Inherit<vsg::Object, SynchronSystem>
     {
     public:
         SynchronSystem();
         ~SynchronSystem() override;
 
-        /// If requireIgConnect is false, IgSync is initialized locally even when connect fails.
+        /// 若 requireIgConnect 为 false，IgSync 在连接失败时也本地初始化。
         bool initialize(const SyncRoleConfig& role, bool requireIgConnect = true);
         void shutdown();
 
         void preFrame();
 
-        /// Scene mode + ellipsoid injection (lla §2 / §4.5): call when the host scene is
-        /// known or rebuilt. `in_ellipsoid` may be null in Local mode.
+        /// 场景模式 + 椭球注入（lla §2 / §4.5）：宿主场景确定或重建后调用。
+        /// 本地模式下 `ellipsoid` 可为空。
         void setSceneIsEllipsoid(bool sceneIsEllipsoid);
         void setEllipsoidModel(vsg::ref_ptr<vsg::EllipsoidModel> ellipsoid);
-        /// Channel identity for diagnostics (error logs).
+        /// 通道标识（错误日志用）。
         void setChannelId(int channelId);
 
-        /// Sample the authority eye after handleEvents (Host engines only): feed the
-        /// current camera LookAt (pre-overwrite). The facade decides LLA vs WorldLocal
-        /// from the injected scene mode and applies the anti-echo check.
+        /// handleEvents 后采样权威眼点（仅 Host 引擎）：喂入当前相机 LookAt（覆盖前）。
+        /// 门面根据注入的场景模式决定 LLA 还是 WorldLocal，并做防回声检查。
         void captureAuthorityEye(const vsg::LookAt& lookAt);
 
-        /// Advance sync state (recv / decision); computes this frame's pending camera
-        /// pose if any. Call once per frame, then read takePendingCameraPose().
+        /// 推进同步状态（收包 / 决策）；计算本帧待应用相机位姿（若有）。
+        /// 每帧调用一次，然后读 takePendingCameraPose()。
         void update();
 
-        /// This frame's camera pose to apply (Host eye ⊕ offset; keep-last on disconnect /
-        /// ReuseLast), if any. Consumed (cleared) by the caller, which drives its camera:
-        /// WorldLocal → setCameraPose, LLA → setCameraPoseLla.
+        /// 本帧应写相机的位姿（Host 眼点 ⊕ 偏移；断线 / ReuseLast 时保留最后一帧），若有。
+        /// 由调用方取走（取走即清空）并驱动相机：WorldLocal → setCameraPose，LLA → setCameraPoseLla。
         std::optional<HostEyePose> takePendingCameraPose();
 
         void postFrame(double simTimeMs);
@@ -78,32 +75,32 @@ namespace aerovista::sync
         void setOffsetDeg(const OffsetDeg& offset);
         const OffsetDeg& offsetDeg() const { return _offsetDeg; }
 
-        /// Compose channel offset onto Host eye as a rigid-array rotation
-        /// R_ig = R_host · R_offset (keeps up axes parallel under Host roll; lla设计 §3.4).
+        /// 把通道偏移合成到 Host 眼点上（刚性阵列旋转）
+        /// R_ig = R_host · R_offset（Host 有 roll 时保持各通道 up 轴平行；lla设计 §3.4）。
         static HostEyePose compose(const HostEyePose& host, const OffsetDeg& offset);
 
         void setHostEyeStalePolicy(HostEyeStalePolicy policy);
         HostEyeStalePolicy hostEyeStalePolicy() const { return _stalePolicy; }
 
-        /// Test / injection: enqueue a Host eye as if received this frame (with IGCtrl).
+        /// 测试 / 注入：入队一个 Host 眼点（如同本帧随 IGCtrl 收到）。
         void queueHostEyePose(const HostEyePose& pose);
 
-        /// Test / injection: seed `_lastSent` for mode-switch type-discard ATTD (lla §4.3 / §7).
+        /// 测试 / 注入：为模式切换的类型丢弃 ATTD 种子 `_lastSent`（lla §4.3 / §7）。
         void seedLastSentHostEye(const HostEyePose& pose);
 
-        /// IG TCP+UDP both ready.
+        /// IG TCP+UDP 均就绪。
         bool igLinked() const;
 
-        /// Last pose written by update (Host ⊕ offset), if any.
+        /// update 最近写入的位姿（Host ⊕ 偏移），若有。
         std::optional<HostEyePose> lastAppliedHostEye() const { return _lastApplied; }
 
-        /// Last authority eye Host packed for fan-out this session (for anti-echo BDD).
+        /// 本会话 Host 最近为扇出打包的权威眼点（防回声 BDD 用）。
         std::optional<HostEyePose> lastSentHostEye() const { return _lastSent; }
 
-        /// Count of Host eyes dropped because wire frame (Attach/Detach) ≠ local scene mode (lla §4.5).
+        /// 因线上帧类型（Attach/Detach）≠ 本地场景模式而丢弃的 Host 眼点数（lla §4.5）。
         std::uint64_t eyePoseRejectedByFrameMismatch() const { return _eyePoseRejectedByFrameMismatch; }
 
-        /// Clear eye caches after graphics rebuild / mode switch (lla §4.3); does not tear down network.
+        /// 图形重建 / 模式切换后清空眼点缓存（lla §4.3）；不拆除网络。
         void resetEyeCaches();
 
     private:

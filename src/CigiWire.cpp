@@ -28,12 +28,12 @@ namespace aerovista::sync
     {
         namespace
         {
-            // CCL is not thread-safe; Host udpLoop and the engine thread both touch it.
-            std::mutex gCigiMutex;
-            std::uint64_t gEyePoseRejectedByRange = 0;
+        // CCL 非线程安全；Host udpLoop 与引擎线程都会触碰它。
+        std::mutex gCigiMutex;
+        std::uint64_t gEyePoseRejectedByRange = 0;
 
-            /// Normalize longitude to (-180, 180] (lla设计 §5).
-            double normalizeLonDeg(double lon)
+        /// 归一化经度到 (-180, 180]（lla设计 §5）。
+        double normalizeLonDeg(double lon)
             {
                 double x = std::fmod(lon, 360.0);
                 if (x <= -180.0)
@@ -141,9 +141,9 @@ namespace aerovista::sync
                 std::uint32_t frameCntr = 0;
             };
 
-            /// One-time CCL init. Creating Cigi*Session per call rebuilds the full
-            /// outgoing/incoming packet handler tables and dominates test runtime.
-            struct CigiRuntime
+        /// 一次性 CCL 初始化。每次调用创建 Cigi*Session 会重建完整的
+        /// 出/入包处理器表并主导测试运行时间。
+        struct CigiRuntime
             {
                 CigiRuntime() :
                     host(kCigiBufCount, kCigiBufLen, kCigiBufCount, kCigiBufLen), ig(kCigiBufCount, kCigiBufLen, kCigiBufCount, kCigiBufLen)
@@ -153,7 +153,7 @@ namespace aerovista::sync
                     ig.SetCigiVersion(4, 0);
                     ig.SetSynchronous(false);
 
-                    // Processors outlive the sessions; register once (push_back).
+                    // 处理器比会话存活更久；注册一次（push_back）。
                     ig.GetIncomingMsgMgr().RegisterEventProcessor(CIGI_IG_CTRL_PACKET_ID_V4, &igCtrlProc);
                     ig.GetIncomingMsgMgr().RegisterEventProcessor(CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4,
                                                                   &entityPosProc);
@@ -216,11 +216,11 @@ namespace aerovista::sync
                     if (!llaEyeInRange(eye->x, lon, eye->pitchDeg))
                     {
                         ++gEyePoseRejectedByRange;
-                        includeEye = false; // IGCtrl still sent (lla设计 §5)
+                        includeEye = false; // IGCtrl 仍照发（lla设计 §5）
                     }
                     else
                     {
-                        // Ellipsoid: Detach + LLA, ParentID must be 0 (lla设计 §5).
+                        // 椭球：Detach + LLA，ParentID 必须为 0（lla设计 §5）。
                         ent.SetParentID(0);
                         ent.SetAttachState(CigiBaseEntityPositionCtrl::Detach);
                         ent.SetLat(eye->x, false);
@@ -230,7 +230,7 @@ namespace aerovista::sync
                 }
                 else
                 {
-                    // Local world XYZ: Attach offsets from synthetic parent (lla设计 §5).
+                    // 本地世界 XYZ：相对合成父节点做 Attach 偏移（lla设计 §5）。
                     ent.SetParentID(1);
                     ent.SetAttachState(CigiBaseEntityPositionCtrl::Attach);
                     ent.SetXoff(eye->x);
@@ -311,7 +311,7 @@ namespace aerovista::sync
             if (rt.entityPosProc.got)
             {
                 EyePose eye = rt.entityPosProc.eye;
-                // Detach with non-zero ParentID is illegal for our eye slot — drop eye (lla设计 §5).
+                // Detach 带非零 ParentID 对我们的眼点槽非法 —— 丢弃眼点（lla设计 §5）。
                 if (eye.frame == EyeFrame::LLA && eye.parentId != 0)
                     ; // leave outFrame.eye empty
                 else

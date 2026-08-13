@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include "CigiIncludes.h"
+#include <aerovista/sync/CigiIncludes.h>
 
 #include "CigiBaseEventProcessor.h"
 #include "CigiIGCtrlV4.h"

@@ -8,9 +8,9 @@
 #include <variant>
 #include <vector>
 
-/// Minimal JSON parser shared by aerovistaSync config loading.
-/// Pure standard library; no vsg / engine dependency (sync模块化设计.md §4.2).
-/// Used by loadHostConfig and by the engine-side config parser.
+/// aerovistaSync 配置加载共用的最小 JSON 解析器。
+/// 纯标准库；无 vsg / 引擎依赖（sync模块化设计.md §3.2）。
+/// 供 loadHostConfig 与引擎侧配置解析使用。
 namespace aerovista::sync
 {
     namespace sync_json
@@ -42,7 +42,7 @@ namespace aerovista::sync
             bool asBool() const { return std::get<bool>(data); }
         };
 
-        /// Recursive-descent JSON parser (RFC-8259 subset used by engine/sync configs).
+        /// 递归下降 JSON 解析器（RFC-8259 子集，供引擎/sync 配置使用）。
         class JsonParser
         {
         public:
@@ -301,34 +301,34 @@ namespace aerovista::sync
         // 校验 / 读取辅助（共享给 sync 配置解析与引擎侧配置解析）
         // =========================================================================
 
-        /// Find a key in an object; nullptr when absent.
+        /// 在对象中查找键；不存在返回 nullptr。
         const JsonValue* find(const JsonObject& obj, const char* key);
 
-        /// Reject JSON null values for a key (strict field presence).
+        /// 拒绝某键的 JSON null 值（严格字段存在性）。
         void rejectNull(const JsonValue& v, const char* key);
 
-        /// Reject any key not listed in `allowed` (unknown-key strategy, §3.1).
+        /// 拒绝任何不在 `allowed` 列表中的键（未知键策略，§3.1）。
         void rejectUnknownKeys(const JsonObject& obj, std::initializer_list<const char*> allowed);
 
-        /// Require a key present and non-null.
+        /// 要求键存在且非 null。
         const JsonValue& requireValue(const JsonObject& obj, const char* key);
 
-        /// Require a key whose value is an object.
+        /// 要求键的值为对象。
         const JsonObject& requireObjectValue(const JsonObject& obj, const char* key);
 
-        /// Require a value that is an object.
+        /// 要求值为对象。
         const JsonObject& requireObjectValue(const JsonValue& v, const char* key);
 
-        /// Require a number.
+        /// 要求数字。
         double requireNumber(const JsonObject& obj, const char* key);
 
-        /// Require an integer (fractional values rejected) — strict on both sides.
+        /// 要求整数（小数拒绝）——两侧一致。
         int requireInt(const JsonObject& obj, const char* key);
 
-        /// Require a string.
+        /// 要求字符串。
         std::string requireString(const JsonObject& obj, const char* key);
 
-        /// Require a bool.
+        /// 要求布尔。
         bool requireBool(const JsonObject& obj, const char* key);
     } // namespace sync_json
 } // namespace aerovista::sync

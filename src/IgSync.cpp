@@ -272,7 +272,7 @@ namespace aerovista::sync
             if (n <= 0)
                 break;
 
-            // Handshake plane (UDP_SYNC_ACK etc.) — ignore during data update.
+            // 握手面（UDP_SYNC_ACK 等）——数据更新时忽略。
             if (cigi_wire::isAvsyMagic(buf, n))
                 continue;
 
@@ -465,7 +465,7 @@ namespace aerovista::sync
 
     bool IgSync::connectOnce(const IgConfig& config)
     {
-        // Assumes TCP already connected on _tcp.
+        // 假定 _tcp 上已连接 TCP。
         sync_proto::WireMsg hello{};
         hello.magic = sync_proto::kMagic;
         hello.type = static_cast<uint32_t>(sync_proto::MsgType::HELLO);
@@ -502,8 +502,8 @@ namespace aerovista::sync
         _tcpConnected = false;
         _udpSynced = false;
 
-        // TCP retries: Host may still be starting (reconnect BDD).
-        // Handshake retries (few): rare UDP loss — wrong UDP port fails quickly.
+    // TCP 重试：Host 可能仍在启动（重连 BDD）。
+    // 握手重试（少量）：罕见的 UDP 丢包——错误 UDP 端口快速失败。
         int handshakeFails = 0;
         for (int attempt = 0; attempt < tcpRetryAttempts; ++attempt)
         {

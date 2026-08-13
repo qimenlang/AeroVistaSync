@@ -25,7 +25,7 @@ namespace aerovista::sync
     using IgSocketHandle = int;
 #endif
 
-    /// IG-side sync endpoint: connects to Host, UDP sync + TCP command client.
+    /// IG 侧同步端点：连接 Host，UDP 同步 + TCP 命令客户端。
     class IgSync
     {
     public:
@@ -39,7 +39,7 @@ namespace aerovista::sync
         {
             double x = 0, y = 0, z = 0;
             double yawDeg = 0, pitchDeg = 0, rollDeg = 0;
-            /// From wire AttachState (lla设计 §5); true = Detach+LLA.
+            /// 来自线上 AttachState（lla设计 §5）；true = Detach+LLA。
             bool isLla = false;
         };
 
@@ -60,34 +60,34 @@ namespace aerovista::sync
 
         void update(bool sendSof = true);
 
-        /// Consume Host eye received during the last Update (if any).
+        /// 取走上一次 Update 期间收到的 Host 眼点（若有）。
         std::optional<HostEye> takeReceivedHostEye();
 
-        /// Test / injection: enqueue a Host time stamp as if received this frame.
-        /// Phase-unwraps `rawTimeStamp` → `lastSimTimeUs` and records `lastReceivedAtUs`.
-        /// Returns true if accepted (frameCntr >= last processed), false if dropped as an old frame.
+        /// 测试 / 注入：入队一个 Host 时间戳（如同本帧收到）。
+        /// 对 `rawTimeStamp` 做相位展开 → `lastSimTimeUs`，并记录 `lastReceivedAtUs`。
+        /// 返回 true 表示接受（frameCntr >= 已处理），false 表示作为旧帧丢弃。
         bool queueHostTimeStamp(const HostTimeStamp& stamp);
 
-        /// Session reset (design §3): TCP reconnect / Host restart clears phase-unwrap state,
-        /// so the next packet starts a fresh absolute base (does not inherit the old large value).
+        /// 会话重置（设计 §3）：TCP 重连 / Host 重启清空相位展开状态，
+        /// 使下一个包从新的绝对基准开始（不继承旧的大值）。
         void resetHostSession();
 
-        /// Most recent Host time stamp converted to us (design §3), 0 if none yet.
+        /// 最近 Host 时间戳换算成 us（设计 §3），无则 0。
         std::uint64_t lastHostSimTimeUs() const;
 
-        /// Current compensated simulation time: internal nowUs = vsg::clock::now().
+        /// 当前补偿后的模拟时间：内部 nowUs = vsg::clock::now()。
         std::uint64_t simTimeUs() const;
 
-        /// Compensated simulation time at an explicit monotonic-clock instant (test-controllable).
+        /// 在显式单调时钟时刻的补偿模拟时间（测试可控）。
         std::uint64_t simTimeUsAt(std::uint64_t nowUs) const;
 
-        /// Extrapolate-freeze threshold (design §4.3).
+        /// 外推-冻结阈值（设计 §4.3）。
         void setExtrapolateTimeoutUs(std::uint64_t timeoutUs);
 
-        /// Explicit freeze check: nowUs - lastReceivedAtUs > timeout → frozen (design §4.3).
+        /// 显式冻结检查：nowUs - lastReceivedAtUs > 阈值 → 冻结（设计 §4.3）。
         void updateFreeze(std::uint64_t nowUs);
 
-        /// True once extrapolate timeout exceeded and no new frame arrived.
+        /// 外推超时且无新帧到达后为 true。
         bool frozen() const;
 
         const IgConfig& addressConfig() const { return _local; }
@@ -98,7 +98,7 @@ namespace aerovista::sync
 
         std::uint32_t igCtrlReceivedCount() const;
         std::uint32_t sofSentCount() const;
-        /// FrameCntr from the most recently processed Host IGCtrl (0 if none yet).
+        /// 最近处理的 Host IGCtrl 的 FrameCntr（无则 0）。
         std::uint32_t lastIgCtrlFrameCntr() const;
 
         // ===== 命令面（状态同步设计初版.md §6） =====

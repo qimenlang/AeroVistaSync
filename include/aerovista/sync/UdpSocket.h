@@ -15,12 +15,11 @@
 
 namespace aerovista::sync
 {
-    /// Thin UDP wrapper for the sync plane (replaces the legacy MPV Network.h).
+    /// 同步平面的 UDP 薄封装。
     ///
-    /// One unbound send socket (explicit `sendTo` targets) plus one non-blocking
-    /// receive socket bound to `rcvPort` on INADDR_ANY. Owns the WSAStartup /
-    /// WSACleanup reference count on Windows. IPv4 only, matching the CIGI sync
-    /// plane topology (socket总结.md §2).
+    /// 一个未绑定发送 socket（显式 `sendTo` 目标）+ 一个绑定 `rcvPort`（INADDR_ANY）
+    /// 的非阻塞接收 socket。Windows 上持有 WSAStartup / WSACleanup 引用计数。
+    /// 仅 IPv4，与 CIGI 同步平面拓扑一致（socket总结.md §2）。
     class UdpSocket
     {
     public:
@@ -29,23 +28,22 @@ namespace aerovista::sync
         UdpSocket(const UdpSocket&) = delete;
         UdpSocket& operator=(const UdpSocket&) = delete;
 
-        /// Create the send + receive sockets and bind the receive socket to
-        /// `rcvPort` (non-blocking). `localAddr` / `sndPort` keep the legacy
-        /// "default send endpoint" semantics for future default-peer sends.
-        /// On failure closes everything and returns false.
+        /// 创建发送 + 接收 socket，并把接收 socket 绑定到 `rcvPort`（非阻塞）。
+        /// `localAddr` / `sndPort` 保留「默认发送端点」语义，供未来默认对端发送使用。
+        /// 失败时关闭全部并返回 false。
         bool initialize(const std::string& localAddr, int sndPort, int rcvPort,
                         std::string* outError = nullptr);
         void close();
         bool valid() const { return _valid; }
 
-        /// Non-blocking receive. >0 bytes received, 0 no data, <0 error.
+        /// 非阻塞接收。>0 收到字节，0 无数据，<0 出错。
         int recv(void* buf, int size);
 
-        /// Non-blocking receive reporting the IPv4 source address/port.
-        /// Same return contract as `recv`.
+        /// 非阻塞接收并报告 IPv4 源地址/端口。
+        /// 返回约定同 `recv`。
         int recvFrom(void* buf, int size, char* fromIp, int fromIpLen, int* fromPort);
 
-        /// Send a datagram to an explicit IPv4 destination. Bytes sent or -1 on error.
+        /// 向显式 IPv4 目标发送数据报。返回发送字节数或 -1。
         int sendTo(const std::string& ip, int port, const void* buf, int size);
 
     private:
