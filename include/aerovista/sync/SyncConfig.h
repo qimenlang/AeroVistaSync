@@ -72,6 +72,16 @@ namespace aerovista::sync
         int barrierTimeoutMs = 8;
     };
 
+    /// SynchronSystem 装配属性（sync模块化设计.md §4.2）。
+    /// IG 侧消费为主（offset/stale/requireIgConnect），channelId 两端标识。
+    struct SyncSystemConfig
+    {
+        int channelId = 0;
+        OffsetDeg offsetDeg{};
+        HostEyeStalePolicy hostEyeStalePolicy = HostEyeStalePolicy::REUSE_LAST;
+        bool requireIgConnect = false;
+    };
+
     struct SyncRoleConfig
     {
         bool enableHost = false;

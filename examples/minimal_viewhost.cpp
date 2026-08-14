@@ -20,6 +20,7 @@ using aerovista::sync::HostConfig;
 using aerovista::sync::loadHostConfig;
 using aerovista::sync::SynchronSystem;
 using aerovista::sync::SyncRoleConfig;
+using aerovista::sync::SyncSystemConfig;
 
 int main(int argc, char** argv)
 {
@@ -41,7 +42,8 @@ int main(int argc, char** argv)
     role.hostConfig = host;
 
     auto sync = SynchronSystem::create();
-    if (!sync->initialize(role, /*requireIgConnect=*/false))
+    // 纯 Host：装配配置用默认值（Host 不消费 offset/stale 等 IG 侧属性）。
+    if (!sync->initialize(role, SyncSystemConfig{}))
         return 1;
 
     std::cout << "[viewhost] Host waiting on UDP "

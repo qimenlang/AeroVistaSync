@@ -151,10 +151,13 @@ namespace aerovista::sync
         shutdown();
     }
 
-    bool SynchronSystem::initialize(const SyncRoleConfig& role, bool requireIgConnect)
+    bool SynchronSystem::initialize(const SyncRoleConfig& role, const SyncSystemConfig& syncSystem)
     {
         shutdown();
         _role = role;
+        _channelId = syncSystem.channelId;
+        _offsetDeg = syncSystem.offsetDeg;
+        _stalePolicy = syncSystem.hostEyeStalePolicy;
 
         if (role.enableHost)
         {
@@ -181,7 +184,7 @@ namespace aerovista::sync
 
             if (!_ig->connect(role.igConfig))
             {
-                if (requireIgConnect)
+                if (syncSystem.requireIgConnect)
                 {
                     std::cerr << "SynchronSystem: IgSync connect failed\n";
                     shutdown();
@@ -242,10 +245,8 @@ namespace aerovista::sync
             return;
 
         HostEyePose sample{};
-        if (_sceneIsEllipsoid)
+        if (sceneIsEllipsoid())
         {
-            if (!_ellipsoidModel)
-                return;
             if (!lookAtToLlaEye(lookAt, *_ellipsoidModel, sample))
                 return;
         }
@@ -300,12 +301,12 @@ namespace aerovista::sync
         if (!_hasPendingEye)
             return false;
 
-        if (!eyeFrameMatchesScene(_pendingEye, _sceneIsEllipsoid))
+        if (!eyeFrameMatchesScene(_pendingEye, sceneIsEllipsoid()))
         {
             ++_eyePoseRejectedByFrameMismatch;
             if (!_frameMismatchErrorLogged)
             {
-                const char* expected = _sceneIsEllipsoid ? "Lla/Detach" : "WorldLocal/Attach";
+                const char* expected = sceneIsEllipsoid() ? "Lla/Detach" : "WorldLocal/Attach";
                 const char* got = (_pendingEye.frame == HostEyeCoordFrame::LLA) ? "Lla/Detach" : "WorldLocal/Attach";
                 std::cerr << "[ERROR] eye pose rejected by frame mismatch: expected " << expected
                           << ", got " << got << " (channelId=" << _channelId << ")\n";
@@ -368,7 +369,7 @@ namespace aerovista::sync
 
         const HostEyePose* sendEye = nullptr;
         HostEyePose eyeStorage{};
-        const bool ellipsoid = _sceneIsEllipsoid;
+        const bool ellipsoid = sceneIsEllipsoid();
 
         if (_frameSample)
         {
@@ -410,11 +411,6 @@ namespace aerovista::sync
         }
 
         _host->update(simTimeMs, wirePtr);
-    }
-
-    void SynchronSystem::setSceneIsEllipsoid(bool sceneIsEllipsoid)
-    {
-        _sceneIsEllipsoid = sceneIsEllipsoid;
     }
 
     void SynchronSystem::setEllipsoidModel(vsg::ref_ptr<vsg::EllipsoidModel> ellipsoid)

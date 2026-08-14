@@ -39,15 +39,15 @@ namespace aerovista::sync
         SynchronSystem();
         ~SynchronSystem() override;
 
-        /// 若 requireIgConnect 为 false，IgSync 在连接失败时也本地初始化。
-        bool initialize(const SyncRoleConfig& role, bool requireIgConnect = true);
+        /// 初始化同步：启动 HostSync / IgSync（按 role），并应用装配配置
+        /// （channelId / offsetDeg / hostEyeStalePolicy / requireIgConnect）。
+        bool initialize(const SyncRoleConfig& role, const SyncSystemConfig& syncSystem);
         void shutdown();
 
         void preFrame();
 
-        /// 场景模式 + 椭球注入（lla §2 / §4.5）：宿主场景确定或重建后调用。
-        /// 本地模式下 `ellipsoid` 可为空。
-        void setSceneIsEllipsoid(bool sceneIsEllipsoid);
+        /// 场景模式注入（lla §2 / §4.5）：宿主场景确定或重建后调用。
+        /// `ellipsoid` 非空 = 椭球模式；空 = 本地模式（唯一场景模式入口）。
         void setEllipsoidModel(vsg::ref_ptr<vsg::EllipsoidModel> ellipsoid);
         /// 通道标识（错误日志用）。
         void setChannelId(int channelId);
@@ -106,6 +106,8 @@ namespace aerovista::sync
     private:
         void applyHostEye(const HostEyePose& hostEye);
         bool tryAcceptPendingEye();
+        /// 椭球模型存在即椭球模式（本地 = 无椭球模型）。
+        bool sceneIsEllipsoid() const { return static_cast<bool>(_ellipsoidModel); }
 
         SyncRoleConfig _role{};
         std::unique_ptr<HostSync> _host;
@@ -114,7 +116,6 @@ namespace aerovista::sync
         OffsetDeg _offsetDeg{};
         HostEyeStalePolicy _stalePolicy = HostEyeStalePolicy::REUSE_LAST;
 
-        bool _sceneIsEllipsoid = false;
         vsg::ref_ptr<vsg::EllipsoidModel> _ellipsoidModel;
         int _channelId = 0;
 
