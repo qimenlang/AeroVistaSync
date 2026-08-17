@@ -35,6 +35,7 @@ set(AEROVISTA_SYNC_PUBLIC_HEADERS
     include/aerovista/sync/IgSync.h
     include/aerovista/sync/SyncConfig.h
     include/aerovista/sync/SyncJson.h
+    include/aerovista/sync/SyncMath.h
     include/aerovista/sync/SyncProtocol.h
     include/aerovista/sync/SynchronSystem.h
     include/aerovista/sync/UdpSocket.h
@@ -58,10 +59,13 @@ target_include_directories(aerovistaSync PUBLIC
 
 target_link_libraries(aerovistaSync
     PUBLIC
-        vsg::vsg
         ${AEROVISTA_SYNC_CIGI_TARGET}
         ws2_32
+    PRIVATE
+        vsg::vsg
 )
+
+target_compile_features(aerovistaSync PUBLIC cxx_std_17)
 
 # --- 可安装 / 导出（独立 repo find_package 用；本工程内默认关闭） ---
 # 依赖 cigicl-static 不在本工程 export set，工程内开启会报错。独立 repo 时

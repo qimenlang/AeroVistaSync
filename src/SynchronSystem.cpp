@@ -1,5 +1,10 @@
 ﻿#include <aerovista/sync/SynchronSystem.h>
 
+#include <vsg/maths/common.h>
+#include <vsg/maths/mat4.h>
+#include <vsg/maths/quat.h>
+#include <vsg/maths/vec3.h>
+
 #include <cmath>
 #include <iostream>
 #include <utility>
@@ -9,7 +14,17 @@ namespace aerovista::sync
     namespace
     {
         constexpr double kPi = 3.14159265358979323846;
-        constexpr double kLookDistance = 1.0;
+
+        /// 公开边界 DVec3 ↔ 内部 vsg::dvec3（仅 .cpp 内转换，不泄漏 vsg 类型到公开头）。
+        vsg::dvec3 toVsg(const DVec3& v)
+        {
+            return vsg::dvec3(v.x, v.y, v.z);
+        }
+
+        DVec3 toSync(const vsg::dvec3& v)
+        {
+            return DVec3{v.x, v.y, v.z};
+        }
 
         double rad2deg(double r)
         {
@@ -21,18 +36,11 @@ namespace aerovista::sync
             return v < lo ? lo : (v > hi ? hi : v);
         }
 
-        void enuBasisFromLocalToWorld(const vsg::dmat4& localToWorld, vsg::dvec3& east, vsg::dvec3& north, vsg::dvec3& upAxis)
+        /// 用注入的 ENU 基把 ENU 方向转回 ECEF（等价 vsg::computeLocalToWorldTransform 正交列点积）。
+        vsg::dvec3 rotateEnuToEcef(const vsg::dvec3& east, const vsg::dvec3& north, const vsg::dvec3& up,
+                                   const vsg::dvec3& enuDir)
         {
-            east = vsg::normalize(vsg::dvec3(localToWorld(0, 0), localToWorld(0, 1), localToWorld(0, 2)));
-            north = vsg::normalize(vsg::dvec3(localToWorld(1, 0), localToWorld(1, 1), localToWorld(1, 2)));
-            upAxis = vsg::normalize(vsg::dvec3(localToWorld(2, 0), localToWorld(2, 1), localToWorld(2, 2)));
-        }
-
-        vsg::dvec3 rotateEnuToEcef(const vsg::dmat4& localToWorld, const vsg::dvec3& enuDir)
-        {
-            vsg::dvec3 east, north, upAxis;
-            enuBasisFromLocalToWorld(localToWorld, east, north, upAxis);
-            return enuDir.x * east + enuDir.y * north + enuDir.z * upAxis;
+            return enuDir.x * east + enuDir.y * north + enuDir.z * up;
         }
 
         /// R = Rz(yaw)*Rx(pitch)*Ry(roll)。按 roll→pitch→yaw 顺序作用轴四元数
@@ -47,13 +55,13 @@ namespace aerovista::sync
         }
 
         /// Engine::setCameraPose 旋转 Rz(yaw)*Rx(pitch)*Ry(roll) 的逆，Y-forward Z-up。
-    /// 从正交 forward/up 基恢复 YPR（度）。
-    bool extractYprDegFromBasis(const vsg::dvec3& forward, const vsg::dvec3& up, vsg::dvec3& eulerYprDegOut)
-    {
-        const double yawRad = std::atan2(-forward.x, forward.y);
-        const double pitchRad = std::asin(clampd(forward.z, -1.0, 1.0));
+        /// 从正交 forward/up 基恢复 YPR（度）。
+        bool extractYprDegFromBasis(const vsg::dvec3& forward, const vsg::dvec3& up, vsg::dvec3& eulerYprDegOut)
+        {
+            const double yawRad = std::atan2(-forward.x, forward.y);
+            const double pitchRad = std::asin(clampd(forward.z, -1.0, 1.0));
 
-        // yaw+pitch 足够：先 pitch 后 yaw（VSG reverse-Hamilton）。
+            // yaw+pitch 足够：先 pitch 后 yaw（VSG reverse-Hamilton）。
             const vsg::dvec3 afterPitchUp =
                 vsg::dquat(pitchRad, vsg::dvec3(1.0, 0.0, 0.0)) * vsg::dvec3(0.0, 0.0, 1.0);
             const vsg::dvec3 afterPitchRight =
@@ -69,72 +77,88 @@ namespace aerovista::sync
         }
 
         /// Engine::setCameraPose 旋转 Rz(yaw)*Rx(pitch)*Ry(roll) 的逆，Y-forward Z-up。
-        bool lookAtToWorldLocalEye(const vsg::LookAt& lookAt, HostEyePose& out)
+        bool lookAtToWorldLocalEye(const CameraLookAt& lookAt, HostEyePose& out)
         {
             out.frame = HostEyeCoordFrame::WORLD_LOCAL;
             out.position = lookAt.eye;
-            const vsg::dvec3 forward = vsg::normalize(lookAt.center - lookAt.eye);
+            const vsg::dvec3 eye = toVsg(lookAt.eye);
+            const vsg::dvec3 forward = vsg::normalize(toVsg(lookAt.center) - eye);
             if (vsg::length(forward) < 1e-12)
                 return false;
-            return extractYprDegFromBasis(forward, vsg::normalize(lookAt.up), out.eulerYprDeg);
+
+            vsg::dvec3 eulerYprDeg;
+            const bool ok = extractYprDegFromBasis(forward, vsg::normalize(toVsg(lookAt.up)), eulerYprDeg);
+            out.eulerYprDeg = toSync(eulerYprDeg);
+            return ok;
         }
 
-        bool lookAtToLlaEye(const vsg::LookAt& lookAt, const vsg::EllipsoidModel& ellipsoid, HostEyePose& out)
+        bool lookAtToLlaEye(const CameraLookAt& lookAt, const EllipsoidTransform& ellipsoid, HostEyePose& out)
         {
             out.frame = HostEyeCoordFrame::LLA;
-            out.position = ellipsoid.convertECEFToLatLongAltitude(lookAt.eye);
-            const vsg::dvec3 forwardEcef = vsg::normalize(lookAt.center - lookAt.eye);
+            const vsg::dvec3 eye = toVsg(lookAt.eye);
+            out.position = ellipsoid.ecefToLla(toSync(eye));
+            const vsg::dvec3 forwardEcef = vsg::normalize(toVsg(lookAt.center) - eye);
             if (vsg::length(forwardEcef) < 1e-12)
                 return false;
 
-            // 逆写路径（§3.3）：ENU 基 = LocalToWorld 的正交列。
+            // 逆写路径（§3.3）：ENU 基 = LocalToWorld 的正交列（由注入接口提供）。
             // 优先用列点积而非 worldToLocal*dir——保持采样是 setCameraPoseLla 的逆。
-            const vsg::dmat4 localToWorld = ellipsoid.computeLocalToWorldTransform(out.position);
-            const vsg::dvec3 east = vsg::normalize(vsg::dvec3(localToWorld(0, 0), localToWorld(0, 1), localToWorld(0, 2)));
-            const vsg::dvec3 north = vsg::normalize(vsg::dvec3(localToWorld(1, 0), localToWorld(1, 1), localToWorld(1, 2)));
-            const vsg::dvec3 upAxis = vsg::normalize(vsg::dvec3(localToWorld(2, 0), localToWorld(2, 1), localToWorld(2, 2)));
+            DVec3 eastS, northS, upS;
+            ellipsoid.localToWorldBasis(out.position, eastS, northS, upS);
+            const vsg::dvec3 east = vsg::normalize(toVsg(eastS));
+            const vsg::dvec3 north = vsg::normalize(toVsg(northS));
+            const vsg::dvec3 upAxis = vsg::normalize(toVsg(upS));
             const auto toEnu = [&](const vsg::dvec3& ecefDir) {
-                return vsg::normalize(vsg::dvec3(vsg::dot(ecefDir, east), vsg::dot(ecefDir, north), vsg::dot(ecefDir, upAxis)));
+                return vsg::normalize(
+                    vsg::dvec3(vsg::dot(ecefDir, east), vsg::dot(ecefDir, north), vsg::dot(ecefDir, upAxis)));
             };
 
             const vsg::dvec3 forward = toEnu(forwardEcef);
-            const vsg::dvec3 up = toEnu(vsg::normalize(lookAt.up));
-            return extractYprDegFromBasis(forward, up, out.eulerYprDeg);
+            const vsg::dvec3 up = toEnu(vsg::normalize(toVsg(lookAt.up)));
+
+            vsg::dvec3 eulerYprDeg;
+            const bool ok = extractYprDegFromBasis(forward, up, eulerYprDeg);
+            out.eulerYprDeg = toSync(eulerYprDeg);
+            return ok;
         }
 
-        bool lookAtMatchesApplied(const vsg::LookAt& actual, const HostEyePose& applied,
-                                  const vsg::EllipsoidModel* ellipsoid)
+        bool lookAtMatchesApplied(const CameraLookAt& actual, const HostEyePose& applied,
+                                  const EllipsoidTransform* ellipsoid)
         {
-            auto lookAt = vsg::LookAt::create();
+            const vsg::dvec3 actualEye = toVsg(actual.eye);
+            const vsg::dvec3 actualForward = vsg::normalize(toVsg(actual.center) - actualEye);
+            const vsg::dvec3 actualUp = vsg::normalize(toVsg(actual.up));
+
             if (applied.frame == HostEyeCoordFrame::LLA)
             {
                 if (!ellipsoid)
                     return false;
-                const vsg::dvec3 forwardEnu = rotateByEulerYprDeg(applied.eulerYprDeg, vsg::dvec3(0.0, 1.0, 0.0));
-                const vsg::dvec3 upEnu = rotateByEulerYprDeg(applied.eulerYprDeg, vsg::dvec3(0.0, 0.0, 1.0));
-                const vsg::dmat4 localToWorld = ellipsoid->computeLocalToWorldTransform(applied.position);
-                const vsg::dvec3 eye = ellipsoid->convertLatLongAltitudeToECEF(applied.position);
-                const vsg::dvec3 forward = vsg::normalize(rotateEnuToEcef(localToWorld, forwardEnu));
-                const vsg::dvec3 up = vsg::normalize(rotateEnuToEcef(localToWorld, upEnu));
-                lookAt->eye = eye;
-                lookAt->center = eye + forward * kLookDistance;
-                lookAt->up = up;
+                const vsg::dvec3 euler = toVsg(applied.eulerYprDeg);
+                const vsg::dvec3 forwardEnu = rotateByEulerYprDeg(euler, vsg::dvec3(0.0, 1.0, 0.0));
+                const vsg::dvec3 upEnu = rotateByEulerYprDeg(euler, vsg::dvec3(0.0, 0.0, 1.0));
+                DVec3 eastS, northS, upS;
+                ellipsoid->localToWorldBasis(applied.position, eastS, northS, upS);
+                const vsg::dvec3 east = vsg::normalize(toVsg(eastS));
+                const vsg::dvec3 north = vsg::normalize(toVsg(northS));
+                const vsg::dvec3 upAxis = vsg::normalize(toVsg(upS));
+                const vsg::dvec3 eye = toVsg(ellipsoid->llaToEcef(applied.position));
+                const vsg::dvec3 forward = vsg::normalize(rotateEnuToEcef(east, north, upAxis, forwardEnu));
+                const vsg::dvec3 up = vsg::normalize(rotateEnuToEcef(east, north, upAxis, upEnu));
+
                 constexpr double kEyeEps = 1e-2;
                 constexpr double kDirEps = 1e-6;
-                const vsg::dvec3 af = vsg::normalize(actual.center - actual.eye);
-                const vsg::dvec3 ef = vsg::normalize(lookAt->center - lookAt->eye);
-                return vsg::length(actual.eye - lookAt->eye) < kEyeEps &&
-                       vsg::length(af - ef) < kDirEps &&
-                       vsg::length(vsg::normalize(actual.up) - vsg::normalize(lookAt->up)) < kDirEps;
+                return vsg::length(actualEye - eye) < kEyeEps &&
+                       vsg::length(actualForward - forward) < kDirEps &&
+                       vsg::length(actualUp - up) < kDirEps;
             }
 
-            const vsg::dvec3 forward = rotateByEulerYprDeg(applied.eulerYprDeg, vsg::dvec3(0.0, 1.0, 0.0));
-            const vsg::dvec3 up = rotateByEulerYprDeg(applied.eulerYprDeg, vsg::dvec3(0.0, 0.0, 1.0));
+            const vsg::dvec3 euler = toVsg(applied.eulerYprDeg);
+            const vsg::dvec3 forward = rotateByEulerYprDeg(euler, vsg::dvec3(0.0, 1.0, 0.0));
+            const vsg::dvec3 up = rotateByEulerYprDeg(euler, vsg::dvec3(0.0, 0.0, 1.0));
             constexpr double kEps = 1e-4;
-            const vsg::dvec3 af = vsg::normalize(actual.center - actual.eye);
-            return vsg::length(actual.eye - applied.position) < kEps &&
-                   vsg::length(af - vsg::normalize(forward)) < kEps &&
-                   vsg::length(vsg::normalize(actual.up) - vsg::normalize(up)) < kEps;
+            return vsg::length(actualEye - toVsg(applied.position)) < kEps &&
+                   vsg::length(actualForward - vsg::normalize(forward)) < kEps &&
+                   vsg::length(actualUp - vsg::normalize(up)) < kEps;
         }
 
         bool eyeFrameMatchesScene(const HostEyePose& eye, bool sceneIsEllipsoid)
@@ -143,6 +167,11 @@ namespace aerovista::sync
             return wantLla == sceneIsEllipsoid;
         }
     } // namespace
+
+    std::unique_ptr<SynchronSystem> SynchronSystem::create()
+    {
+        return std::make_unique<SynchronSystem>();
+    }
 
     SynchronSystem::SynchronSystem() = default;
 
@@ -232,14 +261,14 @@ namespace aerovista::sync
         if (auto eye = _ig->takeReceivedHostEye())
         {
             HostEyePose pose;
-            pose.position = vsg::dvec3(eye->x, eye->y, eye->z);
-            pose.eulerYprDeg = vsg::dvec3(eye->yawDeg, eye->pitchDeg, eye->rollDeg);
+            pose.position = DVec3{eye->x, eye->y, eye->z};
+            pose.eulerYprDeg = DVec3{eye->yawDeg, eye->pitchDeg, eye->rollDeg};
             pose.frame = eye->isLla ? HostEyeCoordFrame::LLA : HostEyeCoordFrame::WORLD_LOCAL;
             queueHostEyePose(pose);
         }
     }
 
-    void SynchronSystem::captureAuthorityEye(const vsg::LookAt& lookAt)
+    void SynchronSystem::captureAuthorityEye(const CameraLookAt& lookAt)
     {
         if (!_host)
             return;
@@ -247,7 +276,7 @@ namespace aerovista::sync
         HostEyePose sample{};
         if (sceneIsEllipsoid())
         {
-            if (!lookAtToLlaEye(lookAt, *_ellipsoidModel, sample))
+            if (!lookAtToLlaEye(lookAt, *_ellipsoidTransform, sample))
                 return;
         }
         else
@@ -257,7 +286,7 @@ namespace aerovista::sync
         }
 
         // 防回声：把 LookAt 与 `_lastApplied` 重建比对（lla §4.4）；不减偏移。
-        if (_lastApplied && lookAtMatchesApplied(lookAt, *_lastApplied, _ellipsoidModel.get()))
+        if (_lastApplied && lookAtMatchesApplied(lookAt, *_lastApplied, _ellipsoidTransform))
         {
             _frameSample.reset();
             return;
@@ -276,10 +305,11 @@ namespace aerovista::sync
         // VSG operator*(a,b) = Hamilton(b⊗a)，所以写 qOffset * qHost 得到
         // M(qHost)·M(qOffset) = R_host·R_offset。每个四元数按 Ry(roll)*Rx(pitch)*Rz(yaw)
         // （VSG）构建，以表示 Hamilton 的 Rz(yaw)*Rx(pitch)*Ry(roll) 写约定。
+        const vsg::dvec3 hostEuler = toVsg(host.eulerYprDeg);
         const vsg::dquat qHost =
-            vsg::dquat(vsg::radians(host.eulerYprDeg.z), vsg::dvec3(0.0, 1.0, 0.0)) *
-            vsg::dquat(vsg::radians(host.eulerYprDeg.y), vsg::dvec3(1.0, 0.0, 0.0)) *
-            vsg::dquat(vsg::radians(host.eulerYprDeg.x), vsg::dvec3(0.0, 0.0, 1.0));
+            vsg::dquat(vsg::radians(hostEuler.z), vsg::dvec3(0.0, 1.0, 0.0)) *
+            vsg::dquat(vsg::radians(hostEuler.y), vsg::dvec3(1.0, 0.0, 0.0)) *
+            vsg::dquat(vsg::radians(hostEuler.x), vsg::dvec3(0.0, 0.0, 1.0));
         const vsg::dquat qOffset =
             vsg::dquat(vsg::radians(offset.roll), vsg::dvec3(0.0, 1.0, 0.0)) *
             vsg::dquat(vsg::radians(offset.pitch), vsg::dvec3(1.0, 0.0, 0.0)) *
@@ -292,7 +322,9 @@ namespace aerovista::sync
         // 在同一 Rz·Rx·Ry 约定下重新提取 YPR，使 applyHostEye 的 setCameraPose
         // 精确写入合成后的旋转（写↔采样保持互逆）。
         HostEyePose out = host;
-        extractYprDegFromBasis(forward, up, out.eulerYprDeg);
+        vsg::dvec3 eulerYprDeg;
+        extractYprDegFromBasis(forward, up, eulerYprDeg);
+        out.eulerYprDeg = toSync(eulerYprDeg);
         return out;
     }
 
@@ -413,9 +445,9 @@ namespace aerovista::sync
         _host->update(simTimeMs, wirePtr);
     }
 
-    void SynchronSystem::setEllipsoidModel(vsg::ref_ptr<vsg::EllipsoidModel> ellipsoid)
+    void SynchronSystem::setEllipsoidTransform(const EllipsoidTransform* transform)
     {
-        _ellipsoidModel = std::move(ellipsoid);
+        _ellipsoidTransform = transform;
     }
 
     void SynchronSystem::setChannelId(int channelId)

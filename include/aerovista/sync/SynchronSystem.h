@@ -3,11 +3,11 @@
 #include <aerovista/sync/HostSync.h>
 #include <aerovista/sync/IgSync.h>
 #include <aerovista/sync/SyncConfig.h>
+#include <aerovista/sync/SyncMath.h>
 
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <vsg/all.h>
 
 namespace aerovista::sync
 {
@@ -21,8 +21,8 @@ namespace aerovista::sync
     /// Host 眼点（位置 + 欧拉 YPR 度）。`frame` 驱动线上的 Attach/Detach（不是私有 UDP 字段）。
     struct HostEyePose
     {
-        vsg::dvec3 position{}; ///< WORLD_LOCAL: XYZ 米；LLA: 纬度°、经度°、海拔 米
-        vsg::dvec3 eulerYprDeg{};
+        DVec3 position{}; ///< WORLD_LOCAL: XYZ 米；LLA: 纬度°、经度°、海拔 米
+        DVec3 eulerYprDeg{};
         HostEyeCoordFrame frame = HostEyeCoordFrame::WORLD_LOCAL;
     };
 
@@ -33,11 +33,16 @@ namespace aerovista::sync
     /// 宿主引擎经 takePendingCameraPose() 取走并驱动自己的相机。
     /// 场景模式 / 椭球 / 通道号由宿主注入，权威 LookAt 经 captureAuthorityEye() 喂入——
     /// 门面从不直接触碰宿主的相机对象。
-    class SynchronSystem : public vsg::Inherit<vsg::Object, SynchronSystem>
+    ///
+    /// 公开接口零 vsg：所有类型为自有 POD（DVec3 / CameraLookAt）或注入接口
+    /// （EllipsoidTransform），消费方（含无 vsg 的 viewhost）不接触 vsg 头文件。
+    class SynchronSystem
     {
     public:
         SynchronSystem();
-        ~SynchronSystem() override;
+        ~SynchronSystem();
+
+        static std::unique_ptr<SynchronSystem> create();
 
         /// 初始化同步：启动 HostSync / IgSync（按 role），并应用装配配置
         /// （channelId / offsetDeg / hostEyeStalePolicy / requireIgConnect）。
@@ -47,14 +52,15 @@ namespace aerovista::sync
         void preFrame();
 
         /// 场景模式注入（lla §2 / §4.5）：宿主场景确定或重建后调用。
-        /// `ellipsoid` 非空 = 椭球模式；空 = 本地模式（唯一场景模式入口）。
-        void setEllipsoidModel(vsg::ref_ptr<vsg::EllipsoidModel> ellipsoid);
+        /// `transform` 非空 = 椭球模式；空 = 本地模式（唯一场景模式入口）。
+        /// sync 库不持有所有权，宿主需保证其生命周期覆盖 sync 会话。
+        void setEllipsoidTransform(const EllipsoidTransform* transform);
         /// 通道标识（错误日志用）。
         void setChannelId(int channelId);
 
         /// handleEvents 后采样权威眼点（仅 Host 引擎）：喂入当前相机 LookAt（覆盖前）。
         /// 门面根据注入的场景模式决定 LLA 还是 WorldLocal，并做防回声检查。
-        void captureAuthorityEye(const vsg::LookAt& lookAt);
+        void captureAuthorityEye(const CameraLookAt& lookAt);
 
         /// 推进同步状态（收包 / 决策）；计算本帧待应用相机位姿（若有）。
         /// 每帧调用一次，然后读 takePendingCameraPose()。
@@ -106,8 +112,8 @@ namespace aerovista::sync
     private:
         void applyHostEye(const HostEyePose& hostEye);
         bool tryAcceptPendingEye();
-        /// 椭球模型存在即椭球模式（本地 = 无椭球模型）。
-        bool sceneIsEllipsoid() const { return static_cast<bool>(_ellipsoidModel); }
+        /// 椭球变换存在即椭球模式（本地 = 无椭球变换）。
+        bool sceneIsEllipsoid() const { return _ellipsoidTransform != nullptr; }
 
         SyncRoleConfig _role{};
         std::unique_ptr<HostSync> _host;
@@ -116,7 +122,7 @@ namespace aerovista::sync
         OffsetDeg _offsetDeg{};
         HostEyeStalePolicy _stalePolicy = HostEyeStalePolicy::REUSE_LAST;
 
-        vsg::ref_ptr<vsg::EllipsoidModel> _ellipsoidModel;
+        const EllipsoidTransform* _ellipsoidTransform = nullptr;
         int _channelId = 0;
 
         bool _hasPendingEye = false;
