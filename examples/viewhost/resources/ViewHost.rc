@@ -1,0 +1,25 @@
+﻿// viewhost 对话框资源（MFC）。
+#include "resource.h"
+#include "afxres.h"
+
+LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
+
+IDD_VIEWHOST_DIALOG DIALOGEX 0, 0, 340, 200
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "AeroVista viewhost"
+FONT 9, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "退出(&X)", IDC_EXIT, 280, 180, 50, 14
+    PUSHBUTTON      "开始控制", IDC_TOGGLE_CONTROL, 200, 8, 70, 14
+
+    GROUPBOX        "连接状态", IDC_STATIC, 8, 28, 324, 60
+    LTEXT           "Ready IG: 0", IDC_STATUS_READY, 16, 42, 200, 10
+    LTEXT           "IGCtrl 发送: 0", IDC_STATUS_IGCTRL, 16, 56, 200, 10
+    LTEXT           "SOF 接收: 0", IDC_STATUS_SOF, 16, 70, 200, 10
+
+    GROUPBOX        "眼点 (LLA)", IDC_STATIC, 8, 96, 324, 76
+    LTEXT           "lat: -", IDC_EYE_LAT, 16, 110, 300, 10
+    LTEXT           "lon: -", IDC_EYE_LON, 16, 124, 300, 10
+    LTEXT           "alt: -", IDC_EYE_ALT, 16, 138, 300, 10
+    LTEXT           "yaw: -  pitch: -  roll: -", IDC_EYE_YPR, 16, 152, 300, 10
+END

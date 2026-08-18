@@ -95,3 +95,11 @@ if(AEROVISTA_BUILD_SYNC_EXAMPLE)
     )
     target_link_libraries(aerovistaSyncExample PRIVATE aerovistaSync)
 endif()
+
+# 可选：MFC viewhost 示例（默认开启，仅 MSVC 可构建；非 MSVC 自动跳过，见 examples/viewhost/CMakeLists.txt）。
+option(AEROVISTA_BUILD_VIEWHOST "Build MFC viewhost example (MSVC only)" ON)
+if(AEROVISTA_BUILD_VIEWHOST AND MSVC)
+    add_subdirectory(examples/viewhost)
+elseif(AEROVISTA_BUILD_VIEWHOST)
+    message(STATUS "aerovistaViewHost requires MSVC (MFC); skipped (compiler: ${CMAKE_CXX_COMPILER_ID})")
+endif()
