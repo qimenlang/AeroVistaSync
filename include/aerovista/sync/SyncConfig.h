@@ -21,10 +21,9 @@ namespace aerovista::sync
         FREEZE
     };
 
-    /// IG 侧配置 = 本地绑定 + 远端 Host 目标。
+    /// IG 侧配置 = 本地收发端口 + 远端 Host 目标。
     struct IgConfig
     {
-        std::string bindAddr;      ///< 本地绑定网卡
         int udpPortSend = 0;       ///< 本地 UDP 源端口
         int udpPortRecv = 0;       ///< 本地 UDP 接收端口
         std::string targetAddr;    ///< Host IP
@@ -35,7 +34,6 @@ namespace aerovista::sync
     /// Host 侧本地配置。
     struct HostConfig
     {
-        std::string bindAddr; ///< 本地绑定网卡
         int udpPortSend = 0;
         int udpPortRecv = 0;
         int tcpPort = 0;

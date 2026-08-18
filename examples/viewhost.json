@@ -1,6 +1,5 @@
 {
   "hostConfig": {
-    "bindAddr": "0.0.0.0",
     "udpPortSend": 8001,
     "udpPortRecv": 8000,
     "tcpPort": 8100

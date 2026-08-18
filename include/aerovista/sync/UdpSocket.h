@@ -29,10 +29,9 @@ namespace aerovista::sync
         UdpSocket& operator=(const UdpSocket&) = delete;
 
         /// 创建发送 + 接收 socket，并把接收 socket 绑定到 `rcvPort`（非阻塞）。
-        /// `localAddr` / `sndPort` 保留「默认发送端点」语义，供未来默认对端发送使用。
+        /// `sndPort` 保留「默认发送端点」语义，供未来默认对端发送使用。
         /// 失败时关闭全部并返回 false。
-        bool initialize(const std::string& localAddr, int sndPort, int rcvPort,
-                        std::string* outError = nullptr);
+        bool initialize(int sndPort, int rcvPort, std::string* outError = nullptr);
         void close();
         bool valid() const { return _valid; }
 
@@ -59,7 +58,6 @@ namespace aerovista::sync
         Handle _sendSock = kInvalid;
         Handle _recvSock = kInvalid;
         bool _valid = false;
-        std::string _sendAddr;
         int _sendPort = 0;
 #ifdef WIN32
         bool _wsaAcquired = false;

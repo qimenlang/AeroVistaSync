@@ -45,11 +45,9 @@ namespace aerovista::sync
         close();
     }
 
-    bool UdpSocket::initialize(const std::string& localAddr, int sndPort, int rcvPort,
-                               std::string* outError)
+    bool UdpSocket::initialize(int sndPort, int rcvPort, std::string* outError)
     {
         close();
-        _sendAddr = localAddr;
         _sendPort = sndPort;
 
 #ifdef WIN32

@@ -106,7 +106,7 @@ namespace aerovista::sync
         resetHostSession();
 
         std::string udpError;
-        if (!_udp.initialize(_local.bindAddr, _local.udpPortSend, _local.udpPortRecv, &udpError))
+        if (!_udp.initialize(_local.udpPortSend, _local.udpPortRecv, &udpError))
         {
             std::cerr << "IgSync: UDP open failed: " << udpError << "\n";
             return false;

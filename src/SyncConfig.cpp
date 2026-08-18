@@ -108,9 +108,8 @@ namespace aerovista::sync
 
     HostConfig parseHostConfig(const sync_json::JsonObject& obj)
     {
-        sync_json::rejectUnknownKeys(obj, {"bindAddr", "udpPortSend", "udpPortRecv", "tcpPort"});
+        sync_json::rejectUnknownKeys(obj, {"udpPortSend", "udpPortRecv", "tcpPort"});
         HostConfig cfg;
-        cfg.bindAddr = sync_json::requireString(obj, "bindAddr");
         cfg.udpPortSend = sync_json::requireInt(obj, "udpPortSend");
         cfg.udpPortRecv = sync_json::requireInt(obj, "udpPortRecv");
         cfg.tcpPort = sync_json::requireInt(obj, "tcpPort");
@@ -119,10 +118,9 @@ namespace aerovista::sync
 
     IgConfig parseIgConfig(const sync_json::JsonObject& obj)
     {
-        sync_json::rejectUnknownKeys(obj, {"bindAddr", "udpPortSend", "udpPortRecv", "targetAddr", "targetTcpPort",
+        sync_json::rejectUnknownKeys(obj, {"udpPortSend", "udpPortRecv", "targetAddr", "targetTcpPort",
                                            "targetUdpPortRecv"});
         IgConfig cfg;
-        cfg.bindAddr = sync_json::requireString(obj, "bindAddr");
         cfg.udpPortSend = sync_json::requireInt(obj, "udpPortSend");
         cfg.udpPortRecv = sync_json::requireInt(obj, "udpPortRecv");
         cfg.targetAddr = sync_json::requireString(obj, "targetAddr");
