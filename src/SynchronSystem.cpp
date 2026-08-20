@@ -95,7 +95,7 @@ namespace aerovista::sync
 
             if (!_ig->connect(role.igConfig))
             {
-                if (syncSystem.requireIgConnect)
+                if (syncSystem.requireConnectedIg)
                 {
                     std::cerr << "SynchronSystem: IgSync connect failed\n";
                     shutdown();

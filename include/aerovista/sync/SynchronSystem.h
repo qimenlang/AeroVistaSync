@@ -45,7 +45,7 @@ namespace aerovista::sync
         static std::unique_ptr<SynchronSystem> create();
 
         /// 初始化 IG 决策器：按 role 启动 IgSync，并应用装配配置
-        /// （channelId / offsetDeg / hostEyeStalePolicy / requireIgConnect）。
+        /// （channelId / offsetDeg / hostEyeStalePolicy / requireConnectedIg）。
         bool initialize(const SyncRoleConfig& role, const SyncSystemConfig& syncSystem);
         void shutdown();
 
