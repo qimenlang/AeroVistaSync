@@ -10,11 +10,10 @@ namespace aerovista::sync
     }
 
     TcpSocket::TcpSocket(TcpSocket&& other) noexcept
-        : _sock(other._sock), _listening(other._listening), _wsaAcquired(other._wsaAcquired)
+        : _sock(other._sock), _listening(other._listening), _wsaAcquired(other._wsaAcquired.exchange(false))
     {
         other._sock = kInvalid;
         other._listening = false;
-        other._wsaAcquired = false;
     }
 
     TcpSocket& TcpSocket::operator=(TcpSocket&& other) noexcept
@@ -24,10 +23,9 @@ namespace aerovista::sync
             close();
             _sock = other._sock;
             _listening = other._listening;
-            _wsaAcquired = other._wsaAcquired;
+            _wsaAcquired = other._wsaAcquired.exchange(false);
             other._sock = kInvalid;
             other._listening = false;
-            other._wsaAcquired = false;
         }
         return *this;
     }
@@ -35,11 +33,8 @@ namespace aerovista::sync
     void TcpSocket::close()
     {
         socket_common::closeHandle(_sock);
-        if (_wsaAcquired)
-        {
+        if (_wsaAcquired.exchange(false))
             socket_common::releaseWsa();
-            _wsaAcquired = false;
-        }
         _listening = false;
     }
 

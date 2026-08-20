@@ -81,8 +81,9 @@ namespace aerovista::sync
 
     void IgSync::shutdown()
     {
-        _tcp.close();
+        // 先停命令线程（内部 close 唤醒 + join），命令线程退出后 close 收敛到本线程；atomic 兜底。
         stopCommandThread();
+        _tcp.close();
         {
             std::lock_guard lock(_pendingMutex);
             _pendingCommands.clear();
@@ -330,8 +331,8 @@ namespace aerovista::sync
         int handshakeFails = 0;
         for (int attempt = 0; attempt < tcpRetryAttempts; ++attempt)
         {
-            _tcp.close();
             stopCommandThread();
+            _tcp.close();
             drainUdp();
 
             if (!_tcp.connect(config.targetAddr, config.targetTcpPort, tcpConnectTimeoutMs))
@@ -379,6 +380,10 @@ namespace aerovista::sync
     {
         if (_cmdThreadRunning.exchange(false))
         {
+            // 先置位、再 close 唤醒阻塞在 recv 的命令线程：命令线程醒来后 load() 读到 false，
+            // 不再走 markDisconnected 分支，close 因此收敛到调用方线程后再 join。
+            // _wsaAcquired 的原子令牌仍兜底并发 close 的 release 唯一性。
+            _tcp.close();
             if (_cmdThread.joinable())
                 _cmdThread.join();
         }

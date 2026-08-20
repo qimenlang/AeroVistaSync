@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <atomic>
 #include <string>
 
 #ifdef WIN32
@@ -85,6 +86,6 @@ namespace aerovista::sync
 
         Handle _sock = kInvalid;
         bool _listening = false;
-        bool _wsaAcquired = false;
+        std::atomic<bool> _wsaAcquired{false};
     };
 } // namespace aerovista::sync

@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <atomic>
 #include <string>
 
 #ifdef WIN32
@@ -62,6 +63,6 @@ namespace aerovista::sync
         Handle _recvSock = kInvalid;
         bool _valid = false;
         int _sendPort = 0;
-        bool _wsaAcquired = false;
+        std::atomic<bool> _wsaAcquired{false};
     };
 } // namespace aerovista::sync

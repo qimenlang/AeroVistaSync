@@ -58,11 +58,8 @@ namespace aerovista::sync
 #endif
             _recvSock = kInvalid;
         }
-        if (_wsaAcquired)
-        {
+        if (_wsaAcquired.exchange(false))
             socket_common::releaseWsa();
-            _wsaAcquired = false;
-        }
         _valid = false;
     }
 
