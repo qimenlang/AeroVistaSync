@@ -2,12 +2,14 @@
 
 #include <aerovista/sync/CigiWire.h>
 #include <aerovista/sync/SyncConfig.h>
+#include <aerovista/sync/TcpSocket.h>
 #include <aerovista/sync/UdpSocket.h>
 
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -17,16 +19,6 @@
 
 namespace aerovista::sync
 {
-#ifdef WIN32
-#    ifndef NOMINMAX
-#        define NOMINMAX
-#    endif
-#    include <winsock2.h>
-    using SocketHandle = SOCKET;
-#else
-    using SocketHandle = int;
-#endif
-
     /// Host 侧同步端点：UDP 同步面 + TCP 命令监听。
     class HostSync
     {
@@ -80,7 +72,8 @@ namespace aerovista::sync
     private:
         struct IgPeer
         {
-            SocketHandle tcp = static_cast<SocketHandle>(-1);
+            std::uint64_t clientId = 0;
+            std::shared_ptr<TcpSocket> tcp;
             std::string ip;
             uint32_t udpRecvPort = 0;
             bool tcpReady = false;
@@ -89,25 +82,23 @@ namespace aerovista::sync
 
         void acceptLoop();
         void udpLoop();
-        void handleClient(SocketHandle client, std::string peerIp);
-        void commandReadLoop(SocketHandle client);
-        void closeSocket(SocketHandle& s);
+        void handleClient(std::shared_ptr<TcpSocket> client, std::string peerIp);
+        void commandReadLoop(const std::shared_ptr<TcpSocket>& client, std::uint64_t clientId);
         void joinClientThreads();
         int countReadyUnlocked() const;
         void processUdpDatagram(const unsigned char* buf, int n, const char* fromIp);
         void pollUdp();
 
         // 命令面辅助（初版 §5.2 / §3.1）
-        void handleCommandReply(SocketHandle client, const cigi_wire::CommandMsg& msg);
-        bool waitReceivedAck(SocketHandle client, std::uint16_t seq, std::uint32_t timeoutMs);
-        bool sendAllTcp(SocketHandle s, const void* data, int len);
-        void markPeerDisconnected(SocketHandle client);
+        void handleCommandReply(std::uint64_t clientId, const cigi_wire::CommandMsg& msg);
+        bool waitReceivedAck(std::uint64_t clientId, std::uint16_t seq, std::uint32_t timeoutMs);
+        void markPeerDisconnected(std::uint64_t clientId);
         void clearReceivedAcks();
 
         HostConfig _local{};
         SyncPaceConfig _pace{};
         UdpSocket _udp;
-        SocketHandle _listenSocket = static_cast<SocketHandle>(-1);
+        TcpSocket _tcp;
 
         std::atomic<bool> _threadsRunning{false};
         std::atomic<HostStatus> _status{HostStatus::IDLE};
@@ -129,9 +120,10 @@ namespace aerovista::sync
 
         // 命令面状态（初版 §5）
         std::uint16_t _cmdSeq = 0;
+        std::uint64_t _nextClientId = 0;
         std::mutex _cmdMutex;
         std::condition_variable _cmdCv;
-        std::unordered_map<SocketHandle, std::unordered_set<std::uint16_t>> _receivedSeqByPeer;
+        std::unordered_map<std::uint64_t, std::unordered_set<std::uint16_t>> _receivedSeqByPeer;
         mutable std::mutex _resultMutex;
         std::uint16_t _lastResultSeq = 0;
         bool _lastResultAck = false;

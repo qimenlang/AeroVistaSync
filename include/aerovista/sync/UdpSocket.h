@@ -45,6 +45,9 @@ namespace aerovista::sync
         /// 向显式 IPv4 目标发送数据报。返回发送字节数或 -1。
         int sendTo(const std::string& ip, int port, const void* buf, int size);
 
+        /// 接收 socket 实际绑定的本地端口（`rcvPort=0` 时由 OS 分配）。无效返回 0。
+        int localPort() const;
+
     private:
 #ifdef WIN32
         using Handle = SOCKET;
@@ -59,8 +62,6 @@ namespace aerovista::sync
         Handle _recvSock = kInvalid;
         bool _valid = false;
         int _sendPort = 0;
-#ifdef WIN32
         bool _wsaAcquired = false;
-#endif
     };
 } // namespace aerovista::sync

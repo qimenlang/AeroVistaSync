@@ -7,51 +7,11 @@
 #include <iostream>
 #include <vector>
 
-#ifdef WIN32
-#    include <ws2tcpip.h>
-#else
-#    include <arpa/inet.h>
-#    include <errno.h>
-#    include <fcntl.h>
-#    include <netinet/in.h>
-#    include <sys/socket.h>
-#    include <unistd.h>
-#endif
-
 namespace aerovista::sync
 {
-    namespace
-    {
-#ifdef WIN32
-        constexpr SocketHandle kInvalid = INVALID_SOCKET;
-        bool isValidSock(SocketHandle s)
-        {
-            return s != INVALID_SOCKET;
-        }
-#else
-        constexpr SocketHandle kInvalid = -1;
-        bool isValidSock(SocketHandle s)
-        {
-            return s >= 0;
-        }
-#endif
-    } // namespace
-
     HostSync::~HostSync()
     {
         shutdown();
-    }
-
-    void HostSync::closeSocket(SocketHandle& s)
-    {
-        if (!isValidSock(s))
-            return;
-#ifdef WIN32
-        closesocket(s);
-#else
-        close(s);
-#endif
-        s = kInvalid;
     }
 
     void HostSync::joinClientThreads()
@@ -216,50 +176,13 @@ namespace aerovista::sync
             return false;
         }
 
-#ifdef WIN32
-        _listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-#else
-        _listenSocket = socket(AF_INET, SOCK_STREAM, 0);
-#endif
-        if (!isValidSock(_listenSocket))
+        std::string tcpError;
+        if (!_tcp.listen(_local.tcpPort, &tcpError))
         {
+            std::cerr << "HostSync: TCP listen failed on " << _local.tcpPort << ": " << tcpError << "\n";
             _udp.close();
             return false;
         }
-
-        int yes = 1;
-#ifdef WIN32
-        setsockopt(_listenSocket, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&yes), sizeof(yes));
-#else
-        setsockopt(_listenSocket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
-#endif
-
-        sockaddr_in addr{};
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(static_cast<u_short>(_local.tcpPort));
-        addr.sin_addr.s_addr = htonl(INADDR_ANY);
-
-        if (bind(_listenSocket, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0)
-        {
-            std::cerr << "HostSync: TCP bind failed on " << _local.tcpPort << "\n";
-            closeSocket(_listenSocket);
-            _udp.close();
-            return false;
-        }
-
-        if (listen(_listenSocket, 16) != 0)
-        {
-            closeSocket(_listenSocket);
-            _udp.close();
-            return false;
-        }
-
-#ifdef WIN32
-        u_long nonBlock = 1;
-        ioctlsocket(_listenSocket, FIONBIO, &nonBlock);
-#else
-        fcntl(_listenSocket, F_SETFL, O_NONBLOCK);
-#endif
 
         _threadsRunning = true;
         _acceptThread = std::thread(&HostSync::acceptLoop, this);
@@ -272,13 +195,14 @@ namespace aerovista::sync
     {
         _threadsRunning = false;
         _status = HostStatus::IDLE;
-        closeSocket(_listenSocket);
+        _tcp.close();
 
         // 先关 peer socket（唤醒阻塞 recv 的命令读循环），再 join 客户端线程。
         {
             std::lock_guard lock(_peersMutex);
             for (auto& p : _peers)
-                closeSocket(p.tcp);
+                if (p.tcp)
+                    p.tcp->close();
         }
         if (_acceptThread.joinable())
             _acceptThread.join();
@@ -301,27 +225,15 @@ namespace aerovista::sync
     {
         while (_threadsRunning)
         {
-            sockaddr_in clientAddr{};
-#ifdef WIN32
-            int len = sizeof(clientAddr);
-#else
-            socklen_t len = sizeof(clientAddr);
-#endif
-            SocketHandle client = accept(_listenSocket, reinterpret_cast<sockaddr*>(&clientAddr), &len);
-            if (!isValidSock(client))
+            auto client = std::make_shared<TcpSocket>();
+            std::string peerIp;
+            if (!_tcp.accept(*client, &peerIp))
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
                 continue;
             }
 
-            char ipBuf[64]{};
-#ifdef WIN32
-            strncpy_s(ipBuf, inet_ntoa(clientAddr.sin_addr), _TRUNCATE);
-#else
-            std::snprintf(ipBuf, sizeof(ipBuf), "%s", inet_ntoa(clientAddr.sin_addr));
-#endif
-
-            std::thread worker(&HostSync::handleClient, this, client, std::string(ipBuf));
+            std::thread worker(&HostSync::handleClient, this, std::move(client), peerIp);
             {
                 std::lock_guard lock(_clientThreadsMutex);
                 _clientThreads.push_back(std::move(worker));
@@ -329,35 +241,22 @@ namespace aerovista::sync
         }
     }
 
-    void HostSync::handleClient(SocketHandle client, std::string peerIp)
+    void HostSync::handleClient(std::shared_ptr<TcpSocket> client, std::string peerIp)
     {
-#ifdef WIN32
-        DWORD timeoutMs = 1000;
-        setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeoutMs), sizeof(timeoutMs));
-#else
-        timeval tv{};
-        tv.tv_sec = 1;
-        tv.tv_usec = 0;
-        setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-#endif
-
         sync_proto::WireMsg hello{};
-#ifdef WIN32
-        const int n = recv(client, reinterpret_cast<char*>(&hello), sizeof(hello), 0);
-#else
-        const int n = static_cast<int>(::recv(client, &hello, sizeof(hello), 0));
-#endif
-        if (n != static_cast<int>(sizeof(hello)) || hello.magic != sync_proto::kMagic ||
+        if (!client->recvAll(&hello, sizeof(hello), 1000) || hello.magic != sync_proto::kMagic ||
             hello.type != static_cast<uint32_t>(sync_proto::MsgType::HELLO))
         {
-            closeSocket(client);
             return;
         }
 
+        std::uint64_t clientId = 0;
         bool udpAlready = false;
         {
             std::lock_guard lock(_peersMutex);
+            clientId = ++_nextClientId;
             IgPeer peer;
+            peer.clientId = clientId;
             peer.tcp = client;
             peer.ip = peerIp;
             peer.udpRecvPort = hello.udpRecvPort;
@@ -371,11 +270,7 @@ namespace aerovista::sync
         ack.magic = sync_proto::kMagic;
         ack.type = static_cast<uint32_t>(sync_proto::MsgType::HELLO_ACK);
         ack.udpRecvPort = static_cast<uint32_t>(_local.udpPortRecv);
-#ifdef WIN32
-        send(client, reinterpret_cast<const char*>(&ack), sizeof(ack), 0);
-#else
-        ::send(client, &ack, sizeof(ack), 0);
-#endif
+        client->sendAll(&ack, sizeof(ack));
 
         if (udpAlready)
         {
@@ -388,55 +283,37 @@ namespace aerovista::sync
                         reinterpret_cast<const unsigned char*>(&udpAck), sizeof(udpAck));
         }
 
-        commandReadLoop(client);
-        markPeerDisconnected(client);
-        closeSocket(client);
+        commandReadLoop(client, clientId);
+        markPeerDisconnected(clientId);
     }
 
-    void HostSync::commandReadLoop(SocketHandle client)
+    void HostSync::commandReadLoop(const std::shared_ptr<TcpSocket>& client, std::uint64_t clientId)
     {
         // 命令读循环（初版 §3.1）：持续读 peer TCP → 分帧 → 解析 RECEIVED/RESULT。
-        // 本线程是该 socket 的唯一 recv 者；EOF（recv 返回 0）即判定断线。
+        // 本线程是该 socket 的唯一 recv 者；PEER_CLOSED（对端关闭）即判定断线。
         cigi_wire::CommandFrameAssembler assembler;
         unsigned char cmdBuf[4096];
         for (;;)
         {
-#ifdef WIN32
-            const int n = recv(client, reinterpret_cast<char*>(cmdBuf), sizeof(cmdBuf), 0);
-            if (n == 0)
-                break; // EOF：IG 主动断开
-            if (n < 0)
-            {
-                const int err = WSAGetLastError();
-                if (err == WSAETIMEDOUT || err == WSAEWOULDBLOCK)
-                    continue; // 读超时（SO_RCVTIMEO）≠ 断线
+            const RecvOutcome outcome = client->recv(cmdBuf, sizeof(cmdBuf));
+            if (outcome.kind == RecvKind::PEER_CLOSED || outcome.kind == RecvKind::IO_ERROR)
                 break;
-            }
-#else
-            const int n = static_cast<int>(::recv(client, cmdBuf, sizeof(cmdBuf), 0));
-            if (n == 0)
-                break;
-            if (n < 0)
-            {
-                if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
-                    continue;
-                break;
-            }
-#endif
-            assembler.feed(cmdBuf, n, [this, client](const cigi_wire::CommandMsg& msg) {
-                handleCommandReply(client, msg);
+            if (outcome.kind == RecvKind::TIMEOUT)
+                continue; // 读超时（SO_RCVTIMEO）≠ 断线
+            assembler.feed(cmdBuf, outcome.bytes, [this, clientId](const cigi_wire::CommandMsg& msg) {
+                handleCommandReply(clientId, msg);
             });
         }
     }
 
-    void HostSync::handleCommandReply(SocketHandle client, const cigi_wire::CommandMsg& msg)
+    void HostSync::handleCommandReply(std::uint64_t clientId, const cigi_wire::CommandMsg& msg)
     {
         const std::uint16_t kind = static_cast<std::uint16_t>(msg.msgId & 0xF000);
         if (kind == cigi_wire::kReceivedReplyBase)
         {
             // RECEIVED：记录该 peer 已确认的 seq，唤醒阻塞等 RECEIVED 的 sendCommand。
             std::lock_guard lock(_cmdMutex);
-            _receivedSeqByPeer[client].insert(msg.seq);
+            _receivedSeqByPeer[clientId].insert(msg.seq);
             _cmdCv.notify_all();
             return;
         }
@@ -459,13 +336,13 @@ namespace aerovista::sync
     bool HostSync::sendCommand(cigi_wire::Command cmd, const std::vector<std::uint8_t>& payload,
                                std::uint32_t receivedTimeoutMs)
     {
-        std::vector<SocketHandle> targets;
+        std::vector<std::pair<std::uint64_t, std::shared_ptr<TcpSocket>>> targets;
         {
             std::lock_guard lock(_peersMutex);
             for (const auto& p : _peers)
             {
-                if (p.tcpReady && p.udpReady)
-                    targets.push_back(p.tcp);
+                if (p.tcpReady && p.udpReady && p.tcp)
+                    targets.emplace_back(p.clientId, p.tcp);
             }
         }
         if (targets.empty())
@@ -481,57 +358,40 @@ namespace aerovista::sync
             return false;
 
         bool allDelivered = true;
-        for (const SocketHandle sock : targets)
+        for (const auto& [clientId, sock] : targets)
         {
-            if (!sendAllTcp(sock, wire.data(), static_cast<int>(wire.size())))
+            if (!sock->sendAll(wire.data(), static_cast<int>(wire.size())))
             {
                 allDelivered = false;
                 continue;
             }
-            if (!waitReceivedAck(sock, seq, receivedTimeoutMs))
+            if (!waitReceivedAck(clientId, seq, receivedTimeoutMs))
                 allDelivered = false;
         }
         return allDelivered;
     }
 
-    bool HostSync::waitReceivedAck(SocketHandle client, std::uint16_t seq, std::uint32_t timeoutMs)
+    bool HostSync::waitReceivedAck(std::uint64_t clientId, std::uint16_t seq, std::uint32_t timeoutMs)
     {
         std::unique_lock lock(_cmdMutex);
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
-        while (_receivedSeqByPeer[client].count(seq) == 0)
+        while (_receivedSeqByPeer[clientId].count(seq) == 0)
         {
             if (_cmdCv.wait_until(lock, deadline) == std::cv_status::timeout)
-                return _receivedSeqByPeer[client].count(seq) > 0;
+                return _receivedSeqByPeer[clientId].count(seq) > 0;
         }
         return true;
     }
 
-    bool HostSync::sendAllTcp(SocketHandle s, const void* data, int len)
-    {
-        const char* p = static_cast<const char*>(data);
-        int sent = 0;
-        while (sent < len)
-        {
-#ifdef WIN32
-            const int n = send(s, p + sent, len - sent, 0);
-#else
-            const int n = static_cast<int>(::send(s, p + sent, static_cast<size_t>(len - sent), 0));
-#endif
-            if (n <= 0)
-                return false;
-            sent += n;
-        }
-        return true;
-    }
-
-    void HostSync::markPeerDisconnected(SocketHandle client)
+    void HostSync::markPeerDisconnected(std::uint64_t clientId)
     {
         std::lock_guard lock(_peersMutex);
         for (auto it = _peers.begin(); it != _peers.end(); ++it)
         {
-            if (it->tcp == client)
+            if (it->clientId == clientId)
             {
-                closeSocket(it->tcp);
+                if (it->tcp)
+                    it->tcp->close();
                 _peers.erase(it);
                 return;
             }

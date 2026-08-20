@@ -9,35 +9,10 @@
 #include <thread>
 #include <vector>
 
-#ifdef WIN32
-#    include <ws2tcpip.h>
-#else
-#    include <arpa/inet.h>
-#    include <errno.h>
-#    include <fcntl.h>
-#    include <netinet/in.h>
-#    include <sys/socket.h>
-#    include <unistd.h>
-#endif
-
 namespace aerovista::sync
 {
     namespace
     {
-#ifdef WIN32
-        constexpr IgSocketHandle kInvalid = INVALID_SOCKET;
-        bool isValidSock(IgSocketHandle s)
-        {
-            return s != INVALID_SOCKET;
-        }
-#else
-        constexpr IgSocketHandle kInvalid = -1;
-        bool isValidSock(IgSocketHandle s)
-        {
-            return s >= 0;
-        }
-#endif
-
         // 本机单调时钟当前时刻，单位 us（时钟同步方案.md §4.2：必须 steady_clock）。
         std::uint64_t nowUs()
         {
@@ -52,18 +27,6 @@ namespace aerovista::sync
         shutdown();
     }
 
-    void IgSync::closeTcp()
-    {
-        if (!isValidSock(_tcp))
-            return;
-#ifdef WIN32
-        closesocket(_tcp);
-#else
-        close(_tcp);
-#endif
-        _tcp = kInvalid;
-    }
-
     void IgSync::drainUdp()
     {
         unsigned char drain[64];
@@ -74,7 +37,7 @@ namespace aerovista::sync
 
     void IgSync::markDisconnected()
     {
-        closeTcp();
+        _tcp.close();
         _tcpConnected = false;
         _udpSynced = false;
         _status = IgStatus::IDLE;
@@ -118,7 +81,7 @@ namespace aerovista::sync
 
     void IgSync::shutdown()
     {
-        closeTcp();
+        _tcp.close();
         stopCommandThread();
         {
             std::lock_guard lock(_pendingMutex);
@@ -303,146 +266,6 @@ namespace aerovista::sync
         }
     }
 
-    bool IgSync::sendAll(IgSocketHandle s, const void* data, int len)
-    {
-        const char* p = static_cast<const char*>(data);
-        int sent = 0;
-        while (sent < len)
-        {
-#ifdef WIN32
-            const int n = send(s, p + sent, len - sent, 0);
-#else
-            const int n = static_cast<int>(::send(s, p + sent, static_cast<size_t>(len - sent), 0));
-#endif
-            if (n <= 0)
-                return false;
-            sent += n;
-        }
-        return true;
-    }
-
-    bool IgSync::recvAll(IgSocketHandle s, void* data, int len, int timeoutMs)
-    {
-#ifdef WIN32
-        DWORD tv = static_cast<DWORD>(timeoutMs);
-        setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&tv), sizeof(tv));
-#else
-        timeval tv{};
-        tv.tv_sec = timeoutMs / 1000;
-        tv.tv_usec = (timeoutMs % 1000) * 1000;
-        setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-#endif
-
-        char* p = static_cast<char*>(data);
-        int got = 0;
-        while (got < len)
-        {
-#ifdef WIN32
-            const int n = recv(s, p + got, len - got, 0);
-#else
-            const int n = static_cast<int>(::recv(s, p + got, static_cast<size_t>(len - got), 0));
-#endif
-            if (n <= 0)
-                return false;
-            got += n;
-        }
-        return true;
-    }
-
-    bool IgSync::tcpConnect(const std::string& ip, int port, int timeoutMs)
-    {
-#ifdef WIN32
-        _tcp = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-#else
-        _tcp = socket(AF_INET, SOCK_STREAM, 0);
-#endif
-        if (!isValidSock(_tcp))
-            return false;
-
-        sockaddr_in addr{};
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(static_cast<u_short>(port));
-        addr.sin_addr.s_addr = inet_addr(ip.c_str());
-        if (addr.sin_addr.s_addr == INADDR_NONE)
-        {
-            closeTcp();
-            return false;
-        }
-
-#ifdef WIN32
-        u_long nonBlock = 1;
-        ioctlsocket(_tcp, FIONBIO, &nonBlock);
-#else
-        const int flags = fcntl(_tcp, F_GETFL, 0);
-        fcntl(_tcp, F_SETFL, flags | O_NONBLOCK);
-#endif
-
-        const int cr = ::connect(_tcp, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
-#ifdef WIN32
-        if (cr == 0)
-        {
-            nonBlock = 0;
-            ioctlsocket(_tcp, FIONBIO, &nonBlock);
-            return true;
-        }
-        {
-            const int err = WSAGetLastError();
-            if (err != WSAEWOULDBLOCK && err != WSAEINPROGRESS)
-            {
-                closeTcp();
-                return false;
-            }
-        }
-#else
-        if (cr == 0)
-        {
-            fcntl(_tcp, F_SETFL, flags);
-            return true;
-        }
-        if (errno != EINPROGRESS)
-        {
-            closeTcp();
-            return false;
-        }
-#endif
-
-        fd_set wfds;
-        FD_ZERO(&wfds);
-        FD_SET(_tcp, &wfds);
-        timeval tv{};
-        tv.tv_sec = timeoutMs / 1000;
-        tv.tv_usec = (timeoutMs % 1000) * 1000;
-
-#ifdef WIN32
-        const int sel = select(0, nullptr, &wfds, nullptr, &tv);
-#else
-        const int sel = select(_tcp + 1, nullptr, &wfds, nullptr, &tv);
-#endif
-        if (sel <= 0)
-        {
-            closeTcp();
-            return false;
-        }
-
-        int soError = 0;
-#ifdef WIN32
-        int optLen = sizeof(soError);
-        getsockopt(_tcp, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&soError), &optLen);
-        nonBlock = 0;
-        ioctlsocket(_tcp, FIONBIO, &nonBlock);
-#else
-        socklen_t optLen = sizeof(soError);
-        getsockopt(_tcp, SOL_SOCKET, SO_ERROR, &soError, &optLen);
-        fcntl(_tcp, F_SETFL, flags);
-#endif
-        if (soError != 0)
-        {
-            closeTcp();
-            return false;
-        }
-        return true;
-    }
-
     bool IgSync::waitUdpAck(int timeoutMs)
     {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
@@ -470,11 +293,11 @@ namespace aerovista::sync
         hello.magic = sync_proto::kMagic;
         hello.type = static_cast<uint32_t>(sync_proto::MsgType::HELLO);
         hello.udpRecvPort = static_cast<uint32_t>(_local.udpPortRecv);
-        if (!sendAll(_tcp, &hello, sizeof(hello)))
+        if (!_tcp.sendAll(&hello, sizeof(hello)))
             return false;
 
         sync_proto::WireMsg ack{};
-        if (!recvAll(_tcp, &ack, sizeof(ack), handshakeTimeoutMs) || ack.magic != sync_proto::kMagic ||
+        if (!_tcp.recvAll(&ack, sizeof(ack), handshakeTimeoutMs) || ack.magic != sync_proto::kMagic ||
             ack.type != static_cast<uint32_t>(sync_proto::MsgType::HELLO_ACK))
             return false;
 
@@ -507,11 +330,11 @@ namespace aerovista::sync
         int handshakeFails = 0;
         for (int attempt = 0; attempt < tcpRetryAttempts; ++attempt)
         {
-            closeTcp();
+            _tcp.close();
             stopCommandThread();
             drainUdp();
 
-            if (!tcpConnect(config.targetAddr, config.targetTcpPort, tcpConnectTimeoutMs))
+            if (!_tcp.connect(config.targetAddr, config.targetTcpPort, tcpConnectTimeoutMs))
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(25));
                 continue;
@@ -529,13 +352,13 @@ namespace aerovista::sync
                 return true;
             }
 
-            closeTcp();
+            _tcp.close();
             if (++handshakeFails >= handshakeRetryAttempts)
                 break;
             std::this_thread::sleep_for(std::chrono::milliseconds(25));
         }
 
-        closeTcp();
+        _tcp.close();
         _tcpConnected = false;
         _udpSynced = false;
         return false;
@@ -563,49 +386,24 @@ namespace aerovista::sync
 
     void IgSync::commandLoop()
     {
-#ifdef WIN32
-        DWORD timeoutMs = commandRecvTimeoutMs;
-        setsockopt(_tcp, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeoutMs), sizeof(timeoutMs));
-#else
-        timeval tv{};
-        tv.tv_sec = 0;
-        tv.tv_usec = commandRecvTimeoutMs * 1000;
-        setsockopt(_tcp, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-#endif
+        _tcp.setRecvTimeout(commandRecvTimeoutMs);
 
         cigi_wire::CommandFrameAssembler assembler;
         unsigned char buf[4096];
         while (_cmdThreadRunning)
         {
-            if (!isValidSock(_tcp))
+            if (!_tcp.valid())
                 break;
-#ifdef WIN32
-            const int n = recv(_tcp, reinterpret_cast<char*>(buf), sizeof(buf), 0);
-            if (n == 0)
-                break; // Host 断开
-            if (n < 0)
-            {
-                const int err = WSAGetLastError();
-                if (err == WSAETIMEDOUT || err == WSAEWOULDBLOCK)
-                    continue; // 读超时：检查退出标志
+            const RecvOutcome outcome = _tcp.recv(buf, sizeof(buf));
+            if (outcome.kind == RecvKind::PEER_CLOSED || outcome.kind == RecvKind::IO_ERROR)
                 break;
-            }
-#else
-            const int n = static_cast<int>(::recv(_tcp, buf, sizeof(buf), 0));
-            if (n == 0)
-                break;
-            if (n < 0)
-            {
-                if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
-                    continue;
-                break;
-            }
-#endif
-            assembler.feed(buf, n, [this](const cigi_wire::CommandMsg& msg) {
+            if (outcome.kind == RecvKind::TIMEOUT)
+                continue; // 读超时：检查退出标志
+            assembler.feed(buf, outcome.bytes, [this](const cigi_wire::CommandMsg& msg) {
                 processCommand(static_cast<cigi_wire::Command>(msg.msgId), msg.seq, msg.payload);
             });
         }
-        // recv EOF/错误退出 = Host 断开（TCP 存活检测并入命令读循环线程，§3.3）。
+        // recv PEER_CLOSED/错误退出 = Host 断开（TCP 存活检测并入命令读循环线程，§3.3）。
         // 主动 shutdown（_cmdThreadRunning 被置 false）时跳过——shutdown 已处理连接状态。
         if (_cmdThreadRunning.load())
             markDisconnected();
@@ -685,8 +483,8 @@ namespace aerovista::sync
         if (!cigi_wire::packCommandMsg(msg, wire))
             return;
         std::lock_guard lock(_cmdSendMutex);
-        if (isValidSock(_tcp))
-            sendAll(_tcp, wire.data(), static_cast<int>(wire.size()));
+        if (_tcp.valid())
+            _tcp.sendAll(wire.data(), static_cast<int>(wire.size()));
     }
 
     void IgSync::queueCommand(cigi_wire::Command cmd, std::uint16_t seq,

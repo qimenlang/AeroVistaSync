@@ -2,6 +2,7 @@
 
 #include <aerovista/sync/CigiWire.h>
 #include <aerovista/sync/SyncConfig.h>
+#include <aerovista/sync/TcpSocket.h>
 #include <aerovista/sync/UdpSocket.h>
 
 #include <atomic>
@@ -15,16 +16,6 @@
 
 namespace aerovista::sync
 {
-#ifdef WIN32
-#    ifndef NOMINMAX
-#        define NOMINMAX
-#    endif
-#    include <winsock2.h>
-    using IgSocketHandle = SOCKET;
-#else
-    using IgSocketHandle = int;
-#endif
-
     /// IG 侧同步端点：连接 Host，UDP 同步 + TCP 命令客户端。
     class IgSync
     {
@@ -130,11 +121,7 @@ namespace aerovista::sync
         static constexpr int handshakeRetryAttempts = 8;
         static constexpr int commandRecvTimeoutMs = 100;
 
-        void closeTcp();
         void drainUdp();
-        bool tcpConnect(const std::string& ip, int port, int timeoutMs);
-        bool sendAll(IgSocketHandle s, const void* data, int len);
-        bool recvAll(IgSocketHandle s, void* data, int len, int timeoutMs);
         bool waitUdpAck(int timeoutMs);
         bool connectOnce(const IgConfig& config);
         void sendSofPacket(std::uint32_t frameCntr);
@@ -153,7 +140,7 @@ namespace aerovista::sync
         IgConfig _local{};
         IgConfig _hostTarget{};
         UdpSocket _udp;
-        IgSocketHandle _tcp = static_cast<IgSocketHandle>(-1);
+        TcpSocket _tcp;
 
         std::atomic<bool> _initialized{false};
         std::atomic<bool> _tcpConnected{false};

@@ -1,45 +1,13 @@
 ﻿#include <aerovista/sync/UdpSocket.h>
 
-#include <atomic>
+#include "SocketCommon.h"
+
 #include <cstdio>
 #include <cstring>
 #include <string>
 
-#ifndef WIN32
-#    include <fcntl.h>
-#endif
-
 namespace aerovista::sync
 {
-    namespace
-    {
-        bool setError(std::string* outError, const std::string& message)
-        {
-            if (outError)
-                *outError = message;
-            return false;
-        }
-
-#ifdef WIN32
-        std::atomic<int> gWsaRefCount{0};
-
-        void acquireWsa()
-        {
-            if (gWsaRefCount.fetch_add(1) == 0)
-            {
-                WSADATA wsainfo;
-                WSAStartup(MAKEWORD(2, 2), &wsainfo);
-            }
-        }
-
-        void releaseWsa()
-        {
-            if (gWsaRefCount.fetch_sub(1) == 1)
-                WSACleanup();
-        }
-#endif
-    } // namespace
-
     UdpSocket::~UdpSocket()
     {
         close();
@@ -50,16 +18,14 @@ namespace aerovista::sync
         close();
         _sendPort = sndPort;
 
-#ifdef WIN32
-        acquireWsa();
+        socket_common::acquireWsa();
         _wsaAcquired = true;
-#endif
 
         _sendSock = socket(AF_INET, SOCK_DGRAM, 0);
         if (_sendSock == kInvalid)
         {
             close();
-            return setError(outError, "create send socket failed");
+            return socket_common::setError(outError, "create send socket failed");
         }
 
         if (!openRecvSocket(rcvPort, outError))
@@ -92,13 +58,11 @@ namespace aerovista::sync
 #endif
             _recvSock = kInvalid;
         }
-#ifdef WIN32
         if (_wsaAcquired)
         {
-            releaseWsa();
+            socket_common::releaseWsa();
             _wsaAcquired = false;
         }
-#endif
         _valid = false;
     }
 
@@ -106,7 +70,7 @@ namespace aerovista::sync
     {
         _recvSock = socket(AF_INET, SOCK_DGRAM, 0);
         if (_recvSock == kInvalid)
-            return setError(outError, "create receive socket failed");
+            return socket_common::setError(outError, "create receive socket failed");
 
 #ifdef WIN32
         u_long nonBlock = 1;
@@ -120,7 +84,7 @@ namespace aerovista::sync
         addr.sin_addr.s_addr = htonl(INADDR_ANY);
         addr.sin_port = htons(static_cast<unsigned short>(rcvPort));
         if (bind(_recvSock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0)
-            return setError(outError, "bind receive socket to port " + std::to_string(rcvPort));
+            return socket_common::setError(outError, "bind receive socket to port " + std::to_string(rcvPort));
 
         return true;
     }
@@ -175,5 +139,20 @@ namespace aerovista::sync
 
         return sendto(_sendSock, reinterpret_cast<const char*>(buf), size, 0,
                       reinterpret_cast<const sockaddr*>(&dest), sizeof(dest));
+    }
+
+    int UdpSocket::localPort() const
+    {
+        if (!_valid)
+            return 0;
+        sockaddr_in addr{};
+#ifdef WIN32
+        int len = sizeof(addr);
+#else
+        socklen_t len = sizeof(addr);
+#endif
+        if (getsockname(_recvSock, reinterpret_cast<sockaddr*>(&addr), &len) != 0)
+            return 0;
+        return static_cast<int>(ntohs(addr.sin_port));
     }
 } // namespace aerovista::sync
