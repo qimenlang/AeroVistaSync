@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include <aerovista/sync/HostSync.h>
+#include <aerovista/sync/CigiWire.h>
 
 namespace aerovista::viewhost
 {
@@ -11,7 +11,7 @@ namespace aerovista::viewhost
     /// - dyawDeg/dpitchDeg：姿态增量（度）。
     /// 结果：lat clamp 到 [-89.9, 89.9]、lon/yaw normalize 到 (-180, 180]、
     ///       pitch clamp 到 [-89.9, 89.9]、alt 直接累加。
-    void applyManualStep(aerovista::sync::HostSync::EyePose& eye,
+    void applyManualStep(aerovista::sync::cigi_wire::EyePose& eye,
                          double dFwd, double dRight, double dUp,
                          double dyawDeg, double dpitchDeg);
 } // namespace aerovista::viewhost

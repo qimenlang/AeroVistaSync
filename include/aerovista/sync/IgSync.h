@@ -7,7 +7,9 @@
 #include <aerovista/sync/TcpSocket.h>
 #include <aerovista/sync/UdpSocket.h>
 
+#include "CigiBaseEntityPositionCtrl.h"
 #include "CigiBaseEventProcessor.h"
+#include "CigiBaseIGCtrl.h"
 #include "CigiIGSession.h"
 
 #include <atomic>
@@ -16,7 +18,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <string>
 #include <thread>
 #include <vector>
 
@@ -98,32 +99,14 @@ namespace aerovista::sync
         /// 最近处理的 Host IGCtrl 的 FrameCntr（无则 0）。
         std::uint32_t lastIgCtrlFrameCntr() const;
 
-        // ===== 命令面（状态同步设计初版.md §6） =====
-
-        /// 测试注入：模拟从 TCP 收到一条命令（cmd, seq, payload），走完整幂等/回执/执行路径。
-        void queueCommand(cigi_wire::Command cmd, std::uint16_t seq, const std::vector<std::uint8_t>& payload);
-
-        /// 测试注入：收到命令后延迟 delayMs 再回 RECEIVED（稳定复现 RECEIVED 超时）。
-        void setCommandReceivedDelayMs(std::uint32_t delayMs);
-
-        /// 业务执行回调：返回 true=成功（回 RESULT-ACK），false=失败（回 RESULT-NACK）。
-        void setCommandHandler(
-            std::function<bool(cigi_wire::Command cmd, std::uint16_t seq,
-                               const std::vector<std::uint8_t>& payload)>
-                handler);
-
-        // ===== 新契约命令面（状态同步设计初版.md §8.1） =====
+        // ===== 命令面（状态同步设计初版.md §8.1） =====
 
         /// 注册某个 CIGI 报文的业务 EventProcessor（透传到 CCL session 的 RegisterEventProcessor）。
         /// processor 由 engine 层定义；生命周期需覆盖 sync 会话（§8.1）。
         void registerEventProcessor(int packetId, CigiBaseEventProcessor* processor);
 
-        /// 最近执行的命令（幂等去重后）：测试观测。
-        cigi_wire::Command lastCommandMsgId() const;
-        std::uint16_t lastCommandSeq() const;
-        std::uint32_t commandCount() const;
-
-        /// 主线程每帧执行待办命令（场景归属主线程，状态同步设计初版.md §4）。由 SynchronSystem::update 调用。
+        /// 主线程每帧 drain TCP 命令面收包队列 → CCL 解包 → 触发业务 processor。
+        /// 由 SynchronSystem::update 调用（场景归属主线程，状态同步设计初版.md §4）。
         void runPendingCommands();
 
     private:
@@ -138,25 +121,34 @@ namespace aerovista::sync
         bool connectOnce(const IgConfig& config);
         void sendSofPacket(std::uint32_t frameCntr);
         void markDisconnected();
+        /// 解包一条 UDP 报文（主线程）：基础设施 processor 捕获帧节拍/眼点；收到新 IGCtrl 时回 SOF。
+        /// `receivedAtUs` 由 UDP I/O 线程在 recv 时刻记录（时钟同步方案.md §3 要求收到时刻）。
+        void processIncomingUdp(const unsigned char* buf, int n, std::uint64_t receivedAtUs, bool sendSof);
         /// 相位展开：把 raw（uint32, 10µs tick）累进 64 位单调 extendedTime（时钟同步方案.md §3）。
         void applyPhaseUnwrap(std::uint32_t raw);
-        /// 命令面：把一条 UDP 报文喂命令面 session 触发业务 processor（§8.2，与数据面解包正交）。
-        void dispatchCommandPlaneFrame(const unsigned char* buf, int n);
-        /// 懒创建命令面 CCL 会话：仅 registerEventProcessor 首次注册时才构造。
-        /// CigiSession 构造/析构在 MSVC Debug 下约 80ms，未注册任何 processor 的纯数据面端点不应为此买单。
-        void ensureCmdSession()
+
+        // 数据面 I/O 线程（§5.1）：UDP recv（非阻塞）→ 入队 udpPayload；主线程 update() drain 解包。
+        void startUdpThread();
+        void stopUdpThread();
+        void udpLoop();
+        /// 创建 IG CCL 会话并注册基础设施 processor（IGCtrl 帧节拍 / ownship 眼点捕获）。
+        /// 数据面 + 命令面统一经此会话解包（矛盾 A，§8.2）；主线程调用。
+        void ensureSession()
         {
-            if (!_cmdSession)
-                _cmdSession = std::make_unique<CigiIGSession>(1, 4096, 1, 4096);
+            if (!_session)
+            {
+                _session = std::make_unique<CigiIGSession>(1, 4096, 1, 4096);
+                _session->GetIncomingMsgMgr().RegisterEventProcessor(CIGI_IG_CTRL_PACKET_ID_V4,
+                                                                    &_igCtrlProc);
+                _session->GetIncomingMsgMgr().RegisterEventProcessor(
+                    CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4, &_eyeProc);
+            }
         }
 
-        // 命令面（初版 §3.1 / §6）：命令读循环线程回 RECEIVED + 入队；主线程取队列执行 + 回 RESULT。
+        // 命令面 I/O 线程（§5.1）：TCP recv + 分帧 → 入队 tcpPayload；主线程 runPendingCommands 解包。
         void startCommandThread();
         void stopCommandThread();
         void commandLoop();
-        void processCommand(cigi_wire::Command cmd, std::uint16_t seq, const std::vector<std::uint8_t>& payload);
-        void enqueueCommand(cigi_wire::Command cmd, std::uint16_t seq, const std::vector<std::uint8_t>& payload);
-        void sendCommandReply(std::uint16_t replyMsgId, std::uint16_t seq);
 
         IgConfig _local{};
         IgConfig _hostTarget{};
@@ -183,33 +175,60 @@ namespace aerovista::sync
         std::uint64_t _extrapolateTimeoutUs = 200000; ///< 默认 200ms
         bool _frozen = false;
 
-        // 命令面状态（初版 §2.3 / §6）
-        struct PendingCommand
-        {
-            cigi_wire::Command cmd = cigi_wire::Command::LOAD_MODEL;
-            std::uint16_t seq = 0;
-            std::vector<std::uint8_t> payload;
-        };
         std::thread _cmdThread;
         std::atomic<bool> _cmdThreadRunning{false};
-        std::mutex _pendingMutex;
-        std::vector<PendingCommand> _pendingCommands; ///< 命令读循环线程入队，主线程 runPendingCommands 取走
-        std::mutex _cmdSendMutex;                     ///< 命令读循环线程（RECEIVED）与主线程（RESULT）都写 _tcp
 
-        mutable std::mutex _cmdStateMutex;
-        bool _hasCmdState = false;
-        std::uint16_t _cmdMaxSeq = 0;
-        cigi_wire::Command _lastCmdMsgId = cigi_wire::Command::LOAD_MODEL;
-        std::uint16_t _lastCmdSeq = 0;
-        std::uint32_t _cmdCount = 0;
-        std::uint32_t _cmdReceivedDelayMs = 0;
-        std::function<bool(cigi_wire::Command cmd, std::uint16_t seq,
-                           const std::vector<std::uint8_t>& payload)>
-            _cmdHandler;
+        // 数据面 + 命令面统一 CCL 会话（状态同步设计初版.md §8.1 / §5.1）；
+        // ensureSession 惰性创建，堆上分配（CigiSession 内含大 handler 表，栈上会溢出）。
+        std::unique_ptr<CigiIGSession> _session;
 
-        // 命令面 CCL 会话（状态同步设计初版.md §8.1）；懒初始化（ensureCmdSession），
-        // 堆上分配（CigiSession 内含大 handler 表，栈上会溢出）。
-        std::unique_ptr<CigiIGSession> _cmdSession;
+        // 基础设施 processor（sync 库内部注册，§8.1）：IGCtrl 帧节拍/时间戳、ownship 眼点。
+        class IgCtrlCaptureProc : public CigiBaseEventProcessor
+        {
+        public:
+            void OnPacketReceived(CigiBasePacket* packet) override;
+            void reset()
+            {
+                got = false;
+                frameCntr = 0;
+                timeStamp = 0;
+                timeStampValid = false;
+            }
+            bool got = false;
+            std::uint32_t frameCntr = 0;
+            std::uint32_t timeStamp = 0;
+            bool timeStampValid = false;
+        };
+
+        class EyeCaptureProc : public CigiBaseEventProcessor
+        {
+        public:
+            void OnPacketReceived(CigiBasePacket* packet) override;
+            void reset()
+            {
+                got = false;
+                eye = {};
+            }
+            bool got = false;
+            HostEye eye{};
+        };
+
+        IgCtrlCaptureProc _igCtrlProc;
+        EyeCaptureProc _eyeProc;
+
+        // 数据面 I/O 线程（§5.1）：UDP recv → 入队；主线程 update() drain 解包。
+        std::thread _udpThread;
+        std::atomic<bool> _udpThreadRunning{false};
+
+        // UDP payload 队列：一条数据报 = 原始字节 + I/O 线程记录的本机收到时刻（us，时钟同步方案.md §3）。
+        struct UdpDatagram
+        {
+            std::vector<unsigned char> bytes;
+            std::uint64_t receivedAtUs = 0;
+        };
+        std::mutex _udpPayloadMutex;
+        std::vector<UdpDatagram> _udpPayloadQueue;
+
         // 命令面收包队列：I/O 线程（commandLoop）分帧入队，主线程（runPendingCommands）drain 解包。
         std::mutex _tcpPayloadMutex;
         std::vector<std::vector<unsigned char>> _tcpPayloadQueue;

@@ -2,6 +2,10 @@
 #include <aerovista/sync/CigiWire.h>
 #include <aerovista/sync/SyncProtocol.h>
 
+#include "CigiBaseEntityPositionCtrl.h"
+#include "CigiEntityPositionCtrlV4.h"
+#include "CigiIGCtrlV4.h"
+
 #include <chrono>
 #include <cstring>
 #include <iostream>
@@ -83,10 +87,11 @@ namespace aerovista::sync
     {
         // 先停命令线程（内部 close 唤醒 + join），命令线程退出后 close 收敛到本线程；atomic 兜底。
         stopCommandThread();
+        stopUdpThread();
         _tcp.close();
         {
-            std::lock_guard lock(_pendingMutex);
-            _pendingCommands.clear();
+            std::lock_guard lock(_udpPayloadMutex);
+            _udpPayloadQueue.clear();
         }
         _tcpConnected = false;
         _udpSynced = false;
@@ -229,59 +234,101 @@ namespace aerovista::sync
         if (_tcpConnected && _udpSynced)
             _status = IgStatus::RUNNING;
 
-        unsigned char buf[4096]{};
-        for (;;)
+        ensureSession();
+
+        // 主线程 drain UDP payload 队列 → 统一 CCL 解包（§5.1 / §6：I/O 线程只 recv 入队）。
+        // 生产-消费：I/O 线程 1ms 轮询，drain 空队列时按 1ms 步进等待（最多 kMaxUdpDrainWaitMs），
+        // 保证刚发到的数据报在当帧可见；Host 数据到达频率 ≤ 帧率，正常运行时队列非空即立即处理，
+        // 等待仅在「Host 未发帧」的空闲期发生，不引入持续延迟。
+        constexpr int kMaxUdpDrainWaitMs = 5;
+        std::vector<UdpDatagram> datagrams;
+        for (int waited = 0; ; waited += 1)
         {
-            const int n = _udp.recv(buf, sizeof(buf));
-            if (n <= 0)
-                break;
-
-            // 握手面（UDP_SYNC_ACK 等）——数据更新时忽略。
-            if (cigi_wire::isAvsyMagic(buf, n))
-                continue;
-
-            // 命令面：UDP 报文也喂命令面 session，触发业务 processor（摆放/实时位姿）。
-            dispatchCommandPlaneFrame(buf, n);
-
-            // 数据面：IGCtrl + 眼点（现有逻辑，全局 CigiRuntime）。
-            cigi_wire::HostFrame frame{};
-            if (!cigi_wire::unpackHostFrame(buf, n, frame))
-                continue;
-
-            // 时间戳相位展开 + 基准更新（时钟同步方案.md §3 / §4）；内含 frameCntr 裁决（旧帧丢弃、同号刷新）。
-            const bool accepted = queueHostTimeStamp(HostTimeStamp{frame.frameCntr, frame.timeStamp, nowUs()});
-            if (!accepted)
-                continue;
-            _igCtrlReceivedCount.fetch_add(1);
-
-            if (frame.eye)
             {
-                _receivedEye.x = frame.eye->x;
-                _receivedEye.y = frame.eye->y;
-                _receivedEye.z = frame.eye->z;
-                _receivedEye.yawDeg = frame.eye->yawDeg;
-                _receivedEye.pitchDeg = frame.eye->pitchDeg;
-                _receivedEye.rollDeg = frame.eye->rollDeg;
-                _receivedEye.isLla = (frame.eye->frame == cigi_wire::EyeFrame::LLA);
-                _hasReceivedEye = true;
+                std::lock_guard lock(_udpPayloadMutex);
+                datagrams.swap(_udpPayloadQueue);
             }
-
-            if (sendSof)
-                sendSofPacket(_lastFrameCntr);
+            if (!datagrams.empty() || waited >= kMaxUdpDrainWaitMs)
+                break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
+        for (const auto& dg : datagrams)
+            processIncomingUdp(dg.bytes.data(), static_cast<int>(dg.bytes.size()), dg.receivedAtUs,
+                               sendSof);
     }
 
-    void IgSync::dispatchCommandPlaneFrame(const unsigned char* buf, int n)
+    void IgSync::processIncomingUdp(const unsigned char* buf, int n, std::uint64_t receivedAtUs,
+                                    bool sendSof)
     {
-        if (!_cmdSession)
-            return; // 未注册任何 processor：不构造 CCL 会话，跳过命令面解包。
+        // 数据面 + 命令面统一经 CCL 会话解包（矛盾 A，§8.2）：
+        //   基础设施 processor —— IGCtrl（帧号/时间戳）、ownship 眼点（EntityID==0）
+        //   业务 processor（engine 注册）—— 命令实体（EntityID!=0）、SymbolTextDefV4
+        // 眼点（EntityID==0）也会触发业务 processor，业务侧须按 EntityID==0 过滤（§4.1）。
+        _igCtrlProc.reset();
+        _eyeProc.reset();
         try
         {
-            _cmdSession->GetIncomingMsgMgr().ProcessIncomingMsg(const_cast<unsigned char*>(buf), n);
+            _session->GetIncomingMsgMgr().ProcessIncomingMsg(const_cast<unsigned char*>(buf), n);
         }
         catch (...)
         {
-            // 命令面解包失败忽略（数据面已处理或非命令面报文）。
+            return; // 畸形 / 非命令面报文（如握手残留）——忽略。
+        }
+
+        if (_igCtrlProc.got)
+        {
+            _lastFrameCntr = _igCtrlProc.frameCntr;
+            // 时间戳相位展开 + 基准更新（时钟同步方案.md §3 / §4）；内含 frameCntr 裁决（旧帧丢弃、同号刷新）。
+            const bool accepted = queueHostTimeStamp(
+                HostTimeStamp{_igCtrlProc.frameCntr, _igCtrlProc.timeStamp, receivedAtUs});
+            if (accepted)
+            {
+                _igCtrlReceivedCount.fetch_add(1);
+                if (sendSof)
+                    sendSofPacket(_igCtrlProc.frameCntr);
+            }
+        }
+
+        if (_eyeProc.got)
+        {
+            _receivedEye = _eyeProc.eye;
+            _hasReceivedEye = true;
+        }
+    }
+
+    void IgSync::IgCtrlCaptureProc::OnPacketReceived(CigiBasePacket* packet)
+    {
+        auto* ig = dynamic_cast<CigiIGCtrlV4*>(packet);
+        if (!ig)
+            return;
+        got = true;
+        frameCntr = ig->GetFrameCntr();
+        timeStamp = ig->GetTimeStamp();
+        timeStampValid = ig->GetTimeStampValid();
+    }
+
+    void IgSync::EyeCaptureProc::OnPacketReceived(CigiBasePacket* packet)
+    {
+        auto* ent = dynamic_cast<CigiEntityPositionCtrlV4*>(packet);
+        if (!ent || ent->GetEntityID() != 0)
+            return; // 仅捕获 ownship（EntityID==0）眼点；命令实体走业务 processor（§4.1）。
+        got = true;
+        eye.yawDeg = ent->GetYaw();
+        eye.pitchDeg = ent->GetPitch();
+        eye.rollDeg = ent->GetRoll();
+        if (ent->GetAttachState() == CigiBaseEntityPositionCtrl::Detach)
+        {
+            eye.isLla = true;
+            eye.x = ent->GetLat();
+            eye.y = ent->GetLon();
+            eye.z = ent->GetAlt();
+        }
+        else
+        {
+            eye.isLla = false;
+            eye.x = ent->GetXoff();
+            eye.y = ent->GetYoff();
+            eye.z = ent->GetZoff();
         }
     }
 
@@ -350,6 +397,7 @@ namespace aerovista::sync
         for (int attempt = 0; attempt < tcpRetryAttempts; ++attempt)
         {
             stopCommandThread();
+            stopUdpThread();
             _tcp.close();
             drainUdp();
 
@@ -368,6 +416,7 @@ namespace aerovista::sync
                 // 新会话起点：清空相位展开状态（时钟同步方案.md §3）。
                 resetHostSession();
                 startCommandThread();
+                startUdpThread();
                 return true;
             }
 
@@ -381,6 +430,49 @@ namespace aerovista::sync
         _tcpConnected = false;
         _udpSynced = false;
         return false;
+    }
+
+    // =============================================================================
+    // 数据面 I/O 线程（状态同步设计初版.md §5.1 / §6）：UDP recv → 入队，主线程解包。
+    // =============================================================================
+
+    void IgSync::startUdpThread()
+    {
+        stopUdpThread();
+        _udpThreadRunning = true;
+        _udpThread = std::thread(&IgSync::udpLoop, this);
+    }
+
+    void IgSync::stopUdpThread()
+    {
+        if (_udpThreadRunning.exchange(false))
+        {
+            // UDP 非阻塞 + 短 sleep，置位后最多一个 sleep 周期即退出，无需 close 唤醒。
+            if (_udpThread.joinable())
+                _udpThread.join();
+        }
+    }
+
+    void IgSync::udpLoop()
+    {
+        unsigned char buf[4096];
+        while (_udpThreadRunning)
+        {
+            const int n = _udp.recv(buf, sizeof(buf));
+            if (n > 0)
+            {
+                // 握手面（UDP_SYNC_ACK 等）不入数据面队列。
+                if (!cigi_wire::isAvsyMagic(buf, n))
+                {
+                    UdpDatagram dg;
+                    dg.bytes.assign(buf, buf + n);
+                    dg.receivedAtUs = nowUs(); // I/O 线程 recv 时刻（时钟同步方案.md §3）
+                    std::lock_guard lock(_udpPayloadMutex);
+                    _udpPayloadQueue.push_back(std::move(dg));
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
     }
 
     // =============================================================================
@@ -433,58 +525,9 @@ namespace aerovista::sync
             markDisconnected();
     }
 
-    void IgSync::processCommand(cigi_wire::Command cmd, std::uint16_t seq,
-                                const std::vector<std::uint8_t>& payload)
-    {
-        const std::uint16_t replyCmd = static_cast<std::uint16_t>(cmd);
-
-        bool execute = true;
-        {
-            std::lock_guard lock(_cmdStateMutex);
-            if (_hasCmdState && seq <= _cmdMaxSeq)
-                execute = false; // 幂等：重发同 seq 只回 RECEIVED，不重复执行（初版 §2.3）
-            else
-            {
-                _cmdMaxSeq = seq; // 收到即更新
-                _hasCmdState = true;
-            }
-        }
-        if (!execute)
-        {
-            sendCommandReply(static_cast<std::uint16_t>(cigi_wire::kReceivedReplyBase | replyCmd), seq);
-            return;
-        }
-
-        // 观测（收到即记录，执行入队）：测试断言 commandCount/lastCommandMsgId/lastCommandSeq。
-        {
-            std::lock_guard lock(_cmdStateMutex);
-            _lastCmdMsgId = cmd;
-            _lastCmdSeq = seq;
-            ++_cmdCount;
-        }
-
-        // RECEIVED：命令读循环线程立即回执（可注入延迟复现「回执迟到」），不等待执行。
-        if (_cmdReceivedDelayMs > 0)
-            std::this_thread::sleep_for(std::chrono::milliseconds(_cmdReceivedDelayMs));
-        sendCommandReply(static_cast<std::uint16_t>(cigi_wire::kReceivedReplyBase | replyCmd), seq);
-
-        enqueueCommand(cmd, seq, payload);
-    }
-
-    void IgSync::enqueueCommand(cigi_wire::Command cmd, std::uint16_t seq,
-                                const std::vector<std::uint8_t>& payload)
-    {
-        PendingCommand pending;
-        pending.cmd = cmd;
-        pending.seq = seq;
-        pending.payload = payload;
-        std::lock_guard lock(_pendingMutex);
-        _pendingCommands.push_back(std::move(pending));
-    }
-
     void IgSync::runPendingCommands()
     {
-        // 主线程：drain 命令面收包队列 → CCL 解包 → 触发业务 processor（§8.2）。
+        // 主线程：drain TCP 命令面收包队列 → CCL 解包 → 触发业务 processor（§8.2）。
         std::vector<std::vector<unsigned char>> frames;
         {
             std::lock_guard lock(_tcpPayloadMutex);
@@ -492,11 +535,11 @@ namespace aerovista::sync
         }
         for (const auto& frame : frames)
         {
-            if (!_cmdSession)
-                continue; // 未注册 processor：不构造 CCL 会话，丢弃命令面帧。
+            if (!_session)
+                continue; // 未初始化 session：丢弃命令面帧。
             try
             {
-                _cmdSession->GetIncomingMsgMgr().ProcessIncomingMsg(
+                _session->GetIncomingMsgMgr().ProcessIncomingMsg(
                     const_cast<unsigned char*>(frame.data()), static_cast<int>(frame.size()));
             }
             catch (...)
@@ -504,75 +547,11 @@ namespace aerovista::sync
                 // 畸形报文忽略；不中断其余报文处理。
             }
         }
-
-        // 旧命令面（待删除）：仍执行旧 pending 命令，保持旧测试（如有）不回归。
-        std::vector<PendingCommand> pending;
-        {
-            std::lock_guard lock(_pendingMutex);
-            pending.swap(_pendingCommands);
-        }
-        for (const auto& cmd : pending)
-        {
-            const std::uint16_t replyCmd = static_cast<std::uint16_t>(cmd.cmd);
-            const bool ack = _cmdHandler ? _cmdHandler(cmd.cmd, cmd.seq, cmd.payload) : true;
-            const std::uint16_t resultBase = ack ? cigi_wire::kResultAckBase : cigi_wire::kResultNackBase;
-            sendCommandReply(static_cast<std::uint16_t>(resultBase | replyCmd), cmd.seq);
-        }
-    }
-
-    void IgSync::sendCommandReply(std::uint16_t replyMsgId, std::uint16_t seq)
-    {
-        cigi_wire::CommandMsg msg;
-        msg.msgId = replyMsgId;
-        msg.seq = seq;
-        std::vector<unsigned char> wire;
-        if (!cigi_wire::packCommandMsg(msg, wire))
-            return;
-        std::lock_guard lock(_cmdSendMutex);
-        if (_tcp.valid())
-            _tcp.sendAll(wire.data(), static_cast<int>(wire.size()));
-    }
-
-    void IgSync::queueCommand(cigi_wire::Command cmd, std::uint16_t seq,
-                              const std::vector<std::uint8_t>& payload)
-    {
-        processCommand(cmd, seq, payload);
-    }
-
-    void IgSync::setCommandReceivedDelayMs(std::uint32_t delayMs)
-    {
-        _cmdReceivedDelayMs = delayMs;
-    }
-
-    void IgSync::setCommandHandler(
-        std::function<bool(cigi_wire::Command cmd, std::uint16_t seq,
-                           const std::vector<std::uint8_t>& payload)>
-            handler)
-    {
-        _cmdHandler = std::move(handler);
     }
 
     void IgSync::registerEventProcessor(int packetId, CigiBaseEventProcessor* processor)
     {
-        ensureCmdSession();
-        _cmdSession->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);
-    }
-
-    cigi_wire::Command IgSync::lastCommandMsgId() const
-    {
-        std::lock_guard lock(_cmdStateMutex);
-        return _lastCmdMsgId;
-    }
-
-    std::uint16_t IgSync::lastCommandSeq() const
-    {
-        std::lock_guard lock(_cmdStateMutex);
-        return _lastCmdSeq;
-    }
-
-    std::uint32_t IgSync::commandCount() const
-    {
-        std::lock_guard lock(_cmdStateMutex);
-        return _cmdCount;
+        ensureSession();
+        _session->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);
     }
 } // namespace aerovista::sync

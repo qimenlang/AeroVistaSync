@@ -5,6 +5,8 @@
 #include <optional>
 #include <vector>
 
+class CigiOutgoingMsg;
+
 /// CIGI V4 数据面 Host↔IG 同步的 pack/unpack。
 /// 握手（HELLO / UDP_SYNC）仍在 sync_proto::WireMsg 上——见 SyncProtocol.h。
 namespace aerovista::sync
@@ -39,50 +41,6 @@ namespace aerovista::sync
             std::optional<EyePose> eye;
         };
 
-        /// Command-plane message（状态同步设计初版.md §2）：msgId 指令/回执码，seq 全局递增，payload 不含 seq。
-        struct CommandMsg
-        {
-            std::uint16_t msgId = 0;
-            std::uint16_t seq = 0;
-            std::vector<std::uint8_t> payload;
-        };
-
-        // 指令码（状态同步设计初版.md §2.2）：Host→IG 命令类型。
-        // 枚举值遵循 SCREAMING_SNAKE（.clang-tidy EnumConstantCase=UPPER_CASE / cpp-vsg-style.mdc）。
-        enum class Command : std::uint16_t
-        {
-            LOAD_MODEL = 0x0001,
-            PLACE_MODEL = 0x0002,
-            MOVE_MODEL = 0x0003
-        };
-
-        // 回执基码（编码规则 RECEIVED=0x7000|cmd、RESULT-ACK=0x8000|cmd、RESULT-NACK=0x9000|cmd）：
-        // 回执 MsgID = 基码 | 指令码，是线格式计算常量（不属于命令枚举，回执码 = base | cmd）。
-        inline constexpr std::uint16_t kReceivedReplyBase = 0x7000;
-        inline constexpr std::uint16_t kResultAckBase = 0x8000;
-        inline constexpr std::uint16_t kResultNackBase = 0x9000;
-
-        /// 把 CommandMsg 打包成 CIGI V4 IGMsg 线上帧（初版 §3.2 / CigiIGMsgV4::Pack）：
-        /// [PacketSize(2,LE)][PacketID=0x0ff0(2,LE)][MsgID(2,LE)][reserved(2)][Msg=seq(2)+payload，8 对齐]。
-        bool packCommandMsg(const CommandMsg& msg, std::vector<unsigned char>& out);
-
-        /// 解包一个完整的 CIGI V4 IGMsg 线上帧。畸形 / 不完整缓冲返回 false。
-        bool unpackCommandMsg(const unsigned char* data, int n, CommandMsg& out);
-
-        /// TCP 流分帧器（初版 §4.2）：任意分块喂入，按 PacketSize 切出完整报文并回调。粘包/拆包均覆盖。
-        /// 本机字节序为小端（CCL x86 输出小端），PacketSize 按小端解析。
-        class CommandFrameAssembler
-        {
-        public:
-            /// 喂入一段 recv 字节；对每条切出的完整报文调用 onMsg。
-            void feed(const unsigned char* data, int n, const std::function<void(const CommandMsg&)>& onMsg);
-
-            bool bufferEmpty() const { return _buf.empty(); }
-
-        private:
-            std::vector<unsigned char> _buf;
-        };
-
         /// 通用 CIGI 分帧器：按 PacketSize 切出完整报文字节并回调（不解析、不解包）。
         /// 供命令面 I/O 线程使用；主线程拿完整报文字节喂 CigiIncomingMsg::ProcessIncomingMsg。
         class CigiFrameAssembler
@@ -103,8 +61,14 @@ namespace aerovista::sync
         /// 因纬度/俯仰超出范围而被丢弃的 LLA 眼点数（lla设计 §5）。
         std::uint64_t eyePoseRejectedByRange();
 
-        /// 打包 Host→IG：IGCtrlV4 [+ 眼点非空时 EntityPositionCtrlV4]。
+        /// 把 Host 数据面帧（IGCtrlV4 [+ 眼点非空时 EntityPositionCtrlV4]）组装进 omsg。
         /// WorldLocal → Attach+XYZ ParentID=1；Lla → Detach+LLA ParentID=0。
+        /// 业务侧（矛盾 A）用 host.udpOutgoing() 拿到 omsg 后调本函数组装，再 flushUdp()。
+        /// LLA 越界丢弃逻辑在内（eyePoseRejectedByRange 计数）。
+        void appendHostFrame(CigiOutgoingMsg& omsg, std::uint32_t frameCntr, double simTimeMs,
+                             const EyePose* eye);
+
+        /// 打包 Host→IG：IGCtrlV4 [+ 眼点非空时 EntityPositionCtrlV4]（线格式测试锚定用）。
         bool packHostFrame(std::uint32_t frameCntr, double simTimeMs, const EyePose* eye,
                            std::vector<unsigned char>& out);
 

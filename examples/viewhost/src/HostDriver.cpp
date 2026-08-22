@@ -29,9 +29,11 @@ namespace aerovista::viewhost
         }
     }
 
-    void HostDriver::update(double simTimeMs, const aerovista::sync::HostSync::EyePose* eye)
+    void HostDriver::update(double simTimeMs, const aerovista::sync::cigi_wire::EyePose* eye)
     {
-        _host.update(simTimeMs, eye);
+        auto& omsg = _host.udpOutgoing();
+        aerovista::sync::cigi_wire::appendHostFrame(omsg, _host.nextFrameCntr(), simTimeMs, eye);
+        _host.flushUdp();
     }
 
     bool HostDriver::isRunning() const

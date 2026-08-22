@@ -33,7 +33,7 @@ private:
     void updateStatusText();
 
     aerovista::viewhost::HostDriver _driver;
-    aerovista::sync::HostSync::EyePose _eye;
+    aerovista::sync::cigi_wire::EyePose _eye;
 
     bool _controlling = false;
     bool _started = false;

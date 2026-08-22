@@ -37,7 +37,7 @@ namespace aerovista::viewhost
         }
     } // namespace
 
-    void applyManualStep(aerovista::sync::HostSync::EyePose& eye,
+    void applyManualStep(aerovista::sync::cigi_wire::EyePose& eye,
                          double dFwd, double dRight, double dUp,
                          double dyawDeg, double dpitchDeg)
     {
