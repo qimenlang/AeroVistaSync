@@ -1,9 +1,14 @@
 ﻿#pragma once
 
+#include <aerovista/sync/CigiIncludes.h>
+
 #include <aerovista/sync/CigiWire.h>
 #include <aerovista/sync/SyncConfig.h>
 #include <aerovista/sync/TcpSocket.h>
 #include <aerovista/sync/UdpSocket.h>
+
+#include "CigiHostSession.h"
+#include "CigiIGCtrlV4.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -53,7 +58,38 @@ namespace aerovista::sync
         std::uint32_t igCtrlSentCount() const;
         std::uint32_t sofReceivedCount() const;
 
-        // ===== 命令面（状态同步设计初版.md §5） =====
+        // ===== 命令面（状态同步设计初版.md §7）：引用式发送接口 =====
+
+        /// TCP 命令面 OutgoingMsg：业务侧 << 报文后调 flushTcp 发送（fire-and-forget）。
+        /// 自动前置 IGCtrl 帧头（CCL 要求 Host 消息以 IGCtrl 开头）。
+        CigiOutgoingMsg& tcpOutgoing()
+        {
+            ensureSession();
+            auto& omsg = _session->GetOutgoingMsgMgr();
+            omsg.BeginMsg();
+            CigiIGCtrlV4 igCtrl;
+            igCtrl.SetFrameCntr(_frameCounter++);
+            igCtrl.SetTimeStampValid(false);
+            omsg << igCtrl;
+            return omsg;
+        }
+        /// UDP 数据面 OutgoingMsg：业务侧 << 报文后调 flushUdp 发送。
+        /// 自动前置 IGCtrl 帧头（CCL 要求 Host 消息以 IGCtrl 开头）。
+        CigiOutgoingMsg& udpOutgoing()
+        {
+            ensureSession();
+            auto& omsg = _session->GetOutgoingMsgMgr();
+            omsg.BeginMsg();
+            CigiIGCtrlV4 igCtrl;
+            igCtrl.SetFrameCntr(_frameCounter++);
+            igCtrl.SetTimeStampValid(false);
+            omsg << igCtrl;
+            return omsg;
+        }
+        void flushTcp();
+        void flushUdp();
+
+        // ===== 旧命令面（待删除，见 §11） =====
 
         /// 下发命令到所有 ready IG（串行逐 peer）。返回 true 当且仅当
         /// 每个 ready peer 都在 receivedTimeoutMs 内回 RECEIVED（任一超时/无 ready peer → false）。
@@ -88,6 +124,15 @@ namespace aerovista::sync
         int countReadyUnlocked() const;
         void processUdpDatagram(const unsigned char* buf, int n, const char* fromIp);
         void pollUdp();
+
+        /// 懒创建 CCL 会话：仅命令面（tcpOutgoing/udpOutgoing）首次使用时才构造。
+        /// CigiSession 构造/析构在 MSVC Debug 下约 80ms（131072 个 std::list 的 proxy 分配），
+        /// 数据面测试（HostSync::update 走手写 packHostFrame）不应为此买单。
+        void ensureSession()
+        {
+            if (!_session)
+                _session = std::make_unique<CigiHostSession>(1, 4096, 1, 4096);
+        }
 
         // 命令面辅助（初版 §5.2 / §3.1）
         void handleCommandReply(std::uint64_t clientId, const cigi_wire::CommandMsg& msg);
@@ -128,5 +173,9 @@ namespace aerovista::sync
         std::uint16_t _lastResultSeq = 0;
         bool _lastResultAck = false;
         std::function<void(bool ack, std::uint16_t seq, cigi_wire::Command cmd)> _resultCallback;
+
+        // 命令面 CCL 会话（状态同步设计初版.md §5.1：CCL 单线程化，Host 一套 CigiHostSession）；
+        // 懒初始化（ensureSession），堆上分配（CigiSession 内含大 handler 表，栈上会溢出）。
+        std::unique_ptr<CigiHostSession> _session;
     };
 } // namespace aerovista::sync

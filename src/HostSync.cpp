@@ -484,4 +484,63 @@ namespace aerovista::sync
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
     }
+
+    void HostSync::flushTcp()
+    {
+        if (!_session)
+            return;
+        CigiOutgoingMsg& omsg = _session->GetOutgoingMsgMgr();
+        Cigi_uint8* buf = nullptr;
+        int len = 0;
+        if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
+        {
+            omsg.FreeMsg();
+            return;
+        }
+
+        std::vector<std::shared_ptr<TcpSocket>> targets;
+        {
+            std::lock_guard lock(_peersMutex);
+            for (const auto& p : _peers)
+            {
+                if (p.tcpReady && p.udpReady && p.tcp)
+                    targets.push_back(p.tcp);
+            }
+        }
+        for (const auto& sock : targets)
+            sock->sendAll(buf, len);
+
+        omsg.FreeMsg();
+    }
+
+    void HostSync::flushUdp()
+    {
+        if (!_session)
+            return;
+        CigiOutgoingMsg& omsg = _session->GetOutgoingMsgMgr();
+        Cigi_uint8* buf = nullptr;
+        int len = 0;
+        if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
+        {
+            omsg.FreeMsg();
+            return;
+        }
+
+        std::vector<std::pair<std::string, uint32_t>> targets;
+        {
+            std::lock_guard lock(_peersMutex);
+            for (const auto& p : _peers)
+            {
+                if (p.tcpReady && p.udpReady)
+                    targets.emplace_back(p.ip, p.udpRecvPort);
+            }
+        }
+        {
+            std::lock_guard lock(_udpMutex);
+            for (const auto& t : targets)
+                _udp.sendTo(t.first, static_cast<int>(t.second), buf, len);
+        }
+
+        omsg.FreeMsg();
+    }
 } // namespace aerovista::sync

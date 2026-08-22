@@ -69,12 +69,27 @@ namespace aerovista::sync
         /// 解包一个完整的 CIGI V4 IGMsg 线上帧。畸形 / 不完整缓冲返回 false。
         bool unpackCommandMsg(const unsigned char* data, int n, CommandMsg& out);
 
-        /// TCP 流分帧器（初版 §3.2）：任意分块喂入，按 PacketSize 切出完整 IGMsg 并回调。粘包/拆包均覆盖。
+        /// TCP 流分帧器（初版 §4.2）：任意分块喂入，按 PacketSize 切出完整报文并回调。粘包/拆包均覆盖。
+        /// 本机字节序为小端（CCL x86 输出小端），PacketSize 按小端解析。
         class CommandFrameAssembler
         {
         public:
             /// 喂入一段 recv 字节；对每条切出的完整报文调用 onMsg。
             void feed(const unsigned char* data, int n, const std::function<void(const CommandMsg&)>& onMsg);
+
+            bool bufferEmpty() const { return _buf.empty(); }
+
+        private:
+            std::vector<unsigned char> _buf;
+        };
+
+        /// 通用 CIGI 分帧器：按 PacketSize 切出完整报文字节并回调（不解析、不解包）。
+        /// 供命令面 I/O 线程使用；主线程拿完整报文字节喂 CigiIncomingMsg::ProcessIncomingMsg。
+        class CigiFrameAssembler
+        {
+        public:
+            void feed(const unsigned char* data, int n,
+                      const std::function<void(const std::vector<unsigned char>&)>& onFrame);
 
             bool bufferEmpty() const { return _buf.empty(); }
 

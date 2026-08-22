@@ -240,6 +240,10 @@ namespace aerovista::sync
             if (cigi_wire::isAvsyMagic(buf, n))
                 continue;
 
+            // 命令面：UDP 报文也喂命令面 session，触发业务 processor（摆放/实时位姿）。
+            dispatchCommandPlaneFrame(buf, n);
+
+            // 数据面：IGCtrl + 眼点（现有逻辑，全局 CigiRuntime）。
             cigi_wire::HostFrame frame{};
             if (!cigi_wire::unpackHostFrame(buf, n, frame))
                 continue;
@@ -264,6 +268,20 @@ namespace aerovista::sync
 
             if (sendSof)
                 sendSofPacket(_lastFrameCntr);
+        }
+    }
+
+    void IgSync::dispatchCommandPlaneFrame(const unsigned char* buf, int n)
+    {
+        if (!_cmdSession)
+            return; // 未注册任何 processor：不构造 CCL 会话，跳过命令面解包。
+        try
+        {
+            _cmdSession->GetIncomingMsgMgr().ProcessIncomingMsg(const_cast<unsigned char*>(buf), n);
+        }
+        catch (...)
+        {
+            // 命令面解包失败忽略（数据面已处理或非命令面报文）。
         }
     }
 
@@ -393,7 +411,7 @@ namespace aerovista::sync
     {
         _tcp.setRecvTimeout(commandRecvTimeoutMs);
 
-        cigi_wire::CommandFrameAssembler assembler;
+        cigi_wire::CigiFrameAssembler assembler;
         unsigned char buf[4096];
         while (_cmdThreadRunning)
         {
@@ -404,8 +422,9 @@ namespace aerovista::sync
                 break;
             if (outcome.kind == RecvKind::TIMEOUT)
                 continue; // 读超时：检查退出标志
-            assembler.feed(buf, outcome.bytes, [this](const cigi_wire::CommandMsg& msg) {
-                processCommand(static_cast<cigi_wire::Command>(msg.msgId), msg.seq, msg.payload);
+            assembler.feed(buf, outcome.bytes, [this](const std::vector<unsigned char>& frame) {
+                std::lock_guard lock(_tcpPayloadMutex);
+                _tcpPayloadQueue.push_back(frame);
             });
         }
         // recv PEER_CLOSED/错误退出 = Host 断开（TCP 存活检测并入命令读循环线程，§3.3）。
@@ -465,6 +484,28 @@ namespace aerovista::sync
 
     void IgSync::runPendingCommands()
     {
+        // 主线程：drain 命令面收包队列 → CCL 解包 → 触发业务 processor（§8.2）。
+        std::vector<std::vector<unsigned char>> frames;
+        {
+            std::lock_guard lock(_tcpPayloadMutex);
+            frames.swap(_tcpPayloadQueue);
+        }
+        for (const auto& frame : frames)
+        {
+            if (!_cmdSession)
+                continue; // 未注册 processor：不构造 CCL 会话，丢弃命令面帧。
+            try
+            {
+                _cmdSession->GetIncomingMsgMgr().ProcessIncomingMsg(
+                    const_cast<unsigned char*>(frame.data()), static_cast<int>(frame.size()));
+            }
+            catch (...)
+            {
+                // 畸形报文忽略；不中断其余报文处理。
+            }
+        }
+
+        // 旧命令面（待删除）：仍执行旧 pending 命令，保持旧测试（如有）不回归。
         std::vector<PendingCommand> pending;
         {
             std::lock_guard lock(_pendingMutex);
@@ -509,6 +550,12 @@ namespace aerovista::sync
             handler)
     {
         _cmdHandler = std::move(handler);
+    }
+
+    void IgSync::registerEventProcessor(int packetId, CigiBaseEventProcessor* processor)
+    {
+        ensureCmdSession();
+        _cmdSession->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);
     }
 
     cigi_wire::Command IgSync::lastCommandMsgId() const

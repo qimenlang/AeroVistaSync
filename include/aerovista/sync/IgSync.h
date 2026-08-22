@@ -1,13 +1,19 @@
 ﻿#pragma once
 
+#include <aerovista/sync/CigiIncludes.h>
+
 #include <aerovista/sync/CigiWire.h>
 #include <aerovista/sync/SyncConfig.h>
 #include <aerovista/sync/TcpSocket.h>
 #include <aerovista/sync/UdpSocket.h>
 
+#include "CigiBaseEventProcessor.h"
+#include "CigiIGSession.h"
+
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -106,6 +112,12 @@ namespace aerovista::sync
                                const std::vector<std::uint8_t>& payload)>
                 handler);
 
+        // ===== 新契约命令面（状态同步设计初版.md §8.1） =====
+
+        /// 注册某个 CIGI 报文的业务 EventProcessor（透传到 CCL session 的 RegisterEventProcessor）。
+        /// processor 由 engine 层定义；生命周期需覆盖 sync 会话（§8.1）。
+        void registerEventProcessor(int packetId, CigiBaseEventProcessor* processor);
+
         /// 最近执行的命令（幂等去重后）：测试观测。
         cigi_wire::Command lastCommandMsgId() const;
         std::uint16_t lastCommandSeq() const;
@@ -128,6 +140,15 @@ namespace aerovista::sync
         void markDisconnected();
         /// 相位展开：把 raw（uint32, 10µs tick）累进 64 位单调 extendedTime（时钟同步方案.md §3）。
         void applyPhaseUnwrap(std::uint32_t raw);
+        /// 命令面：把一条 UDP 报文喂命令面 session 触发业务 processor（§8.2，与数据面解包正交）。
+        void dispatchCommandPlaneFrame(const unsigned char* buf, int n);
+        /// 懒创建命令面 CCL 会话：仅 registerEventProcessor 首次注册时才构造。
+        /// CigiSession 构造/析构在 MSVC Debug 下约 80ms，未注册任何 processor 的纯数据面端点不应为此买单。
+        void ensureCmdSession()
+        {
+            if (!_cmdSession)
+                _cmdSession = std::make_unique<CigiIGSession>(1, 4096, 1, 4096);
+        }
 
         // 命令面（初版 §3.1 / §6）：命令读循环线程回 RECEIVED + 入队；主线程取队列执行 + 回 RESULT。
         void startCommandThread();
@@ -185,5 +206,12 @@ namespace aerovista::sync
         std::function<bool(cigi_wire::Command cmd, std::uint16_t seq,
                            const std::vector<std::uint8_t>& payload)>
             _cmdHandler;
+
+        // 命令面 CCL 会话（状态同步设计初版.md §8.1）；懒初始化（ensureCmdSession），
+        // 堆上分配（CigiSession 内含大 handler 表，栈上会溢出）。
+        std::unique_ptr<CigiIGSession> _cmdSession;
+        // 命令面收包队列：I/O 线程（commandLoop）分帧入队，主线程（runPendingCommands）drain 解包。
+        std::mutex _tcpPayloadMutex;
+        std::vector<std::vector<unsigned char>> _tcpPayloadQueue;
     };
 } // namespace aerovista::sync
