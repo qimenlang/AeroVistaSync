@@ -51,25 +51,6 @@ namespace aerovista::sync
         RUNNING
     };
 
-    enum class SendPace
-    {
-        FREE_RUN
-    };
-
-    enum class FrameGate
-    {
-        FREE_RUN,
-        BARRIER
-    };
-
-    struct SyncPaceConfig
-    {
-        SendPace igCtrlSendPace = SendPace::FREE_RUN;
-        FrameGate frameGate = FrameGate::FREE_RUN;
-        double targetFps = 60.0;
-        int barrierTimeoutMs = 8;
-    };
-
     /// SynchronSystem 装配属性（sync模块化设计.md §4.2）。
     /// IG 侧消费为主（offset/stale/requireConnectedIg），channelId 两端标识。
     struct SyncSystemConfig

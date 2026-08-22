@@ -72,11 +72,6 @@ namespace aerovista::sync
         return _sofReceivedCount.load();
     }
 
-    void HostSync::setPaceConfig(const SyncPaceConfig& pace)
-    {
-        _pace = pace;
-    }
-
     void HostSync::run()
     {
         _status = HostStatus::RUNNING;

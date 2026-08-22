@@ -12,7 +12,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -36,7 +35,6 @@ namespace aerovista::sync
         void shutdown();
 
         void run();
-        void setPaceConfig(const SyncPaceConfig& pace);
 
         const HostConfig& addressConfig() const { return _local; }
 
@@ -112,7 +110,6 @@ namespace aerovista::sync
         void markPeerDisconnected(std::uint64_t clientId);
 
         HostConfig _local{};
-        SyncPaceConfig _pace{};
         UdpSocket _udp;
         TcpSocket _tcp;
 
