@@ -3,12 +3,12 @@
 #include <aerovista/sync/CigiIncludes.h>
 
 #include <aerovista/sync/CigiWire.h>
+#include <aerovista/sync/EventProcess.h>
 #include <aerovista/sync/SyncConfig.h>
 #include <aerovista/sync/TcpSocket.h>
 #include <aerovista/sync/UdpSocket.h>
 
 #include "CigiBaseEventProcessor.h"
-#include "CigiBaseSOF.h"
 #include "CigiHostSession.h"
 #include "CigiIGCtrlV4.h"
 
@@ -90,6 +90,11 @@ namespace aerovista::sync
         /// 业务/测试在需要处理 IG 上报时调用（Host 收包为 push 模式，无独立帧循环）。
         void drainIncoming();
 
+        /// 取走最近收到的碰撞检测段响应（IG 回发，processor 缓存，§8.1）。
+        std::optional<CigiCollDetSegRespV4> takeReceivedCollDetSegResp();
+        /// 取走最近收到的碰撞检测体积响应（IG 回发，processor 缓存，§8.1）。
+        std::optional<CigiCollDetVolRespV4> takeReceivedCollDetVolResp();
+
     private:
         struct IgPeer
         {
@@ -123,19 +128,20 @@ namespace aerovista::sync
             {
                 _session = std::make_unique<CigiHostSession>(1, 4096, 1, 4096);
                 _session->GetIncomingMsgMgr().RegisterEventProcessor(CIGI_SOF_PACKET_ID_V4, &_sofProc);
+                _session->GetIncomingMsgMgr().RegisterEventProcessor(
+                    CIGI_COLL_DET_SEG_RESP_PACKET_ID_V4, &_segRespProc);
+                _session->GetIncomingMsgMgr().RegisterEventProcessor(
+                    CIGI_COLL_DET_VOL_RESP_PACKET_ID_V4, &_volRespProc);
             }
         }
 
         void markPeerDisconnected(std::uint64_t clientId);
 
-        // 基础设施 processor（sync 库内部注册）：SOF 回显计数（替代手写 unpackSof）。
-        class SofCaptureProc : public CigiBaseEventProcessor
-        {
-        public:
-            void OnPacketReceived(CigiBasePacket* packet) override;
-            std::atomic<std::uint32_t> count{0};
-        };
+        // 基础设施 processor（§8.1 通用模式，统一定义于 EventProcess.h）：
+        // SOF 回显计数、碰撞检测段/体积响应（IG→Host）。
         SofCaptureProc _sofProc;
+        CollDetSegRespProc _segRespProc;
+        CollDetVolRespProc _volRespProc;
 
         HostConfig _local{};
         UdpSocket _udp;

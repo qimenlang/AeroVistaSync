@@ -2,8 +2,6 @@
 #include <aerovista/sync/CigiWire.h>
 #include <aerovista/sync/SyncProtocol.h>
 
-#include "CigiSOFV4.h"
-
 #include <chrono>
 #include <cstring>
 #include <iostream>
@@ -381,10 +379,18 @@ namespace aerovista::sync
         _session->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);
     }
 
-    void HostSync::SofCaptureProc::OnPacketReceived(CigiBasePacket* packet)
+    std::optional<CigiCollDetSegRespV4> HostSync::takeReceivedCollDetSegResp()
     {
-        if (dynamic_cast<CigiSOFV4*>(packet))
-            count.fetch_add(1);
+        if (!_segRespProc.got)
+            return std::nullopt;
+        return _segRespProc.segResp;
+    }
+
+    std::optional<CigiCollDetVolRespV4> HostSync::takeReceivedCollDetVolResp()
+    {
+        if (!_volRespProc.got)
+            return std::nullopt;
+        return _volRespProc.volResp;
     }
 
     void HostSync::flushTcp()

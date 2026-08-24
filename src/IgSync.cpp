@@ -2,7 +2,6 @@
 #include <aerovista/sync/CigiWire.h>
 #include <aerovista/sync/SyncProtocol.h>
 
-#include "CigiBaseEntityPositionCtrl.h"
 #include "CigiEntityPositionCtrlV4.h"
 #include "CigiIGCtrlV4.h"
 
@@ -125,6 +124,20 @@ namespace aerovista::sync
         if (!_eyeProc.got)
             return std::nullopt;
         return _eyeProc.eye;
+    }
+
+    std::optional<CigiCollDetSegDefV4> IgSync::takeReceivedCollDetSegDef()
+    {
+        if (!_segDefProc.got)
+            return std::nullopt;
+        return _segDefProc.segDef;
+    }
+
+    std::optional<CigiCollDetVolDefV4> IgSync::takeReceivedCollDetVolDef()
+    {
+        if (!_volDefProc.got)
+            return std::nullopt;
+        return _volDefProc.volDef;
     }
 
     bool IgSync::queueHostTimeStamp(const HostTimeStamp& stamp)
@@ -307,38 +320,18 @@ namespace aerovista::sync
 
         if (_igCtrlProc.got)
         {
-            _lastFrameCntr = _igCtrlProc.frameCntr;
+            const auto& ig = _igCtrlProc.igCtrl;
+            _lastFrameCntr = ig.GetFrameCntr();
             // 时间戳相位展开 + 基准更新（时钟同步方案.md §3 / §4）；内含 frameCntr 裁决（旧帧丢弃、同号刷新）。
             const bool accepted = queueHostTimeStamp(
-                HostTimeStamp{_igCtrlProc.frameCntr, _igCtrlProc.timeStamp, receivedAtUs});
+                HostTimeStamp{ig.GetFrameCntr(), ig.GetTimeStamp(), receivedAtUs});
             if (accepted)
             {
                 _igCtrlReceivedCount.fetch_add(1);
                 if (sendSof)
-                    sendSofPacket(_igCtrlProc.frameCntr);
+                    sendSofPacket(ig.GetFrameCntr());
             }
         }
-    }
-
-    void IgSync::IgCtrlCaptureProc::OnPacketReceived(CigiBasePacket* packet)
-    {
-        auto* ig = dynamic_cast<CigiIGCtrlV4*>(packet);
-        if (!ig)
-            return;
-        got = true;
-        frameCntr = ig->GetFrameCntr();
-        timeStamp = ig->GetTimeStamp();
-        timeStampValid = ig->GetTimeStampValid();
-    }
-
-    void IgSync::EyeCaptureProc::OnPacketReceived(CigiBasePacket* packet)
-    {
-        auto* ent = dynamic_cast<CigiEntityPositionCtrlV4*>(packet);
-        if (!ent || ent->GetEntityID() != 0)
-            return; // 仅捕获 ownship（EntityID==0）眼点；命令实体走业务 processor（§4.1）。
-        // CCL 报文对象是复用单例，必须值拷贝缓存（§8.1 通用模式）。
-        got = true;
-        eye = *ent;
     }
 
     bool IgSync::waitUdpAck(int timeoutMs)

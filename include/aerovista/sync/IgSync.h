@@ -3,14 +3,12 @@
 #include <aerovista/sync/CigiIncludes.h>
 
 #include <aerovista/sync/CigiWire.h>
+#include <aerovista/sync/EventProcess.h>
 #include <aerovista/sync/SyncConfig.h>
 #include <aerovista/sync/TcpSocket.h>
 #include <aerovista/sync/UdpSocket.h>
 
-#include "CigiBaseEntityPositionCtrl.h"
 #include "CigiBaseEventProcessor.h"
-#include "CigiBaseIGCtrl.h"
-#include "CigiEntityPositionCtrlV4.h"
 #include "CigiIGSession.h"
 #include "CigiSOFV4.h"
 
@@ -66,6 +64,11 @@ namespace aerovista::sync
 
         /// 取走上一次 Update 期间收到的 Host 眼点（CCL 报文值拷贝；processor 缓存，§8.1）。
         std::optional<CigiEntityPositionCtrlV4> takeReceivedHostEye();
+
+        /// 取走最近收到的碰撞检测段定义（Host 下发，processor 缓存，§8.1）。
+        std::optional<CigiCollDetSegDefV4> takeReceivedCollDetSegDef();
+        /// 取走最近收到的碰撞检测体积定义（Host 下发，processor 缓存，§8.1）。
+        std::optional<CigiCollDetVolDefV4> takeReceivedCollDetVolDef();
 
         /// 测试 / 注入：入队一个 Host 时间戳（如同本帧收到）。
         /// 对 `rawTimeStamp` 做相位展开 → `lastSimTimeUs`，并记录 `lastReceivedAtUs`。
@@ -180,6 +183,10 @@ namespace aerovista::sync
                                                                     &_igCtrlProc);
                 _session->GetIncomingMsgMgr().RegisterEventProcessor(
                     CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4, &_eyeProc);
+                _session->GetIncomingMsgMgr().RegisterEventProcessor(
+                    CIGI_COLL_DET_SEG_DEF_PACKET_ID_V4, &_segDefProc);
+                _session->GetIncomingMsgMgr().RegisterEventProcessor(
+                    CIGI_COLL_DET_VOL_DEF_PACKET_ID_V4, &_volDefProc);
             }
         }
 
@@ -218,39 +225,12 @@ namespace aerovista::sync
         // ensureSession 惰性创建，堆上分配（CigiSession 内含大 handler 表，栈上会溢出）。
         std::unique_ptr<CigiIGSession> _session;
 
-        // 基础设施 processor（sync 库内部注册，§8.1）：IGCtrl 帧节拍/时间戳、ownship 眼点。
-        class IgCtrlCaptureProc : public CigiBaseEventProcessor
-        {
-        public:
-            void OnPacketReceived(CigiBasePacket* packet) override;
-            void reset()
-            {
-                got = false;
-                frameCntr = 0;
-                timeStamp = 0;
-                timeStampValid = false;
-            }
-            bool got = false;
-            std::uint32_t frameCntr = 0;
-            std::uint32_t timeStamp = 0;
-            bool timeStampValid = false;
-        };
-
-        class EyeCaptureProc : public CigiBaseEventProcessor
-        {
-        public:
-            void OnPacketReceived(CigiBasePacket* packet) override;
-            void reset()
-            {
-                got = false;
-                eye = {};
-            }
-            bool got = false;
-            CigiEntityPositionCtrlV4 eye{}; ///< CCL 报文值拷贝（processor 缓存，§8.1）
-        };
-
+        // 基础设施 processor（§8.1 通用模式，统一定义于 EventProcess.h）：
+        // IGCtrl 帧节拍/时间戳、ownship 眼点、碰撞检测段/体积定义（Host→IG）。
         IgCtrlCaptureProc _igCtrlProc;
         EyeCaptureProc _eyeProc;
+        CollDetSegDefProc _segDefProc;
+        CollDetVolDefProc _volDefProc;
 
         // 数据面 I/O 线程（§5.1）：UDP recv → 入队；主线程 update() drain 解包。
         std::thread _udpThread;
