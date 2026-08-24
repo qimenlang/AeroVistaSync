@@ -23,6 +23,14 @@
 
 namespace aerovista::sync
 {
+    /// 收包帧（UDP/TCP 统一 payload 结构）：原始字节 + I/O 线程记录的本机收到时刻
+    /// （us，时钟同步方案.md §3——仅 UDP 数据面填充；TCP 命令面忽略）。
+    struct IncomingFrame
+    {
+        std::vector<unsigned char> bytes;
+        std::uint64_t receivedAtUs = 0;
+    };
+
     /// IG 侧同步端点：连接 Host，UDP 同步 + TCP 命令客户端。
     class IgSync
     {
@@ -152,7 +160,13 @@ namespace aerovista::sync
         bool connectOnce(const IgConfig& config);
         void sendSofPacket(std::uint32_t frameCntr);
         void markDisconnected();
-        /// 解包一条 UDP 报文（主线程）：基础设施 processor 捕获帧节拍/眼点；收到新 IGCtrl 时回 SOF。
+        /// UDP 生产-消费等待：I/O 线程 1ms 轮询，drain 空队列时按 1ms 步进等待（最多 kMaxUdpDrainWaitMs），
+        /// 保证刚发到的数据报当帧可见。仅 IG 侧需要（帧循环主动 drain，区别于 Host push 模式）。
+        void waitForUdpFrames(std::vector<IncomingFrame>& out);
+        /// 统一解包一条报文（TCP/UDP 共用）：`_session->ProcessIncomingMsg` → 触发基础设施 + 业务 processor。
+        /// 不 reset 基础设施捕获（由调用方决定）；畸形报文吞掉不中断。
+        void processIncomingFrame(const unsigned char* buf, int n);
+        /// 解包一条 UDP 报文（主线程）：先 reset 基础设施捕获，再统一解包，随后更新帧号/时间戳/眼点并回 SOF。
         /// `receivedAtUs` 由 UDP I/O 线程在 recv 时刻记录（时钟同步方案.md §3 要求收到时刻）。
         void processIncomingUdp(const unsigned char* buf, int n, std::uint64_t receivedAtUs, bool sendSof);
         /// 相位展开：把 raw（uint32, 10µs tick）累进 64 位单调 extendedTime（时钟同步方案.md §3）。
@@ -251,17 +265,11 @@ namespace aerovista::sync
         std::thread _udpThread;
         std::atomic<bool> _udpThreadRunning{false};
 
-        // UDP payload 队列：一条数据报 = 原始字节 + I/O 线程记录的本机收到时刻（us，时钟同步方案.md §3）。
-        struct UdpDatagram
-        {
-            std::vector<unsigned char> bytes;
-            std::uint64_t receivedAtUs = 0;
-        };
+        // 数据面队列：I/O 线程（udpLoop）入队，主线程（drainIncoming）drain 解包。
         std::mutex _udpPayloadMutex;
-        std::vector<UdpDatagram> _udpPayloadQueue;
-
-        // 命令面收包队列：I/O 线程（commandLoop）分帧入队，主线程（drainIncoming）drain 解包。
+        std::vector<IncomingFrame> _udpPayloadQueue;
+        // 命令面队列：I/O 线程（commandLoop）分帧入队，主线程（drainIncoming）drain 解包。
         std::mutex _tcpPayloadMutex;
-        std::vector<std::vector<unsigned char>> _tcpPayloadQueue;
+        std::vector<IncomingFrame> _tcpPayloadQueue;
     };
 } // namespace aerovista::sync

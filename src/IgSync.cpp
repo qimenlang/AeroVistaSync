@@ -243,42 +243,56 @@ namespace aerovista::sync
         if (!_session)
             ensureSession();
 
-        // UDP 数据面队列。生产-消费：I/O 线程 1ms 轮询，drain 空队列时按 1ms 步进等待
-        // （最多 kMaxUdpDrainWaitMs），保证刚发到的数据报在当帧可见；Host 数据到达频率 ≤ 帧率，
-        // 正常运行时队列非空即立即处理，等待仅在「Host 未发帧」的空闲期发生。
-        constexpr int kMaxUdpDrainWaitMs = 5;
-        std::vector<UdpDatagram> datagrams;
-        for (int waited = 0; ; waited += 1)
-        {
-            {
-                std::lock_guard lock(_udpPayloadMutex);
-                datagrams.swap(_udpPayloadQueue);
-            }
-            if (!datagrams.empty() || waited >= kMaxUdpDrainWaitMs)
-                break;
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-        for (const auto& dg : datagrams)
+        // UDP 数据面：生产-消费等待（I/O 线程 1ms 轮询），保证刚发到的数据报当帧可见。
+        std::vector<IncomingFrame> udpFrames;
+        waitForUdpFrames(udpFrames);
+        for (const auto& dg : udpFrames)
             processIncomingUdp(dg.bytes.data(), static_cast<int>(dg.bytes.size()), dg.receivedAtUs,
                                sendSof);
 
         // TCP 命令面队列（原 runPendingCommands 职责）。
-        std::vector<std::vector<unsigned char>> frames;
+        std::vector<IncomingFrame> tcpFrames;
         {
             std::lock_guard lock(_tcpPayloadMutex);
-            frames.swap(_tcpPayloadQueue);
+            tcpFrames.swap(_tcpPayloadQueue);
         }
-        for (const auto& frame : frames)
+        for (const auto& frame : tcpFrames)
+            processIncomingFrame(frame.bytes.data(), static_cast<int>(frame.bytes.size()));
+    }
+
+    void IgSync::waitForUdpFrames(std::vector<IncomingFrame>& out)
+    {
+        // 为什么 IG 侧必须等待（区别于 HostSync::drainIncoming 的不等待）：
+        //  Host 侧是 push 模式——调用方（业务/测试）自己决定何时 drain，包未到就不处理；
+        //  IG 侧是帧循环主动 drain——`drainIncoming` 由 SynchronSystem::preFrame 每帧调用一次。
+        //  而 UDP I/O 线程是 1ms 轮询（udpLoop），Host 刚发来的数据报可能仍在 0~1ms 窗口内没被
+        //  收进队列。若空队列直接返回，本帧就漏掉该包：对数据面帧节拍漏一帧可接受（UDP 周期覆盖），
+        //  但时钟同步的 `lastReceivedAtUs` 晚一帧更新会引入 ~帧周期 的累积误差（时钟同步方案.md §4.0）。
+        //  因此按 1ms 步进等待（最多 kMaxUdpDrainWaitMs），保证刚发到的包当帧可见。
+        //  生产路径（preFrame）下 Host 每帧发数据、队列几乎总是非空，等待只在「Host 未发帧」的空闲期
+        //  发生，不引入持续延迟。
+        constexpr int kMaxUdpDrainWaitMs = 5;
+        for (int waited = 0; ; waited += 1)
         {
-            try
             {
-                _session->GetIncomingMsgMgr().ProcessIncomingMsg(
-                    const_cast<unsigned char*>(frame.data()), static_cast<int>(frame.size()));
+                std::lock_guard lock(_udpPayloadMutex);
+                out.swap(_udpPayloadQueue);
             }
-            catch (...)
-            {
-                // 畸形报文忽略；不中断其余报文处理。
-            }
+            if (!out.empty() || waited >= kMaxUdpDrainWaitMs)
+                break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+
+    void IgSync::processIncomingFrame(const unsigned char* buf, int n)
+    {
+        try
+        {
+            _session->GetIncomingMsgMgr().ProcessIncomingMsg(const_cast<unsigned char*>(buf), n);
+        }
+        catch (...)
+        {
+            // 畸形报文忽略；不中断其余报文处理。
         }
     }
 
@@ -291,14 +305,7 @@ namespace aerovista::sync
         // 眼点（EntityID==0）也会触发业务 processor，业务侧须按 EntityID==0 过滤（§4.1）。
         _igCtrlProc.reset();
         _eyeProc.reset();
-        try
-        {
-            _session->GetIncomingMsgMgr().ProcessIncomingMsg(const_cast<unsigned char*>(buf), n);
-        }
-        catch (...)
-        {
-            return; // 畸形 / 非命令面报文（如握手残留）——忽略。
-        }
+        processIncomingFrame(buf, n);
 
         if (_igCtrlProc.got)
         {
@@ -489,11 +496,11 @@ namespace aerovista::sync
                 // 握手面（UDP_SYNC_ACK 等）不入数据面队列。
                 if (!cigi_wire::isAvsyMagic(buf, n))
                 {
-                    UdpDatagram dg;
-                    dg.bytes.assign(buf, buf + n);
-                    dg.receivedAtUs = nowUs(); // I/O 线程 recv 时刻（时钟同步方案.md §3）
+                    IncomingFrame frame;
+                    frame.bytes.assign(buf, buf + n);
+                    frame.receivedAtUs = nowUs(); // I/O 线程 recv 时刻（时钟同步方案.md §3）
                     std::lock_guard lock(_udpPayloadMutex);
-                    _udpPayloadQueue.push_back(std::move(dg));
+                    _udpPayloadQueue.push_back(std::move(frame));
                 }
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -540,8 +547,11 @@ namespace aerovista::sync
             if (outcome.kind == RecvKind::TIMEOUT)
                 continue; // 读超时：检查退出标志
             assembler.feed(buf, outcome.bytes, [this](const std::vector<unsigned char>& frame) {
+                IncomingFrame f;
+                f.bytes = frame;
+                f.receivedAtUs = 0; // TCP 命令面不消费 receivedAtUs（仅 UDP 数据面填充）
                 std::lock_guard lock(_tcpPayloadMutex);
-                _tcpPayloadQueue.push_back(frame);
+                _tcpPayloadQueue.push_back(std::move(f));
             });
         }
         // recv PEER_CLOSED/错误退出 = Host 断开（TCP 存活检测并入命令读循环线程，§3.3）。
