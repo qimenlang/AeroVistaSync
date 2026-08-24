@@ -10,6 +10,7 @@
 #include "CigiBaseEntityPositionCtrl.h"
 #include "CigiBaseEventProcessor.h"
 #include "CigiBaseIGCtrl.h"
+#include "CigiEntityPositionCtrlV4.h"
 #include "CigiIGSession.h"
 #include "CigiSOFV4.h"
 
@@ -41,14 +42,6 @@ namespace aerovista::sync
         IgSync(const IgSync&) = delete;
         IgSync& operator=(const IgSync&) = delete;
 
-        struct HostEye
-        {
-            double x = 0, y = 0, z = 0;
-            double yawDeg = 0, pitchDeg = 0, rollDeg = 0;
-            /// 来自线上 AttachState（lla设计 §5）；true = Detach+LLA。
-            bool isLla = false;
-        };
-
         /// Host 每帧 IGCtrl 携带的时间戳信息（时钟同步方案.md §3 / §4）。
         /// `rawTimeStamp` = CIGI IGCtrl.TimeStamp（uint32，10µs tick）；
         /// `receivedAtUs` = 本机单调时钟收到时刻（us）。注入式测试直接传该值；
@@ -71,8 +64,8 @@ namespace aerovista::sync
         /// 帧级维护（不收包）：外推冻结检查 + RUNNING 状态判定。每帧都应调用。
         void update();
 
-        /// 取走上一次 Update 期间收到的 Host 眼点（若有）。
-        std::optional<HostEye> takeReceivedHostEye();
+        /// 取走上一次 Update 期间收到的 Host 眼点（CCL 报文值拷贝；processor 缓存，§8.1）。
+        std::optional<CigiEntityPositionCtrlV4> takeReceivedHostEye();
 
         /// 测试 / 注入：入队一个 Host 时间戳（如同本帧收到）。
         /// 对 `rawTimeStamp` 做相位展开 → `lastSimTimeUs`，并记录 `lastReceivedAtUs`。
@@ -208,8 +201,6 @@ namespace aerovista::sync
         std::atomic<std::uint32_t> _igCtrlReceivedCount{0};
         std::atomic<std::uint32_t> _sofSentCount{0};
         std::uint32_t _lastFrameCntr = 0;
-        bool _hasReceivedEye = false;
-        HostEye _receivedEye{};
 
         // 时钟同步（时钟同步方案.md §3 / §4）
         bool _hasTimeStamp = false;
@@ -255,7 +246,7 @@ namespace aerovista::sync
                 eye = {};
             }
             bool got = false;
-            HostEye eye{};
+            CigiEntityPositionCtrlV4 eye{}; ///< CCL 报文值拷贝（processor 缓存，§8.1）
         };
 
         IgCtrlCaptureProc _igCtrlProc;

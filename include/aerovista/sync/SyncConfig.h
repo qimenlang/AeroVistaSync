@@ -1,11 +1,28 @@
 ﻿#pragma once
 
 #include <aerovista/sync/SyncJson.h>
+#include <aerovista/sync/SyncMath.h>
 
+#include <cstdint>
 #include <string>
 
 namespace aerovista::sync
 {
+    /// 选择 CIGI Attach（WORLD_LOCAL）还是 Detach（LLA）。见 lla位姿传输设计.md §5。
+    enum class HostEyeCoordFrame : std::uint8_t
+    {
+        WORLD_LOCAL = 0,
+        LLA = 1
+    };
+
+    /// Host 眼点（位置 + 欧拉 YPR 度）。`frame` 驱动线上的 Attach/Detach（不是私有 UDP 字段）。
+    struct HostEyePose
+    {
+        DVec3 position{}; ///< WORLD_LOCAL: XYZ 米；LLA: 纬度°、经度°、海拔 米
+        DVec3 eulerYprDeg{};
+        HostEyeCoordFrame frame = HostEyeCoordFrame::WORLD_LOCAL;
+    };
+
     /// 通道偏移：叠加在 Host 眼点之上（刚性阵列旋转，lla设计 §3.4）。
     struct OffsetDeg
     {

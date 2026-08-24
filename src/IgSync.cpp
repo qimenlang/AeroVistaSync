@@ -9,7 +9,6 @@
 #include <chrono>
 #include <cstring>
 #include <iostream>
-#include <optional>
 #include <thread>
 #include <vector>
 
@@ -67,8 +66,6 @@ namespace aerovista::sync
         _igCtrlReceivedCount = 0;
         _sofSentCount = 0;
         _lastFrameCntr = 0;
-        _hasReceivedEye = false;
-        _receivedEye = {};
         _hostTarget = {};
         resetHostSession();
 
@@ -121,12 +118,13 @@ namespace aerovista::sync
         return _lastFrameCntr;
     }
 
-    std::optional<IgSync::HostEye> IgSync::takeReceivedHostEye()
+    std::optional<CigiEntityPositionCtrlV4> IgSync::takeReceivedHostEye()
     {
-        if (!_hasReceivedEye)
+        // 直接取 EyeCaptureProc 的捕获结果（本帧 processIncomingUdp 已 reset+解包）；
+        // got 反映「本帧是否收到 ownship 眼点」，取走即由下次 reset 清空。
+        if (!_eyeProc.got)
             return std::nullopt;
-        _hasReceivedEye = false;
-        return _receivedEye;
+        return _eyeProc.eye;
     }
 
     bool IgSync::queueHostTimeStamp(const HostTimeStamp& stamp)
@@ -320,12 +318,6 @@ namespace aerovista::sync
                     sendSofPacket(_igCtrlProc.frameCntr);
             }
         }
-
-        if (_eyeProc.got)
-        {
-            _receivedEye = _eyeProc.eye;
-            _hasReceivedEye = true;
-        }
     }
 
     void IgSync::IgCtrlCaptureProc::OnPacketReceived(CigiBasePacket* packet)
@@ -344,24 +336,9 @@ namespace aerovista::sync
         auto* ent = dynamic_cast<CigiEntityPositionCtrlV4*>(packet);
         if (!ent || ent->GetEntityID() != 0)
             return; // 仅捕获 ownship（EntityID==0）眼点；命令实体走业务 processor（§4.1）。
+        // CCL 报文对象是复用单例，必须值拷贝缓存（§8.1 通用模式）。
         got = true;
-        eye.yawDeg = ent->GetYaw();
-        eye.pitchDeg = ent->GetPitch();
-        eye.rollDeg = ent->GetRoll();
-        if (ent->GetAttachState() == CigiBaseEntityPositionCtrl::Detach)
-        {
-            eye.isLla = true;
-            eye.x = ent->GetLat();
-            eye.y = ent->GetLon();
-            eye.z = ent->GetAlt();
-        }
-        else
-        {
-            eye.isLla = false;
-            eye.x = ent->GetXoff();
-            eye.y = ent->GetYoff();
-            eye.z = ent->GetZoff();
-        }
+        eye = *ent;
     }
 
     bool IgSync::waitUdpAck(int timeoutMs)

@@ -132,14 +132,23 @@ namespace aerovista::sync
             return;
 
         // 收包入口对等化（§8.1）：统一 drain TCP+UDP → 解包 → processor；帧级维护随后。
+        // 眼点由 IgSync 以 CCL 报文值拷贝缓存（§8.1），此处转决策器类型 HostEyePose（临时映射）。
         _ig->drainIncoming(/*sendSof=*/true);
         _ig->update();
-        if (auto eye = _ig->takeReceivedHostEye())
+        if (auto ent = _ig->takeReceivedHostEye())
         {
             HostEyePose pose;
-            pose.position = DVec3{eye->x, eye->y, eye->z};
-            pose.eulerYprDeg = DVec3{eye->yawDeg, eye->pitchDeg, eye->rollDeg};
-            pose.frame = eye->isLla ? HostEyeCoordFrame::LLA : HostEyeCoordFrame::WORLD_LOCAL;
+            pose.eulerYprDeg = {ent->GetYaw(), ent->GetPitch(), ent->GetRoll()};
+            if (ent->GetAttachState() == CigiBaseEntityPositionCtrl::Detach)
+            {
+                pose.frame = HostEyeCoordFrame::LLA;
+                pose.position = {ent->GetLat(), ent->GetLon(), ent->GetAlt()};
+            }
+            else
+            {
+                pose.frame = HostEyeCoordFrame::WORLD_LOCAL;
+                pose.position = {ent->GetXoff(), ent->GetYoff(), ent->GetZoff()};
+            }
             queueHostEyePose(pose);
         }
     }
