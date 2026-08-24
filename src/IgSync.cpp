@@ -248,11 +248,9 @@ namespace aerovista::sync
 
     void IgSync::drainIncoming(bool sendSof)
     {
-        // 主线程收包入口（对等 HostSync::drainIncoming）：统一 drain TCP+UDP 队列 → CCL 解包。
+        // 主线程收包入口（对等 HostSync::drainIncoming）：统一 drain TCP+UDP 队列 → 按链路解包（§5.1 双 session）。
         // 无条件 drain（不检查连接状态，与 Host 对等）。顺序先 UDP 后 TCP：
         // 同帧内 UDP 先更新 _lastFrameCntr，TCP 出站 tcpOutgoing() 的 SOF 帧号才是最新。
-        if (!_session)
-            ensureSession();
 
         // UDP 数据面：生产-消费等待（I/O 线程 1ms 轮询），保证刚发到的数据报当帧可见。
         std::vector<IncomingFrame> udpFrames;
@@ -297,9 +295,11 @@ namespace aerovista::sync
 
     void IgSync::processIncomingFrame(const unsigned char* buf, int n)
     {
+        // TCP 命令面报文经 _tcpSession 解包（§5.1 双 session）：碰撞检测定义 + 业务 processor。
+        ensureTcpSession();
         try
         {
-            _session->GetIncomingMsgMgr().ProcessIncomingMsg(const_cast<unsigned char*>(buf), n);
+            _tcpSession->GetIncomingMsgMgr().ProcessIncomingMsg(const_cast<unsigned char*>(buf), n);
         }
         catch (...)
         {
@@ -310,13 +310,21 @@ namespace aerovista::sync
     void IgSync::processIncomingUdp(const unsigned char* buf, int n, std::uint64_t receivedAtUs,
                                     bool sendSof)
     {
-        // 数据面 + 命令面统一经 CCL 会话解包（矛盾 A，§8.2）：
+        // 数据面 + 命令面 UDP 报文统一经 _udpSession 解包（矛盾 A + 双 session，§5.1/§8.2）：
         //   基础设施 processor —— IGCtrl（帧号/时间戳）、ownship 眼点（EntityID==0）
         //   业务 processor（engine 注册）—— 命令实体（EntityID!=0）、SymbolTextDefV4
         // 眼点（EntityID==0）也会触发业务 processor，业务侧须按 EntityID==0 过滤（§4.1）。
+        ensureUdpSession();
         _igCtrlProc.reset();
         _eyeProc.reset();
-        processIncomingFrame(buf, n);
+        try
+        {
+            _udpSession->GetIncomingMsgMgr().ProcessIncomingMsg(const_cast<unsigned char*>(buf), n);
+        }
+        catch (...)
+        {
+            // 畸形报文忽略；不中断其余报文处理。
+        }
 
         if (_igCtrlProc.got)
         {
@@ -532,19 +540,32 @@ namespace aerovista::sync
 
     void IgSync::registerEventProcessor(int packetId, CigiBaseEventProcessor* processor)
     {
-        ensureSession();
-        _session->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);
+        // 业务 processor 两个链路都注册（§8.1）：Host 可能经 TCP 或 UDP 下发命令。
+        ensureTcpSession();
+        ensureUdpSession();
+        _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);
+        _udpSession->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);
     }
 
     void IgSync::flushTcp()
     {
-        ensureSession();
-        CigiOutgoingMsg& omsg = _session->GetOutgoingMsgMgr();
+        // 只打包 TCP 命令面 session（§5.1 双 session）：该链路无待发内容时 PackageMsg 失败 → 不发。
+        if (!_tcpSession)
+            return;
+        CigiOutgoingMsg& omsg = _tcpSession->GetOutgoingMsgMgr();
         Cigi_uint8* buf = nullptr;
         int len = 0;
-        if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
+        try
         {
-            omsg.FreeMsg();
+            if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
+            {
+                omsg.FreeMsg();
+                return;
+            }
+        }
+        catch (...)
+        {
+            // 空缓冲（该链路从未 BeginMsg）→ 不发送任何字节（双 session 隔离的物理保障）。
             return;
         }
         if (_tcp.valid())
@@ -554,15 +575,25 @@ namespace aerovista::sync
 
     void IgSync::flushUdp()
     {
-        ensureSession();
+        // 只打包 UDP 数据面 session（§5.1 双 session）：该链路无待发内容时 PackageMsg 失败 → 不发。
+        if (!_udpSession)
+            return;
         if (_hostTarget.targetAddr.empty())
             return;
-        CigiOutgoingMsg& omsg = _session->GetOutgoingMsgMgr();
+        CigiOutgoingMsg& omsg = _udpSession->GetOutgoingMsgMgr();
         Cigi_uint8* buf = nullptr;
         int len = 0;
-        if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
+        try
         {
-            omsg.FreeMsg();
+            if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
+            {
+                omsg.FreeMsg();
+                return;
+            }
+        }
+        catch (...)
+        {
+            // 空缓冲（该链路从未 BeginMsg）→ 不发送任何字节（双 session 隔离的物理保障）。
             return;
         }
         _udp.sendTo(_hostTarget.targetAddr, _hostTarget.targetUdpPortRecv, buf, len);

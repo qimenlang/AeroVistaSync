@@ -118,10 +118,11 @@ namespace aerovista::sync
 
         /// TCP 出站 OutgoingMsg：业务侧 << 报文后调 flushTcp 发送（IG→Host 上报/回传）。
         /// 自动前置 CigiSOFV4 帧头（CCL 要求 IG 消息以 SOF 开头），帧号回显最近 IGCtrl。
+        /// 绑定 _tcpSession（§5.1 双 session）。
         CigiOutgoingMsg& tcpOutgoing()
         {
-            ensureSession();
-            auto& omsg = _session->GetOutgoingMsgMgr();
+            ensureTcpSession();
+            auto& omsg = _tcpSession->GetOutgoingMsgMgr();
             omsg.BeginMsg();
             CigiSOFV4 sof;
             sof.SetFrameCntr(_lastFrameCntr);
@@ -132,10 +133,11 @@ namespace aerovista::sync
 
         /// UDP 出站 OutgoingMsg：业务侧 << 报文后调 flushUdp 发送（IG→Host UDP 上报/回传）。
         /// 自动前置 CigiSOFV4 帧头（CCL 要求 IG 消息以 SOF 开头）；目标 = Host `targetUdpPortRecv`。
+        /// 绑定 _udpSession（§5.1 双 session）。
         CigiOutgoingMsg& udpOutgoing()
         {
-            ensureSession();
-            auto& omsg = _session->GetOutgoingMsgMgr();
+            ensureUdpSession();
+            auto& omsg = _udpSession->GetOutgoingMsgMgr();
             omsg.BeginMsg();
             CigiSOFV4 sof;
             sof.SetFrameCntr(_lastFrameCntr);
@@ -159,10 +161,10 @@ namespace aerovista::sync
         /// UDP 生产-消费等待：I/O 线程 1ms 轮询，drain 空队列时按 1ms 步进等待（最多 kMaxUdpDrainWaitMs），
         /// 保证刚发到的数据报当帧可见。仅 IG 侧需要（帧循环主动 drain，区别于 Host push 模式）。
         void waitForUdpFrames(std::vector<IncomingFrame>& out);
-        /// 统一解包一条报文（TCP/UDP 共用）：`_session->ProcessIncomingMsg` → 触发基础设施 + 业务 processor。
+        /// 解包一条 TCP 报文（主线程）：`_tcpSession->ProcessIncomingMsg` → 触发基础设施 + 业务 processor。
         /// 不 reset 基础设施捕获（由调用方决定）；畸形报文吞掉不中断。
         void processIncomingFrame(const unsigned char* buf, int n);
-        /// 解包一条 UDP 报文（主线程）：先 reset 基础设施捕获，再统一解包，随后更新帧号/时间戳/眼点并回 SOF。
+        /// 解包一条 UDP 报文（主线程）：先 reset 基础设施捕获，再经 `_udpSession` 解包，随后更新帧号/时间戳/眼点并回 SOF。
         /// `receivedAtUs` 由 UDP I/O 线程在 recv 时刻记录（时钟同步方案.md §3 要求收到时刻）。
         void processIncomingUdp(const unsigned char* buf, int n, std::uint64_t receivedAtUs, bool sendSof);
         /// 相位展开：把 raw（uint32, 10µs tick）累进 64 位单调 extendedTime（时钟同步方案.md §3）。
@@ -172,21 +174,30 @@ namespace aerovista::sync
         void startUdpThread();
         void stopUdpThread();
         void udpLoop();
-        /// 创建 IG CCL 会话并注册基础设施 processor（IGCtrl 帧节拍 / ownship 眼点捕获）。
-        /// 数据面 + 命令面统一经此会话解包（矛盾 A，§8.2）；主线程调用。
-        void ensureSession()
+        /// 创建 TCP 命令面 IG CCL 会话并注册基础设施 processor（碰撞检测段/体积定义，Host→IG，§8.1 按链路注册）。
+        /// 主线程调用；懒创建于 tcpOutgoing/flushTcp / TCP 收包解包。
+        void ensureTcpSession()
         {
-            if (!_session)
+            if (!_tcpSession)
             {
-                _session = std::make_unique<CigiIGSession>(1, 4096, 1, 4096);
-                _session->GetIncomingMsgMgr().RegisterEventProcessor(CIGI_IG_CTRL_PACKET_ID_V4,
-                                                                    &_igCtrlProc);
-                _session->GetIncomingMsgMgr().RegisterEventProcessor(
-                    CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4, &_eyeProc);
-                _session->GetIncomingMsgMgr().RegisterEventProcessor(
+                _tcpSession = std::make_unique<CigiIGSession>(1, 4096, 1, 4096);
+                _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(
                     CIGI_COLL_DET_SEG_DEF_PACKET_ID_V4, &_segDefProc);
-                _session->GetIncomingMsgMgr().RegisterEventProcessor(
+                _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(
                     CIGI_COLL_DET_VOL_DEF_PACKET_ID_V4, &_volDefProc);
+            }
+        }
+        /// 创建 UDP 数据面 IG CCL 会话并注册基础设施 processor（IGCtrl 帧节拍 / ownship 眼点捕获，§8.1 按链路注册）。
+        /// 主线程调用；懒创建于 udpOutgoing/flushUdp / UDP 收包解包。
+        void ensureUdpSession()
+        {
+            if (!_udpSession)
+            {
+                _udpSession = std::make_unique<CigiIGSession>(1, 4096, 1, 4096);
+                _udpSession->GetIncomingMsgMgr().RegisterEventProcessor(CIGI_IG_CTRL_PACKET_ID_V4,
+                                                                       &_igCtrlProc);
+                _udpSession->GetIncomingMsgMgr().RegisterEventProcessor(
+                    CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4, &_eyeProc);
             }
         }
 
@@ -221,9 +232,12 @@ namespace aerovista::sync
         std::thread _cmdThread;
         std::atomic<bool> _cmdThreadRunning{false};
 
-        // 数据面 + 命令面统一 CCL 会话（状态同步设计初版.md §8.1 / §5.1）；
-        // ensureSession 惰性创建，堆上分配（CigiSession 内含大 handler 表，栈上会溢出）。
-        std::unique_ptr<CigiIGSession> _session;
+        // CCL 会话（状态同步设计初版.md §5.1：CCL 单线程化 + 双 session——IG 各链路一套 CigiIGSession）；
+        // ensureTcpSession/ensureUdpSession 惰性创建，堆上分配（CigiSession 内含大 handler 表，栈上会溢出）。
+        // 发送隔离：tcpOutgoing/flushTcp 只操作 _tcpSession，udpOutgoing/flushUdp 只操作 _udpSession；
+        // 收包按链路喂各 session 解包（UDP 队列 → _udpSession，TCP 队列 → _tcpSession）。
+        std::unique_ptr<CigiIGSession> _tcpSession;
+        std::unique_ptr<CigiIGSession> _udpSession;
 
         // 基础设施 processor（§8.1 通用模式，统一定义于 EventProcess.h）：
         // IGCtrl 帧节拍/时间戳、ownship 眼点、碰撞检测段/体积定义（Host→IG）。

@@ -55,11 +55,11 @@ namespace aerovista::sync
         // ===== 命令面（状态同步设计初版.md §7）：引用式发送接口 =====
 
         /// TCP 命令面 OutgoingMsg：业务侧 << 报文后调 flushTcp 发送（fire-and-forget）。
-        /// 自动前置 IGCtrl 帧头（CCL 要求 Host 消息以 IGCtrl 开头）。
+        /// 自动前置 IGCtrl 帧头（CCL 要求 Host 消息以 IGCtrl 开头）。绑定 _tcpSession（§5.1 双 session）。
         CigiOutgoingMsg& tcpOutgoing()
         {
-            ensureSession();
-            auto& omsg = _session->GetOutgoingMsgMgr();
+            ensureTcpSession();
+            auto& omsg = _tcpSession->GetOutgoingMsgMgr();
             omsg.BeginMsg();
             CigiIGCtrlV4 igCtrl;
             igCtrl.SetFrameCntr(_frameCounter++);
@@ -68,11 +68,11 @@ namespace aerovista::sync
             return omsg;
         }
         /// UDP 数据面 OutgoingMsg：业务侧完整组装（`<< IGCtrl << 眼点 << 实时位姿`）后调
-        /// flushUdp 发送（状态同步设计初版.md §7.1：数据面帧节拍由业务侧组装）。
+        /// flushUdp 发送（状态同步设计初版.md §7.1：数据面帧节拍由业务侧组装）。绑定 _udpSession。
         CigiOutgoingMsg& udpOutgoing()
         {
-            ensureSession();
-            auto& omsg = _session->GetOutgoingMsgMgr();
+            ensureUdpSession();
+            auto& omsg = _udpSession->GetOutgoingMsgMgr();
             omsg.BeginMsg();
             return omsg;
         }
@@ -117,21 +117,36 @@ namespace aerovista::sync
         /// I/O 线程处理一条 UDP 数据报：握手面即时回 ACK；CIGI 报文入队 udpPayload（不解包）。
         void processUdpDatagram(const unsigned char* buf, int n, const char* fromIp);
         void pollUdp();
-        /// 主线程解包一条报文（UDP/TCP 共用）：_session->ProcessIncomingMsg → 基础设施 + 业务 processor。
-        void processIncomingFrame(const unsigned char* buf, int n);
+        /// 主线程解包一条 UDP 报文：_udpSession->ProcessIncomingMsg → 基础设施 + 业务 processor。
+        void processIncomingUdpFrame(const unsigned char* buf, int n);
+        /// 主线程解包一条 TCP 报文：_tcpSession->ProcessIncomingMsg → 基础设施 + 业务 processor。
+        void processIncomingTcpFrame(const unsigned char* buf, int n);
 
-        /// 懒创建 CCL 会话：仅发送接口 / 收包解包首次使用时才构造。
+        /// 懒创建 TCP 命令面 CCL 会话（§5.1 双 session）：仅 tcpOutgoing/flushTcp / TCP 收包首次使用时构造。
         /// CigiSession 构造/析构在 MSVC Debug 下较贵（大 handler 表），纯收包端点不应为此买单。
-        void ensureSession()
+        /// 基础设施 processor 按链路注册（§8.1）：SOF 计数 TCP+UDP 都注册，碰撞检测响应只注册 TCP。
+        void ensureTcpSession()
         {
-            if (!_session)
+            if (!_tcpSession)
             {
-                _session = std::make_unique<CigiHostSession>(1, 4096, 1, 4096);
-                _session->GetIncomingMsgMgr().RegisterEventProcessor(CIGI_SOF_PACKET_ID_V4, &_sofProc);
-                _session->GetIncomingMsgMgr().RegisterEventProcessor(
+                _tcpSession = std::make_unique<CigiHostSession>(1, 4096, 1, 4096);
+                _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(CIGI_SOF_PACKET_ID_V4,
+                                                                       &_sofProc);
+                _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(
                     CIGI_COLL_DET_SEG_RESP_PACKET_ID_V4, &_segRespProc);
-                _session->GetIncomingMsgMgr().RegisterEventProcessor(
+                _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(
                     CIGI_COLL_DET_VOL_RESP_PACKET_ID_V4, &_volRespProc);
+            }
+        }
+        /// 懒创建 UDP 数据面 CCL 会话（§5.1 双 session）：仅 udpOutgoing/flushUdp / UDP 收包首次使用时构造。
+        /// SOF 计数两个 session 都注册（数据面 SOF 走 UDP，IG TCP 上报消息头也是 SOF）。
+        void ensureUdpSession()
+        {
+            if (!_udpSession)
+            {
+                _udpSession = std::make_unique<CigiHostSession>(1, 4096, 1, 4096);
+                _udpSession->GetIncomingMsgMgr().RegisterEventProcessor(CIGI_SOF_PACKET_ID_V4,
+                                                                       &_sofProc);
             }
         }
 
@@ -171,8 +186,11 @@ namespace aerovista::sync
         std::mutex _tcpPayloadMutex;
         std::vector<std::vector<unsigned char>> _tcpPayloadQueue;
 
-        // CCL 会话（状态同步设计初版.md §5.1：CCL 单线程化，Host 一套 CigiHostSession）；
-        // 懒初始化（ensureSession），堆上分配（CigiSession 内含大 handler 表，栈上会溢出）。
-        std::unique_ptr<CigiHostSession> _session;
+        // CCL 会话（状态同步设计初版.md §5.1：CCL 单线程化 + 双 session——Host 各链路一套 CigiHostSession）；
+        // 懒初始化（ensureTcpSession/ensureUdpSession），堆上分配（CigiSession 内含大 handler 表，栈上会溢出）。
+        // 发送隔离：tcpOutgoing/flushTcp 只操作 _tcpSession，udpOutgoing/flushUdp 只操作 _udpSession；
+        // 收包按链路喂各 session 解包（UDP 队列 → _udpSession，TCP 队列 → _tcpSession）。
+        std::unique_ptr<CigiHostSession> _tcpSession;
+        std::unique_ptr<CigiHostSession> _udpSession;
     };
 } // namespace aerovista::sync

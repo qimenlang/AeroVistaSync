@@ -340,12 +340,25 @@ namespace aerovista::sync
         }
     }
 
-    void HostSync::processIncomingFrame(const unsigned char* buf, int n)
+    void HostSync::processIncomingUdpFrame(const unsigned char* buf, int n)
     {
-        ensureSession();
+        ensureUdpSession();
         try
         {
-            _session->GetIncomingMsgMgr().ProcessIncomingMsg(const_cast<unsigned char*>(buf), n);
+            _udpSession->GetIncomingMsgMgr().ProcessIncomingMsg(const_cast<unsigned char*>(buf), n);
+        }
+        catch (...)
+        {
+            // 畸形 / 非命令面报文（如握手残留）——忽略。
+        }
+    }
+
+    void HostSync::processIncomingTcpFrame(const unsigned char* buf, int n)
+    {
+        ensureTcpSession();
+        try
+        {
+            _tcpSession->GetIncomingMsgMgr().ProcessIncomingMsg(const_cast<unsigned char*>(buf), n);
         }
         catch (...)
         {
@@ -355,14 +368,14 @@ namespace aerovista::sync
 
     void HostSync::drainIncoming()
     {
-        ensureSession();
+        // 按链路喂各 session 解包（§5.1 双 session）：UDP 队列 → _udpSession，TCP 队列 → _tcpSession。
         std::vector<std::vector<unsigned char>> udpFrames;
         {
             std::lock_guard lock(_udpPayloadMutex);
             udpFrames.swap(_udpPayloadQueue);
         }
         for (const auto& f : udpFrames)
-            processIncomingFrame(f.data(), static_cast<int>(f.size()));
+            processIncomingUdpFrame(f.data(), static_cast<int>(f.size()));
 
         std::vector<std::vector<unsigned char>> tcpFrames;
         {
@@ -370,13 +383,16 @@ namespace aerovista::sync
             tcpFrames.swap(_tcpPayloadQueue);
         }
         for (const auto& f : tcpFrames)
-            processIncomingFrame(f.data(), static_cast<int>(f.size()));
+            processIncomingTcpFrame(f.data(), static_cast<int>(f.size()));
     }
 
     void HostSync::registerEventProcessor(int packetId, CigiBaseEventProcessor* processor)
     {
-        ensureSession();
-        _session->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);
+        // 业务 processor 两个链路都注册（§8.1）：IG 可能经 TCP 或 UDP 发来上报。
+        ensureTcpSession();
+        ensureUdpSession();
+        _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);
+        _udpSession->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);
     }
 
     std::optional<CigiCollDetSegRespV4> HostSync::takeReceivedCollDetSegResp()
@@ -395,14 +411,23 @@ namespace aerovista::sync
 
     void HostSync::flushTcp()
     {
-        if (!_session)
+        // 只打包 TCP 命令面 session（§5.1 双 session）：该链路无待发内容时 PackageMsg 失败 → 不发。
+        if (!_tcpSession)
             return;
-        CigiOutgoingMsg& omsg = _session->GetOutgoingMsgMgr();
+        CigiOutgoingMsg& omsg = _tcpSession->GetOutgoingMsgMgr();
         Cigi_uint8* buf = nullptr;
         int len = 0;
-        if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
+        try
         {
-            omsg.FreeMsg();
+            if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
+            {
+                omsg.FreeMsg();
+                return;
+            }
+        }
+        catch (...)
+        {
+            // 空缓冲（该链路从未 BeginMsg）→ 不发送任何字节（双 session 隔离的物理保障）。
             return;
         }
 
@@ -423,14 +448,23 @@ namespace aerovista::sync
 
     void HostSync::flushUdp()
     {
-        if (!_session)
+        // 只打包 UDP 数据面 session（§5.1 双 session）：该链路无待发内容时 PackageMsg 失败 → 不发。
+        if (!_udpSession)
             return;
-        CigiOutgoingMsg& omsg = _session->GetOutgoingMsgMgr();
+        CigiOutgoingMsg& omsg = _udpSession->GetOutgoingMsgMgr();
         Cigi_uint8* buf = nullptr;
         int len = 0;
-        if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
+        try
         {
-            omsg.FreeMsg();
+            if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
+            {
+                omsg.FreeMsg();
+                return;
+            }
+        }
+        catch (...)
+        {
+            // 空缓冲（该链路从未 BeginMsg）→ 不发送任何字节（双 session 隔离的物理保障）。
             return;
         }
 
