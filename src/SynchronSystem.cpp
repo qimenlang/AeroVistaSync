@@ -131,7 +131,9 @@ namespace aerovista::sync
         if (!_ig)
             return;
 
-        _ig->update(/*sendSof=*/true);
+        // 收包入口对等化（§8.1）：统一 drain TCP+UDP → 解包 → processor；帧级维护随后。
+        _ig->drainIncoming(/*sendSof=*/true);
+        _ig->update();
         if (auto eye = _ig->takeReceivedHostEye())
         {
             HostEyePose pose;
@@ -209,11 +211,6 @@ namespace aerovista::sync
 
     void SynchronSystem::update()
     {
-        // 命令执行归主线程（状态同步设计初版.md §4）：命令读循环线程回 RECEIVED 后入队，
-        // 主线程每帧在此执行（场景归属主线程，避免跨线程改场景 / 编译 pipeline）。
-        if (_ig)
-            _ig->runPendingCommands();
-
         _pendingApplied.reset();
         const bool linked = igLinked();
 

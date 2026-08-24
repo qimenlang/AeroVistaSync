@@ -11,10 +11,10 @@
 #include "CigiBaseEventProcessor.h"
 #include "CigiBaseIGCtrl.h"
 #include "CigiIGSession.h"
+#include "CigiSOFV4.h"
 
 #include <atomic>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -56,7 +56,12 @@ namespace aerovista::sync
         bool connect(const IgConfig& config);
         void shutdown();
 
-        void update(bool sendSof = true);
+        /// 主线程收包入口（对等 HostSync::drainIncoming）：统一 drain TCP+UDP 收包队列 → CCL 解包。
+        /// 无条件 drain（不检查连接状态，与 Host 对等）；收到新 IGCtrl 时回 SOF（sendSof）。
+        void drainIncoming(bool sendSof = true);
+
+        /// 帧级维护（不收包）：外推冻结检查 + RUNNING 状态判定。每帧都应调用。
+        void update();
 
         /// 取走上一次 Update 期间收到的 Host 眼点（若有）。
         std::optional<HostEye> takeReceivedHostEye();
@@ -105,9 +110,35 @@ namespace aerovista::sync
         /// processor 由 engine 层定义；生命周期需覆盖 sync 会话（§8.1）。
         void registerEventProcessor(int packetId, CigiBaseEventProcessor* processor);
 
-        /// 主线程每帧 drain TCP 命令面收包队列 → CCL 解包 → 触发业务 processor。
-        /// 由 SynchronSystem::update 调用（场景归属主线程，状态同步设计初版.md §4）。
-        void runPendingCommands();
+        // ===== 发送（对等 Host 侧 §7）：IG 出站消息自动前置 SOF 帧头 =====
+
+        /// TCP 出站 OutgoingMsg：业务侧 << 报文后调 flushTcp 发送（IG→Host 上报/回传）。
+        /// 自动前置 CigiSOFV4 帧头（CCL 要求 IG 消息以 SOF 开头），帧号回显最近 IGCtrl。
+        CigiOutgoingMsg& tcpOutgoing()
+        {
+            ensureSession();
+            auto& omsg = _session->GetOutgoingMsgMgr();
+            omsg.BeginMsg();
+            CigiSOFV4 sof;
+            sof.SetFrameCntr(_lastFrameCntr);
+            omsg << sof;
+            return omsg;
+        }
+        void flushTcp();
+
+        /// UDP 出站 OutgoingMsg：业务侧 << 报文后调 flushUdp 发送（IG→Host UDP 上报/回传）。
+        /// 自动前置 CigiSOFV4 帧头（CCL 要求 IG 消息以 SOF 开头）；目标 = Host `targetUdpPortRecv`。
+        CigiOutgoingMsg& udpOutgoing()
+        {
+            ensureSession();
+            auto& omsg = _session->GetOutgoingMsgMgr();
+            omsg.BeginMsg();
+            CigiSOFV4 sof;
+            sof.SetFrameCntr(_lastFrameCntr);
+            omsg << sof;
+            return omsg;
+        }
+        void flushUdp();
 
     private:
         static constexpr int tcpConnectTimeoutMs = 200;
@@ -145,7 +176,7 @@ namespace aerovista::sync
             }
         }
 
-        // 命令面 I/O 线程（§5.1）：TCP recv + 分帧 → 入队 tcpPayload；主线程 runPendingCommands 解包。
+        // 命令面 I/O 线程（§5.1）：TCP recv + 分帧 → 入队 tcpPayload；主线程 drainIncoming 解包。
         void startCommandThread();
         void stopCommandThread();
         void commandLoop();
@@ -229,7 +260,7 @@ namespace aerovista::sync
         std::mutex _udpPayloadMutex;
         std::vector<UdpDatagram> _udpPayloadQueue;
 
-        // 命令面收包队列：I/O 线程（commandLoop）分帧入队，主线程（runPendingCommands）drain 解包。
+        // 命令面收包队列：I/O 线程（commandLoop）分帧入队，主线程（drainIncoming）drain 解包。
         std::mutex _tcpPayloadMutex;
         std::vector<std::vector<unsigned char>> _tcpPayloadQueue;
     };

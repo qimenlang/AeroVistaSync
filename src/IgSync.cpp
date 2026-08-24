@@ -222,7 +222,7 @@ namespace aerovista::sync
         _sofSentCount.fetch_add(1);
     }
 
-    void IgSync::update(bool sendSof)
+    void IgSync::update()
     {
         // 无论是否仍连接，都检查外推冻结——Host 离线断线后 IG 仍应每帧检查，
         // 超过阈值后冻结（时间戳停住），而不是随本地流逝无限外推（时钟同步方案.md §4.3）。
@@ -233,13 +233,19 @@ namespace aerovista::sync
 
         if (_tcpConnected && _udpSynced)
             _status = IgStatus::RUNNING;
+    }
 
-        ensureSession();
+    void IgSync::drainIncoming(bool sendSof)
+    {
+        // 主线程收包入口（对等 HostSync::drainIncoming）：统一 drain TCP+UDP 队列 → CCL 解包。
+        // 无条件 drain（不检查连接状态，与 Host 对等）。顺序先 UDP 后 TCP：
+        // 同帧内 UDP 先更新 _lastFrameCntr，TCP 出站 tcpOutgoing() 的 SOF 帧号才是最新。
+        if (!_session)
+            ensureSession();
 
-        // 主线程 drain UDP payload 队列 → 统一 CCL 解包（§5.1 / §6：I/O 线程只 recv 入队）。
-        // 生产-消费：I/O 线程 1ms 轮询，drain 空队列时按 1ms 步进等待（最多 kMaxUdpDrainWaitMs），
-        // 保证刚发到的数据报在当帧可见；Host 数据到达频率 ≤ 帧率，正常运行时队列非空即立即处理，
-        // 等待仅在「Host 未发帧」的空闲期发生，不引入持续延迟。
+        // UDP 数据面队列。生产-消费：I/O 线程 1ms 轮询，drain 空队列时按 1ms 步进等待
+        // （最多 kMaxUdpDrainWaitMs），保证刚发到的数据报在当帧可见；Host 数据到达频率 ≤ 帧率，
+        // 正常运行时队列非空即立即处理，等待仅在「Host 未发帧」的空闲期发生。
         constexpr int kMaxUdpDrainWaitMs = 5;
         std::vector<UdpDatagram> datagrams;
         for (int waited = 0; ; waited += 1)
@@ -255,6 +261,25 @@ namespace aerovista::sync
         for (const auto& dg : datagrams)
             processIncomingUdp(dg.bytes.data(), static_cast<int>(dg.bytes.size()), dg.receivedAtUs,
                                sendSof);
+
+        // TCP 命令面队列（原 runPendingCommands 职责）。
+        std::vector<std::vector<unsigned char>> frames;
+        {
+            std::lock_guard lock(_tcpPayloadMutex);
+            frames.swap(_tcpPayloadQueue);
+        }
+        for (const auto& frame : frames)
+        {
+            try
+            {
+                _session->GetIncomingMsgMgr().ProcessIncomingMsg(
+                    const_cast<unsigned char*>(frame.data()), static_cast<int>(frame.size()));
+            }
+            catch (...)
+            {
+                // 畸形报文忽略；不中断其余报文处理。
+            }
+        }
     }
 
     void IgSync::processIncomingUdp(const unsigned char* buf, int n, std::uint64_t receivedAtUs,
@@ -525,33 +550,42 @@ namespace aerovista::sync
             markDisconnected();
     }
 
-    void IgSync::runPendingCommands()
-    {
-        // 主线程：drain TCP 命令面收包队列 → CCL 解包 → 触发业务 processor（§8.2）。
-        std::vector<std::vector<unsigned char>> frames;
-        {
-            std::lock_guard lock(_tcpPayloadMutex);
-            frames.swap(_tcpPayloadQueue);
-        }
-        for (const auto& frame : frames)
-        {
-            if (!_session)
-                continue; // 未初始化 session：丢弃命令面帧。
-            try
-            {
-                _session->GetIncomingMsgMgr().ProcessIncomingMsg(
-                    const_cast<unsigned char*>(frame.data()), static_cast<int>(frame.size()));
-            }
-            catch (...)
-            {
-                // 畸形报文忽略；不中断其余报文处理。
-            }
-        }
-    }
-
     void IgSync::registerEventProcessor(int packetId, CigiBaseEventProcessor* processor)
     {
         ensureSession();
         _session->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);
+    }
+
+    void IgSync::flushTcp()
+    {
+        ensureSession();
+        CigiOutgoingMsg& omsg = _session->GetOutgoingMsgMgr();
+        Cigi_uint8* buf = nullptr;
+        int len = 0;
+        if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
+        {
+            omsg.FreeMsg();
+            return;
+        }
+        if (_tcp.valid())
+            _tcp.sendAll(buf, len);
+        omsg.FreeMsg();
+    }
+
+    void IgSync::flushUdp()
+    {
+        ensureSession();
+        if (_hostTarget.targetAddr.empty())
+            return;
+        CigiOutgoingMsg& omsg = _session->GetOutgoingMsgMgr();
+        Cigi_uint8* buf = nullptr;
+        int len = 0;
+        if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
+        {
+            omsg.FreeMsg();
+            return;
+        }
+        _udp.sendTo(_hostTarget.targetAddr, _hostTarget.targetUdpPortRecv, buf, len);
+        omsg.FreeMsg();
     }
 } // namespace aerovista::sync

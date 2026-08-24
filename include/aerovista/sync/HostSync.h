@@ -7,6 +7,8 @@
 #include <aerovista/sync/TcpSocket.h>
 #include <aerovista/sync/UdpSocket.h>
 
+#include "CigiBaseEventProcessor.h"
+#include "CigiBaseSOF.h"
 #include "CigiHostSession.h"
 #include "CigiIGCtrlV4.h"
 
@@ -77,6 +79,17 @@ namespace aerovista::sync
         void flushTcp();
         void flushUdp();
 
+        // ===== 收包（对等 IG 侧 §8.1）：注册 processor 处理 IG→Host 报文 =====
+
+        /// 注册某个 CIGI 报文的业务 EventProcessor（透传到 CCL session 的 RegisterEventProcessor）。
+        /// 处理 IG 经 TCP/UDP 发来的报文（如 IG 发 SymbolTextDefV4 文本指令）。
+        /// processor 由业务层定义；生命周期需覆盖 HostSync 会话。
+        void registerEventProcessor(int packetId, CigiBaseEventProcessor* processor);
+
+        /// 主线程解包入口：drain UDP/TCP 收包队列 → CCL 解包 → 触发 processor。
+        /// 业务/测试在需要处理 IG 上报时调用（Host 收包为 push 模式，无独立帧循环）。
+        void drainIncoming();
+
     private:
         struct IgPeer
         {
@@ -91,23 +104,38 @@ namespace aerovista::sync
         void acceptLoop();
         void udpLoop();
         void handleClient(std::shared_ptr<TcpSocket> client, std::string peerIp);
-        /// TCP 读循环：仅做存活检测（recv 对端数据即丢弃；PEER_CLOSED/错误 → markPeerDisconnected）。
-        /// 新契约命令面为 fire-and-forget，Host 侧不再解析回执。
+        /// TCP 读循环（peer 线程）：recv → CigiFrameAssembler 分帧 → 入队 tcpPayload；主线程 drainIncoming 解包。
+        /// PEER_CLOSED/错误 → markPeerDisconnected（存活检测）。
         void commandReadLoop(const std::shared_ptr<TcpSocket>& client, std::uint64_t clientId);
         void joinClientThreads();
         int countReadyUnlocked() const;
+        /// I/O 线程处理一条 UDP 数据报：握手面即时回 ACK；CIGI 报文入队 udpPayload（不解包）。
         void processUdpDatagram(const unsigned char* buf, int n, const char* fromIp);
         void pollUdp();
+        /// 主线程解包一条报文（UDP/TCP 共用）：_session->ProcessIncomingMsg → 基础设施 + 业务 processor。
+        void processIncomingFrame(const unsigned char* buf, int n);
 
-        /// 懒创建 CCL 会话：仅 tcpOutgoing/udpOutgoing 首次使用时才构造。
+        /// 懒创建 CCL 会话：仅发送接口 / 收包解包首次使用时才构造。
         /// CigiSession 构造/析构在 MSVC Debug 下较贵（大 handler 表），纯收包端点不应为此买单。
         void ensureSession()
         {
             if (!_session)
+            {
                 _session = std::make_unique<CigiHostSession>(1, 4096, 1, 4096);
+                _session->GetIncomingMsgMgr().RegisterEventProcessor(CIGI_SOF_PACKET_ID_V4, &_sofProc);
+            }
         }
 
         void markPeerDisconnected(std::uint64_t clientId);
+
+        // 基础设施 processor（sync 库内部注册）：SOF 回显计数（替代手写 unpackSof）。
+        class SofCaptureProc : public CigiBaseEventProcessor
+        {
+        public:
+            void OnPacketReceived(CigiBasePacket* packet) override;
+            std::atomic<std::uint32_t> count{0};
+        };
+        SofCaptureProc _sofProc;
 
         HostConfig _local{};
         UdpSocket _udp;
@@ -127,11 +155,17 @@ namespace aerovista::sync
 
         mutable std::mutex _udpMutex;
 
-        std::atomic<std::uint32_t> _sofReceivedCount{0};
         std::uint32_t _frameCounter = 0; ///< 已分配帧号数（tcpOutgoing/nextFrameCntr 递增）
         std::uint64_t _nextClientId = 0;
 
-        // 命令面 CCL 会话（状态同步设计初版.md §5.1：CCL 单线程化，Host 一套 CigiHostSession）；
+        // 收包 payload 队列：I/O 线程（udpLoop / commandReadLoop）入队，主线程 drainIncoming 解包。
+        // UDP 一条数据报 = 一条 CIGI 消息（无需分帧）；TCP 需分帧（§4.2）。
+        std::mutex _udpPayloadMutex;
+        std::vector<std::vector<unsigned char>> _udpPayloadQueue;
+        std::mutex _tcpPayloadMutex;
+        std::vector<std::vector<unsigned char>> _tcpPayloadQueue;
+
+        // CCL 会话（状态同步设计初版.md §5.1：CCL 单线程化，Host 一套 CigiHostSession）；
         // 懒初始化（ensureSession），堆上分配（CigiSession 内含大 handler 表，栈上会溢出）。
         std::unique_ptr<CigiHostSession> _session;
     };

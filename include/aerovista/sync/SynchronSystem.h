@@ -49,6 +49,7 @@ namespace aerovista::sync
         bool initialize(const SyncRoleConfig& role, const SyncSystemConfig& syncSystem);
         void shutdown();
 
+        /// 帧前：IgSync::drainIncoming 收包解包 + update 帧级维护，取眼点入队（本帧相机决策的输入）。
         void preFrame();
 
         /// 场景模式注入（lla §2 / §4.5）：宿主场景确定或重建后调用。
@@ -58,8 +59,8 @@ namespace aerovista::sync
         /// 通道标识（错误日志用）。
         void setChannelId(int channelId);
 
-        /// 推进同步状态（收包 / 决策）；计算本帧待应用相机位姿（若有）。
-        /// 每帧调用一次，然后读 takePendingCameraPose()。
+        /// 帧级决策（不收包）：计算本帧待应用相机位姿（若有）。
+        /// 收包在 preFrame（IgSync::drainIncoming）；每帧调用一次，然后读 takePendingCameraPose()。
         void update();
 
         /// 本帧应写相机的位姿（Host 眼点 ⊕ 偏移；断线 / ReuseLast 时保留最后一帧），若有。

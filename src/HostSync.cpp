@@ -2,6 +2,8 @@
 #include <aerovista/sync/CigiWire.h>
 #include <aerovista/sync/SyncProtocol.h>
 
+#include "CigiSOFV4.h"
+
 #include <chrono>
 #include <cstring>
 #include <iostream>
@@ -68,8 +70,8 @@ namespace aerovista::sync
 
     std::uint32_t HostSync::sofReceivedCount() const
     {
-        const_cast<HostSync*>(this)->pollUdp();
-        return _sofReceivedCount.load();
+        const_cast<HostSync*>(this)->drainIncoming();
+        return _sofProc.count.load();
     }
 
     void HostSync::run()
@@ -112,7 +114,7 @@ namespace aerovista::sync
         shutdown();
         _local = local;
         _status = HostStatus::IDLE;
-        _sofReceivedCount = 0;
+        _sofProc.count = 0;
         _frameCounter = 0;
 
         std::string udpError;
@@ -160,6 +162,14 @@ namespace aerovista::sync
             std::lock_guard lock(_peersMutex);
             _peers.clear();
             _earlyUdpSyncByPort.clear();
+        }
+        {
+            std::lock_guard lock(_udpPayloadMutex);
+            _udpPayloadQueue.clear();
+        }
+        {
+            std::lock_guard lock(_tcpPayloadMutex);
+            _tcpPayloadQueue.clear();
         }
 
         if (_udp.valid())
@@ -234,8 +244,9 @@ namespace aerovista::sync
 
     void HostSync::commandReadLoop(const std::shared_ptr<TcpSocket>& client, std::uint64_t clientId)
     {
-        // TCP 读循环（新契约 §5.2）：只做存活检测——recv 对端数据即丢弃；
-        // PEER_CLOSED（对端关闭）/ IO_ERROR 即判定断线。命令面 fire-and-forget，无回执解析。
+        // TCP 读循环：recv → 分帧 → 入队 tcpPayload；主线程 drainIncoming 解包（§8.2 对等）。
+        // PEER_CLOSED（对端关闭）/ IO_ERROR 即判定断线。
+        cigi_wire::CigiFrameAssembler assembler;
         unsigned char cmdBuf[4096];
         for (;;)
         {
@@ -244,6 +255,10 @@ namespace aerovista::sync
                 break;
             if (outcome.kind == RecvKind::TIMEOUT)
                 continue; // 读超时（SO_RCVTIMEO）≠ 断线
+            assembler.feed(cmdBuf, outcome.bytes, [this](const std::vector<unsigned char>& frame) {
+                std::lock_guard lock(_tcpPayloadMutex);
+                _tcpPayloadQueue.push_back(frame);
+            });
         }
         (void)clientId;
     }
@@ -311,9 +326,11 @@ namespace aerovista::sync
             return;
         }
 
-        std::uint32_t sofFrame = 0;
-        if (cigi_wire::unpackSof(buf, n, sofFrame))
-            _sofReceivedCount.fetch_add(1);
+        // CIGI 数据报文（SOF / IG 上报等）：I/O 线程只入队，主线程 drainIncoming 解包。
+        {
+            std::lock_guard lock(_udpPayloadMutex);
+            _udpPayloadQueue.emplace_back(buf, buf + n);
+        }
     }
 
     void HostSync::udpLoop()
@@ -323,6 +340,51 @@ namespace aerovista::sync
             pollUdp();
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
+    }
+
+    void HostSync::processIncomingFrame(const unsigned char* buf, int n)
+    {
+        ensureSession();
+        try
+        {
+            _session->GetIncomingMsgMgr().ProcessIncomingMsg(const_cast<unsigned char*>(buf), n);
+        }
+        catch (...)
+        {
+            // 畸形 / 非命令面报文（如握手残留）——忽略。
+        }
+    }
+
+    void HostSync::drainIncoming()
+    {
+        ensureSession();
+        std::vector<std::vector<unsigned char>> udpFrames;
+        {
+            std::lock_guard lock(_udpPayloadMutex);
+            udpFrames.swap(_udpPayloadQueue);
+        }
+        for (const auto& f : udpFrames)
+            processIncomingFrame(f.data(), static_cast<int>(f.size()));
+
+        std::vector<std::vector<unsigned char>> tcpFrames;
+        {
+            std::lock_guard lock(_tcpPayloadMutex);
+            tcpFrames.swap(_tcpPayloadQueue);
+        }
+        for (const auto& f : tcpFrames)
+            processIncomingFrame(f.data(), static_cast<int>(f.size()));
+    }
+
+    void HostSync::registerEventProcessor(int packetId, CigiBaseEventProcessor* processor)
+    {
+        ensureSession();
+        _session->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);
+    }
+
+    void HostSync::SofCaptureProc::OnPacketReceived(CigiBasePacket* packet)
+    {
+        if (dynamic_cast<CigiSOFV4*>(packet))
+            count.fetch_add(1);
     }
 
     void HostSync::flushTcp()
