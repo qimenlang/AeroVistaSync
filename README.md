@@ -32,17 +32,16 @@ target_link_libraries(your_target PRIVATE aerovista::aerovistaSync)
 #include <aerovista/sync/SynchronSystem.h>
 #include <aerovista/sync/SyncConfig.h>
 
-aerovista::sync::SyncRoleConfig role;
-role.enableHost = true;
-role.hostConfig = /* loadHostConfig(...) 或直接填 */;
+IgConfig ig;
+loadIgConfig("ig.json", ig, &error);
 auto sync = aerovista::sync::SynchronSystem::create();
-sync->initialize(role);
+sync->initialize(ig);
 ```
 
 ## 快速开始
 
-- viewhost（Host-only）：见 `examples/minimal_viewhost.cpp` + `examples/viewhost.json`。
-- 独立 IG：用 `loadIgConfig(path, igConfig, err)` 读配置后 `initialize(enableIg=true)`。
+- viewhost（Host-only）：见 `examples/minimal_viewhost.cpp` + `examples/viewhost.json`，直接持 `HostSync`（`initialize(HostConfig)` + `run`）。
+- 独立 IG：用 `loadIgConfig(path, igConfig, err)` 读配置后 `SynchronSystem::create()->initialize(igConfig)`。
 
 ## 测试
 

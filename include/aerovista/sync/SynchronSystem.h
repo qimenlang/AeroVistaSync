@@ -2,7 +2,6 @@
 
 #include <aerovista/sync/IgSync.h>
 #include <aerovista/sync/SyncConfig.h>
-#include <aerovista/sync/SyncMath.h>
 
 #include <cstdint>
 #include <memory>
@@ -16,11 +15,10 @@ namespace aerovista::sync
     ///
     /// 数据流契约（sync模块化设计.md §3.1）：Host 眼点由宿主经 queueHostEyePose()
     /// 喂入（测试注入）或经 preFrame() 从 IgSync 收包，场景模式由宿主注入
-    /// setEllipsoidTransform()，产出位姿由宿主经 takePendingCameraPose() 取走。
+    /// setEllipsoidMode()，产出位姿由宿主经 takePendingCameraPose() 取走。
     ///
-    /// 公开接口零 vsg：所有类型为自有 POD（DVec3）或注入接口（EllipsoidTransform），
-    /// 消费方（含无 vsg 的 viewhost）不接触 vsg 头文件。Host 采样/扇出不在本类，
-    /// 由宿主（Engine）自行持有 HostSync 完成。
+    /// 公开接口零 vsg：所有类型为自有 POD（DVec3）。消费方（含无 vsg 的 viewhost）
+    /// 不接触 vsg 头文件。Host 采样/扇出不在本类，由宿主（Engine）自行持有 HostSync 完成。
     class SynchronSystem
     {
     public:
@@ -32,9 +30,9 @@ namespace aerovista::sync
         static std::unique_ptr<SynchronSystem> create();
 
         // ---- 生命周期 ----
-        /// 初始化 IG 决策器：按 role 启动 IgSync，并应用装配配置
-        /// （channelId / offsetDeg / hostEyeStalePolicy / requireConnectedIg）。
-        bool initialize(const SyncRoleConfig& role, const SyncSystemConfig& syncSystem);
+        /// 初始化 IG 决策器：`igConfig` 非空则按它启动 IgSync 并连接，空则不启 IG（纯 Host 宿主 / 关闭同步）；
+        /// 装配配置（channelId / offsetDeg / hostEyeStalePolicy / requireConnectedIg）经 `syncSystem` 应用。
+        bool initialize(const std::optional<IgConfig>& igConfig, const SyncSystemConfig& syncSystem);
         void shutdown();
 
         // ---- 帧循环（engine tickOnFrame 每帧驱动）----
@@ -48,10 +46,9 @@ namespace aerovista::sync
         std::optional<HostEyePose> takePendingCameraPose();
 
         // ---- 场景模式 / 装配 ----
-        /// 场景模式注入（lla §2 / §4.5）：宿主场景确定或重建后调用。
-        /// `transform` 非空 = 椭球模式；空 = 本地模式（唯一场景模式入口）。
-        /// sync 库不持有所有权，宿主需保证其生命周期覆盖 sync 会话。
-        void setEllipsoidTransform(const EllipsoidTransform* transform);
+        /// 场景模式注入（lla §2 / §4.5）：`ellipsoid` 为 true = 椭球模式，false = 本地模式（唯一入口）。
+        /// 由宿主在场景确定或重建后调用；引擎侧取场景 `EllipsoidModel` 有无即可。
+        void setEllipsoidMode(bool ellipsoid);
         void setOffsetDeg(const OffsetDeg& offset);
         const OffsetDeg& offsetDeg() const { return _offsetDeg; }
         void setHostEyeStalePolicy(HostEyeStalePolicy policy);
@@ -84,22 +81,23 @@ namespace aerovista::sync
     private:
         void applyHostEye(const HostEyePose& hostEye);
         bool tryAcceptPendingEye();
-        /// 椭球变换存在即椭球模式（本地 = 无椭球变换）。
-        bool sceneIsEllipsoid() const { return _ellipsoidTransform != nullptr; }
+        bool sceneIsEllipsoid() const { return _ellipsoidMode; }
 
         std::unique_ptr<IgSync> _ig;
 
         OffsetDeg _offsetDeg{};
         HostEyeStalePolicy _stalePolicy = HostEyeStalePolicy::REUSE_LAST;
 
-        const EllipsoidTransform* _ellipsoidTransform = nullptr;
+        bool _ellipsoidMode = false;
         int _channelId = 0;
 
-        bool _hasPendingEye = false;
-        HostEyePose _pendingEye{};
+        /// 本帧新输入（收包/注入）；空 = 本帧无新输入。经 tryAcceptPendingEye 消费（成功入缓存或弃值）。
+        std::optional<HostEyePose> _pendingEye;
         std::optional<HostEyePose> _cachedHostEye;
+        /// 最近合成位姿（Host ⊕ offset，持久；供 lastAppliedHostEye 观测）。
         std::optional<HostEyePose> _lastApplied;
-        std::optional<HostEyePose> _pendingApplied;
+        /// 本帧已合成新位姿的事件标记：takePendingCameraPose 读取 `_lastApplied` 并清标记。
+        bool _hasPendingApplied = false;
         std::uint64_t _eyePoseRejectedByFrameMismatch = 0;
         bool _frameMismatchErrorLogged = false;
     };

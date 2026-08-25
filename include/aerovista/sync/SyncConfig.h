@@ -78,14 +78,6 @@ namespace aerovista::sync
         bool requireConnectedIg = false;
     };
 
-    struct SyncRoleConfig
-    {
-        bool enableHost = false;
-        bool enableIg = false;
-        HostConfig hostConfig{};
-        IgConfig igConfig{};
-    };
-
     /// 解析只含 `hostConfig` 块的文件（viewhost / 独立 Host 进程）。
     /// 顶层未知键拒绝。见 sync模块化设计.md §4.0。
     bool loadHostConfig(const std::string& path, HostConfig& out, std::string* error = nullptr);

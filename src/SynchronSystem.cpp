@@ -6,7 +6,6 @@
 
 #include <cmath>
 #include <iostream>
-#include <utility>
 
 namespace aerovista::sync
 {
@@ -76,24 +75,24 @@ namespace aerovista::sync
         shutdown();
     }
 
-    bool SynchronSystem::initialize(const SyncRoleConfig& role, const SyncSystemConfig& syncSystem)
+    bool SynchronSystem::initialize(const std::optional<IgConfig>& igConfig, const SyncSystemConfig& syncSystem)
     {
         shutdown();
         _channelId = syncSystem.channelId;
         _offsetDeg = syncSystem.offsetDeg;
         _stalePolicy = syncSystem.hostEyeStalePolicy;
 
-        if (role.enableIg)
+        if (igConfig.has_value())
         {
             _ig = std::make_unique<IgSync>();
-            if (!_ig->initialize(role.igConfig))
+            if (!_ig->initialize(*igConfig))
             {
                 std::cerr << "SynchronSystem: IgSync initialize failed\n";
                 shutdown();
                 return false;
             }
 
-            if (!_ig->connect(role.igConfig))
+            if (!_ig->connect(*igConfig))
             {
                 if (syncSystem.requireConnectedIg)
                 {
@@ -119,10 +118,10 @@ namespace aerovista::sync
 
     void SynchronSystem::resetEyeCaches()
     {
-        _hasPendingEye = false;
-        _pendingEye = {};
+        _pendingEye.reset();
         _cachedHostEye.reset();
         _lastApplied.reset();
+        _hasPendingApplied = false;
         _frameMismatchErrorLogged = false;
     }
 
@@ -188,26 +187,26 @@ namespace aerovista::sync
 
     bool SynchronSystem::tryAcceptPendingEye()
     {
-        if (!_hasPendingEye)
+        if (!_pendingEye)
             return false;
 
-        if (!eyeFrameMatchesScene(_pendingEye, sceneIsEllipsoid()))
+        if (!eyeFrameMatchesScene(*_pendingEye, sceneIsEllipsoid()))
         {
             ++_eyePoseRejectedByFrameMismatch;
             if (!_frameMismatchErrorLogged)
             {
                 const char* expected = sceneIsEllipsoid() ? "Lla/Detach" : "WorldLocal/Attach";
-                const char* got = (_pendingEye.frame == HostEyeCoordFrame::LLA) ? "Lla/Detach" : "WorldLocal/Attach";
+                const char* got = (_pendingEye->frame == HostEyeCoordFrame::LLA) ? "Lla/Detach" : "WorldLocal/Attach";
                 std::cerr << "[ERROR] eye pose rejected by frame mismatch: expected " << expected
                           << ", got " << got << " (channelId=" << _channelId << ")\n";
                 _frameMismatchErrorLogged = true;
             }
-            _hasPendingEye = false;
+            _pendingEye.reset();
             return false;
         }
 
-        _cachedHostEye = _pendingEye;
-        _hasPendingEye = false;
+        _cachedHostEye = *_pendingEye;
+        _pendingEye.reset();
         return true;
     }
 
@@ -215,17 +214,17 @@ namespace aerovista::sync
     {
         const HostEyePose composed = compose(hostEye, _offsetDeg);
         _lastApplied = composed;
-        _pendingApplied = composed;
+        _hasPendingApplied = true;
     }
 
     void SynchronSystem::update()
     {
-        _pendingApplied.reset();
+        _hasPendingApplied = false;
         const bool linked = igLinked();
 
         if (linked)
         {
-            if (_hasPendingEye)
+            if (_pendingEye)
             {
                 if (tryAcceptPendingEye())
                     applyHostEye(*_cachedHostEye);
@@ -240,21 +239,24 @@ namespace aerovista::sync
         }
 
         // 未连接：丢弃任何注入的待处理眼点（从未连接不得应用）。
-        _hasPendingEye = false;
+        _pendingEye.reset();
 
         // 断线后（或仍持有先前连接的缓存时），保留最后一帧 Host 眼点。
         if (_cachedHostEye)
             applyHostEye(*_cachedHostEye);
     }
 
-    void SynchronSystem::setEllipsoidTransform(const EllipsoidTransform* transform)
+    void SynchronSystem::setEllipsoidMode(bool ellipsoid)
     {
-        _ellipsoidTransform = transform;
+        _ellipsoidMode = ellipsoid;
     }
 
     std::optional<HostEyePose> SynchronSystem::takePendingCameraPose()
     {
-        return std::exchange(_pendingApplied, std::nullopt);
+        if (!_hasPendingApplied)
+            return std::nullopt;
+        _hasPendingApplied = false;
+        return _lastApplied;
     }
 
     IgSync& SynchronSystem::igSync()
@@ -275,7 +277,6 @@ namespace aerovista::sync
     void SynchronSystem::queueHostEyePose(const HostEyePose& pose)
     {
         _pendingEye = pose;
-        _hasPendingEye = true;
     }
 
     bool SynchronSystem::igLinked() const
