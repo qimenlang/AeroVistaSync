@@ -28,22 +28,4 @@ namespace aerovista::sync
         if (dynamic_cast<CigiSOFV4*>(packet))
             count.fetch_add(1);
     }
-
-    void CollDetVolDefProc::OnPacketReceived(CigiBasePacket* packet)
-    {
-        auto* def = dynamic_cast<CigiCollDetVolDefV4*>(packet);
-        if (!def)
-            return;
-        got = true;
-        volDef = *def;
-    }
-
-    void CollDetVolRespProc::OnPacketReceived(CigiBasePacket* packet)
-    {
-        auto* resp = dynamic_cast<CigiCollDetVolRespV4*>(packet);
-        if (!resp)
-            return;
-        got = true;
-        volResp = *resp;
-    }
 } // namespace aerovista::sync

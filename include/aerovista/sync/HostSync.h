@@ -12,6 +12,24 @@
 #include "CigiHostSession.h"
 #include "CigiIGCtrlV4.h"
 
+// IG→Host 方向可达报文的头文件（cigi梳理.md 链路/频率矩阵；SetIncomingHostV4Tbls）。
+#include "CigiAerosolRespV4.h"
+#include "CigiAnimationStopV4.h"
+#include "CigiCollDetSegRespV4.h"
+#include "CigiCollDetVolRespV4.h"
+#include "CigiEventNotificationV4.h"
+#include "CigiHatHotRespV4.h"
+#include "CigiHatHotXRespV4.h"
+#include "CigiIGMsgV4.h"
+#include "CigiLosRespV4.h"
+#include "CigiLosXRespV4.h"
+#include "CigiMaritimeSurfaceRespV4.h"
+#include "CigiPositionRespV4.h"
+#include "CigiSensorRespV4.h"
+#include "CigiSensorXRespV4.h"
+#include "CigiTerrestrialSurfaceRespV4.h"
+#include "CigiWeatherCondRespV4.h"
+
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -105,8 +123,22 @@ namespace aerovista::sync
         /// 业务/测试在需要处理 IG 上报时调用（Host 收包为 push 模式，无独立帧循环）。
         void drainIncoming();
 
-        /// 取走最近收到的碰撞检测体积响应（IG 回发，processor 缓存，§8.1）。
-        std::optional<CigiCollDetVolRespV4> takeReceivedCollDetVolResp();
+        /// 取走最近收到的任意 IG→Host 报文（值拷贝；§8.1 通用捕获，按链路注册）。
+        /// 未捕获到该类型报文时返回空。持续类（UDP，SOF）与一次性类（TCP）均在此查（cigi梳理.md 链路矩阵）。
+        template <typename PacketT>
+        std::optional<PacketT> takeReceived()
+        {
+            for (auto* proc : _captureProcs)
+            {
+                auto* typed = dynamic_cast<PacketCaptureProc<PacketT>*>(proc);
+                if (typed && typed->has())
+                {
+                    typed->take();
+                    return typed->captured();
+                }
+            }
+            return std::nullopt;
+        }
 
         // ===== 测试注入 / 观测辅助（当前仅测试消费）=====
 
@@ -147,10 +179,7 @@ namespace aerovista::sync
             if (!_tcpSession)
             {
                 _tcpSession = std::make_unique<CigiHostSession>(1, 4096, 1, 4096);
-                _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(CIGI_SOF_PACKET_ID_V4,
-                                                                       &_sofProc);
-                _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(
-                    CIGI_COLL_DET_VOL_RESP_PACKET_ID_V4, &_volRespProc);
+                registerTcpProcessors(*_tcpSession);
             }
         }
         /// 懒创建 UDP 数据面 CCL 会话（§5.1 双 session）：仅 outMsgWithIgCtrlUdp/flushUdp / UDP 收包首次使用时构造。
@@ -160,10 +189,13 @@ namespace aerovista::sync
             if (!_udpSession)
             {
                 _udpSession = std::make_unique<CigiHostSession>(1, 4096, 1, 4096);
-                _udpSession->GetIncomingMsgMgr().RegisterEventProcessor(CIGI_SOF_PACKET_ID_V4,
-                                                                       &_sofProc);
+                registerUdpProcessors(*_udpSession);
             }
         }
+        /// 注册 UDP 数据面可达的 IG→Host 报文捕获（数据面 SOF 计数）。
+        void registerUdpProcessors(CigiHostSession& session);
+        /// 注册 TCP 命令面可达的 IG→Host 报文捕获（响应/通知/上报类 + 碰撞检测响应）。
+        void registerTcpProcessors(CigiHostSession& session);
 
         void markPeerDisconnected(std::uint64_t clientId);
 
@@ -175,9 +207,31 @@ namespace aerovista::sync
         }
 
         // 基础设施 processor（§8.1 通用模式，统一定义于 EventProcess.h）：
-        // SOF 回显计数、碰撞检测体积响应（IG→Host）。
+        // SOF 回显计数（IG→Host）。碰撞检测体积响应走通用捕获
+        //（PacketCaptureProc<CigiCollDetVolRespV4>，见下方成员 + registerTcpProcessors）。
         SofCaptureProc _sofProc;
-        CollDetVolRespProc _volRespProc;
+
+        // IG→Host 一次性/响应/通知类（TCP 命令面，cigi梳理.md §1/§3~§7 链路矩阵）。
+        // CollDetVolResp 取走经通用捕获 `takeReceived<CigiCollDetVolRespV4>()`。
+        PacketCaptureProc<CigiCollDetVolRespV4> _collDetVolRespProc;
+        PacketCaptureProc<CigiIGMsgV4> _igMsgProc;
+        PacketCaptureProc<CigiEventNotificationV4> _eventNotificationProc;
+        PacketCaptureProc<CigiAnimationStopV4> _animationStopProc;
+        PacketCaptureProc<CigiHatHotRespV4> _hatHotRespProc;
+        PacketCaptureProc<CigiHatHotXRespV4> _hatHotXRespProc;
+        PacketCaptureProc<CigiLosRespV4> _losRespProc;
+        PacketCaptureProc<CigiLosXRespV4> _losXRespProc;
+        PacketCaptureProc<CigiSensorRespV4> _sensorRespProc;
+        PacketCaptureProc<CigiSensorXRespV4> _sensorXRespProc;
+        PacketCaptureProc<CigiPositionRespV4> _positionRespProc;
+        PacketCaptureProc<CigiWeatherCondRespV4> _weatherCondRespProc;
+        PacketCaptureProc<CigiAerosolRespV4> _aerosolRespProc;
+        PacketCaptureProc<CigiMaritimeSurfaceRespV4> _maritimeSurfaceRespProc;
+        PacketCaptureProc<CigiTerrestrialSurfaceRespV4> _terrestrialSurfaceRespProc;
+        PacketCaptureProc<CigiCollDetSegRespV4> _collDetSegRespProc;
+
+        /// 全部通用捕获实例的注册表（takeReceived<PacketT>() 遍历用；注册时填充一次）。
+        std::vector<CaptureProcBase*> _captureProcs;
 
         HostConfig _local{};
         UdpSocket _udp;

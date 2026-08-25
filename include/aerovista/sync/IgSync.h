@@ -12,6 +12,45 @@
 #include "CigiIGSession.h"
 #include "CigiSOFV4.h"
 
+// Host→IG 方向可达报文的头文件（cigi梳理.md 链路/频率矩阵；SetIncomingIGV4Tbls）。
+#include "CigiAccelerationCtrlV4.h"
+#include "CigiAnimationCtrlV4.h"
+#include "CigiArtPartCtrlV4.h"
+#include "CigiAtmosCtrlV4.h"
+#include "CigiCelestialCtrlV4.h"
+#include "CigiCollDetSegDefV4.h"
+#include "CigiCollDetVolDefV4.h"
+#include "CigiCompCtrlV4.h"
+#include "CigiConfClampEntityCtrlV4.h"
+#include "CigiEarthModelDefV4.h"
+#include "CigiEntityCtrlV4.h"
+#include "CigiEnvCondReqV4.h"
+#include "CigiEnvRgnCtrlV4.h"
+#include "CigiHatHotReqV4.h"
+#include "CigiLosSegReqV4.h"
+#include "CigiLosVectReqV4.h"
+#include "CigiMaritimeSurfaceCtrlV4.h"
+#include "CigiMotionTrackCtrlV4.h"
+#include "CigiPositionReqV4.h"
+#include "CigiSensorCtrlV4.h"
+#include "CigiShortArtPartCtrlV4.h"
+#include "CigiShortCompCtrlV4.h"
+#include "CigiShortSymbolCtrlV4.h"
+#include "CigiSymbolCircleDefV4.h"
+#include "CigiSymbolCloneV4.h"
+#include "CigiSymbolCtrlV4.h"
+#include "CigiSymbolPolygonDefV4.h"
+#include "CigiSymbolSurfaceDefV4.h"
+#include "CigiSymbolTextDefV4.h"
+#include "CigiSymbolTexturedCircleDefV4.h"
+#include "CigiSymbolTexturedPolygonDefV4.h"
+#include "CigiTerrestrialSurfaceCtrlV4.h"
+#include "CigiVelocityCtrlV4.h"
+#include "CigiViewCtrlV4.h"
+#include "CigiViewDefV4.h"
+#include "CigiWaveCtrlV4.h"
+#include "CigiWeatherCtrlV4.h"
+
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -66,8 +105,23 @@ namespace aerovista::sync
         void update();
         /// 取走上一次 Update 期间收到的 Host 眼点（CCL 报文值拷贝；processor 缓存，§8.1）。
         std::optional<CigiEntityPositionCtrlV4> takeReceivedHostEye();
-        /// 取走最近收到的碰撞检测体积定义（Host 下发，processor 缓存，§8.1）。
-        std::optional<CigiCollDetVolDefV4> takeReceivedCollDetVolDef();
+
+        /// 取走最近收到的任意 Host→IG 报文（值拷贝；§8.1 通用捕获，按链路注册）。
+        /// 未捕获到该类型报文时返回空。持续类（UDP）与一次性类（TCP）均在此查（cigi梳理.md 链路矩阵）。
+        template <typename PacketT>
+        std::optional<PacketT> takeReceived()
+        {
+            for (auto* proc : _captureProcs)
+            {
+                auto* typed = dynamic_cast<PacketCaptureProc<PacketT>*>(proc);
+                if (typed && typed->has())
+                {
+                    typed->take();
+                    return typed->captured();
+                }
+            }
+            return std::nullopt;
+        }
 
         // ---- 状态观测 ----
         bool tcpConnected() const;
@@ -177,30 +231,30 @@ namespace aerovista::sync
         void startUdpThread();
         void stopUdpThread();
         void udpLoop();
-        /// 创建 TCP 命令面 IG CCL 会话并注册基础设施 processor（碰撞检测段/体积定义，Host→IG，§8.1 按链路注册）。
+        /// 创建 TCP 命令面 IG CCL 会话并注册基础设施 processor（Host→IG 一次性/配置/请求类，§8.1 按链路注册）。
         /// 主线程调用；懒创建于 outMsgWithSofTcp/flushTcp / TCP 收包解包。
         void ensureTcpSession()
         {
             if (!_tcpSession)
             {
                 _tcpSession = std::make_unique<CigiIGSession>(1, 4096, 1, 4096);
-                _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(
-                    CIGI_COLL_DET_VOL_DEF_PACKET_ID_V4, &_volDefProc);
+                registerTcpProcessors(*_tcpSession);
             }
         }
-        /// 创建 UDP 数据面 IG CCL 会话并注册基础设施 processor（IGCtrl 帧节拍 / ownship 眼点捕获，§8.1 按链路注册）。
+        /// 创建 UDP 数据面 IG CCL 会话并注册基础设施 processor（IGCtrl / ownship 眼点 / 持续控制类，§8.1 按链路注册）。
         /// 主线程调用；懒创建于 outMsgWithSofUdp/flushUdp / UDP 收包解包。
         void ensureUdpSession()
         {
             if (!_udpSession)
             {
                 _udpSession = std::make_unique<CigiIGSession>(1, 4096, 1, 4096);
-                _udpSession->GetIncomingMsgMgr().RegisterEventProcessor(CIGI_IG_CTRL_PACKET_ID_V4,
-                                                                       &_igCtrlProc);
-                _udpSession->GetIncomingMsgMgr().RegisterEventProcessor(
-                    CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4, &_eyeProc);
+                registerUdpProcessors(*_udpSession);
             }
         }
+        /// 注册 UDP 数据面可达的 Host→IG 报文捕获（IGCtrl/眼点 + 持续控制类）。
+        void registerUdpProcessors(CigiIGSession& session);
+        /// 注册 TCP 命令面可达的 Host→IG 报文捕获（一次性/配置/请求/符号类）。
+        void registerTcpProcessors(CigiIGSession& session);
 
         // 命令面 I/O 线程（§5.1）：TCP recv + 分帧 → 入队 tcpPayload；主线程 drainIncoming 解包。
         void startCommandThread();
@@ -243,10 +297,55 @@ namespace aerovista::sync
         std::unique_ptr<CigiIGSession> _udpSession;
 
         // 基础设施 processor（§8.1 通用模式，统一定义于 EventProcess.h）：
-        // IGCtrl 帧节拍/时间戳、ownship 眼点、碰撞检测体积定义（Host→IG）。
+        // IGCtrl 帧节拍/时间戳、ownship 眼点（Host→IG）。碰撞检测体积定义走通用捕获
+        //（PacketCaptureProc<CigiCollDetVolDefV4>，见下方成员 + registerTcpProcessors）。
         IgCtrlCaptureProc _igCtrlProc;
         EyeCaptureProc _eyeProc;
-        CollDetVolDefProc _volDefProc;
+
+        // Host→IG 持续/每帧类（UDP 数据面，cigi梳理.md §1/§2/§3 链路矩阵）。
+        PacketCaptureProc<CigiConfClampEntityCtrlV4> _confClampProc;
+        PacketCaptureProc<CigiVelocityCtrlV4> _velocityProc;
+        PacketCaptureProc<CigiAccelerationCtrlV4> _accelerationProc;
+        PacketCaptureProc<CigiViewCtrlV4> _viewCtrlProc;
+
+        // Host→IG 一次性/配置/请求类（TCP 命令面）。
+        // CollDetVolDef 取走经通用捕获 `takeReceived<CigiCollDetVolDefV4>()`。
+        PacketCaptureProc<CigiCollDetVolDefV4> _collDetVolDefProc;
+        PacketCaptureProc<CigiEntityCtrlV4> _entityCtrlProc;
+        PacketCaptureProc<CigiArtPartCtrlV4> _artPartCtrlProc;
+        PacketCaptureProc<CigiShortArtPartCtrlV4> _shortArtPartCtrlProc;
+        PacketCaptureProc<CigiCompCtrlV4> _compCtrlProc;
+        PacketCaptureProc<CigiShortCompCtrlV4> _shortCompCtrlProc;
+        PacketCaptureProc<CigiAnimationCtrlV4> _animationCtrlProc;
+        PacketCaptureProc<CigiViewDefV4> _viewDefProc;
+        PacketCaptureProc<CigiSensorCtrlV4> _sensorCtrlProc;
+        PacketCaptureProc<CigiMotionTrackCtrlV4> _motionTrackCtrlProc;
+        PacketCaptureProc<CigiAtmosCtrlV4> _atmosCtrlProc;
+        PacketCaptureProc<CigiCelestialCtrlV4> _celestialCtrlProc;
+        PacketCaptureProc<CigiEnvRgnCtrlV4> _envRgnCtrlProc;
+        PacketCaptureProc<CigiWeatherCtrlV4> _weatherCtrlProc;
+        PacketCaptureProc<CigiMaritimeSurfaceCtrlV4> _maritimeSurfaceCtrlProc;
+        PacketCaptureProc<CigiTerrestrialSurfaceCtrlV4> _terrestrialSurfaceCtrlProc;
+        PacketCaptureProc<CigiWaveCtrlV4> _waveCtrlProc;
+        PacketCaptureProc<CigiEarthModelDefV4> _earthModelDefProc;
+        PacketCaptureProc<CigiCollDetSegDefV4> _collDetSegDefProc;
+        PacketCaptureProc<CigiHatHotReqV4> _hatHotReqProc;
+        PacketCaptureProc<CigiLosSegReqV4> _losSegReqProc;
+        PacketCaptureProc<CigiLosVectReqV4> _losVectReqProc;
+        PacketCaptureProc<CigiPositionReqV4> _positionReqProc;
+        PacketCaptureProc<CigiEnvCondReqV4> _envCondReqProc;
+        PacketCaptureProc<CigiSymbolCtrlV4> _symbolCtrlProc;
+        PacketCaptureProc<CigiShortSymbolCtrlV4> _shortSymbolCtrlProc;
+        PacketCaptureProc<CigiSymbolSurfaceDefV4> _symbolSurfaceDefProc;
+        PacketCaptureProc<CigiSymbolTextDefV4> _symbolTextDefProc;
+        PacketCaptureProc<CigiSymbolCircleDefV4> _symbolCircleDefProc;
+        PacketCaptureProc<CigiSymbolPolygonDefV4> _symbolPolygonDefProc;
+        PacketCaptureProc<CigiSymbolTexturedCircleDefV4> _symbolTexturedCircleDefProc;
+        PacketCaptureProc<CigiSymbolTexturedPolygonDefV4> _symbolTexturedPolygonDefProc;
+        PacketCaptureProc<CigiSymbolCloneV4> _symbolCloneProc;
+
+        /// 全部通用捕获实例的注册表（takeReceived<PacketT>() 遍历用；注册时填充一次）。
+        std::vector<CaptureProcBase*> _captureProcs;
 
         // 数据面 I/O 线程（§5.1）：UDP recv → 入队；主线程 update() drain 解包。
         std::thread _udpThread;
