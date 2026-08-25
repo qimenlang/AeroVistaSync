@@ -34,6 +34,8 @@ namespace aerovista::sync
     class IgSync
     {
     public:
+        // ===== 对外业务面（消费方：SynchronSystem / engine / viewhost）=====
+
         IgSync() = default;
         ~IgSync();
 
@@ -51,70 +53,35 @@ namespace aerovista::sync
             std::uint64_t receivedAtUs = 0;
         };
 
+        // ---- 生命周期 ----
         bool initialize(const IgConfig& local);
         bool connect(const IgConfig& config);
         void shutdown();
 
+        // ---- 帧循环收包（SynchronSystem::preFrame 每帧驱动）----
         /// 主线程收包入口（对等 HostSync::drainIncoming）：统一 drain TCP+UDP 收包队列 → CCL 解包。
         /// 无条件 drain（不检查连接状态，与 Host 对等）；收到新 IGCtrl 时回 SOF（sendSof）。
         void drainIncoming(bool sendSof = true);
-
         /// 帧级维护（不收包）：外推冻结检查 + RUNNING 状态判定。每帧都应调用。
         void update();
-
         /// 取走上一次 Update 期间收到的 Host 眼点（CCL 报文值拷贝；processor 缓存，§8.1）。
         std::optional<CigiEntityPositionCtrlV4> takeReceivedHostEye();
-
-        /// 取走最近收到的碰撞检测段定义（Host 下发，processor 缓存，§8.1）。
-        std::optional<CigiCollDetSegDefV4> takeReceivedCollDetSegDef();
         /// 取走最近收到的碰撞检测体积定义（Host 下发，processor 缓存，§8.1）。
         std::optional<CigiCollDetVolDefV4> takeReceivedCollDetVolDef();
 
-        /// 测试 / 注入：入队一个 Host 时间戳（如同本帧收到）。
-        /// 对 `rawTimeStamp` 做相位展开 → `lastSimTimeUs`，并记录 `lastReceivedAtUs`。
-        /// 返回 true 表示接受（frameCntr >= 已处理），false 表示作为旧帧丢弃。
-        bool queueHostTimeStamp(const HostTimeStamp& stamp);
-
-        /// 会话重置（设计 §3）：TCP 重连 / Host 重启清空相位展开状态，
-        /// 使下一个包从新的绝对基准开始（不继承旧的大值）。
-        void resetHostSession();
-
-        /// 最近 Host 时间戳换算成 us（设计 §3），无则 0。
-        std::uint64_t lastHostSimTimeUs() const;
-
+        // ---- 状态观测 ----
+        bool tcpConnected() const;
+        bool udpSynced() const;
+        std::uint32_t igCtrlReceivedCount() const;
+        /// 最近处理的 Host IGCtrl 的 FrameCntr（无则 0）。
+        std::uint32_t lastIgCtrlFrameCntr() const;
         /// 当前补偿后的模拟时间：内部 nowUs = vsg::clock::now()。
         std::uint64_t simTimeUs() const;
 
-        /// 在显式单调时钟时刻的补偿模拟时间（测试可控）。
-        std::uint64_t simTimeUsAt(std::uint64_t nowUs) const;
-
-        /// 外推-冻结阈值（设计 §4.3）。
-        void setExtrapolateTimeoutUs(std::uint64_t timeoutUs);
-
-        /// 显式冻结检查：nowUs - lastReceivedAtUs > 阈值 → 冻结（设计 §4.3）。
-        void updateFreeze(std::uint64_t nowUs);
-
-        /// 外推超时且无新帧到达后为 true。
-        bool frozen() const;
-
-        const IgConfig& addressConfig() const { return _local; }
-
-        bool tcpConnected() const;
-        bool udpSynced() const;
-        IgStatus status() const;
-
-        std::uint32_t igCtrlReceivedCount() const;
-        std::uint32_t sofSentCount() const;
-        /// 最近处理的 Host IGCtrl 的 FrameCntr（无则 0）。
-        std::uint32_t lastIgCtrlFrameCntr() const;
-
-        // ===== 命令面（状态同步设计初版.md §8.1） =====
-
+        // ---- 命令面 / 发送（状态同步设计初版.md §8.1）----
         /// 注册某个 CIGI 报文的业务 EventProcessor（透传到 CCL session 的 RegisterEventProcessor）。
         /// processor 由 engine 层定义；生命周期需覆盖 sync 会话（§8.1）。
         void registerEventProcessor(int packetId, CigiBaseEventProcessor* processor);
-
-        // ===== 发送（对等 Host 侧 §7）：IG 出站消息自动前置 SOF 帧头 =====
 
         /// TCP 出站 OutgoingMsg：业务侧 << 报文后调 flushTcp 发送（IG→Host 上报/回传）。
         /// 以 CigiSOFV4 帧头开消息（CCL 要求 IG 消息以 SOF 开头），帧号回显最近 IGCtrl。
@@ -156,6 +123,32 @@ namespace aerovista::sync
         }
         void flushUdp();
 
+        // ===== 测试注入 / 观测辅助（当前仅测试消费）=====
+
+        // ---- 时钟同步注入（SyncClockTests 直调）----
+        /// 测试 / 注入：入队一个 Host 时间戳（如同本帧收到）。
+        /// 对 `rawTimeStamp` 做相位展开 → `lastSimTimeUs`，并记录 `lastReceivedAtUs`。
+        /// 返回 true 表示接受（frameCntr >= 已处理），false 表示作为旧帧丢弃。
+        bool queueHostTimeStamp(const HostTimeStamp& stamp);
+        /// 会话重置（设计 §3）：TCP 重连 / Host 重启清空相位展开状态，
+        /// 使下一个包从新的绝对基准开始（不继承旧的大值）。
+        void resetHostSession();
+        /// 最近 Host 时间戳换算成 us（设计 §3），无则 0。
+        std::uint64_t lastHostSimTimeUs() const;
+        /// 在显式单调时钟时刻的补偿模拟时间（测试可控）。
+        std::uint64_t simTimeUsAt(std::uint64_t nowUs) const;
+        /// 外推-冻结阈值（设计 §4.3）。
+        void setExtrapolateTimeoutUs(std::uint64_t timeoutUs);
+        /// 显式冻结检查：nowUs - lastReceivedAtUs > 阈值 → 冻结（设计 §4.3）。
+        void updateFreeze(std::uint64_t nowUs);
+        /// 外推超时且无新帧到达后为 true。
+        bool frozen() const;
+
+        // ---- 观测辅助 ----
+        IgStatus status() const;
+        std::uint32_t sofSentCount() const;
+        const IgConfig& addressConfig() const { return _local; }
+
     private:
         static constexpr int tcpConnectTimeoutMs = 200;
         static constexpr int handshakeTimeoutMs = 1000;
@@ -191,8 +184,6 @@ namespace aerovista::sync
             if (!_tcpSession)
             {
                 _tcpSession = std::make_unique<CigiIGSession>(1, 4096, 1, 4096);
-                _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(
-                    CIGI_COLL_DET_SEG_DEF_PACKET_ID_V4, &_segDefProc);
                 _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(
                     CIGI_COLL_DET_VOL_DEF_PACKET_ID_V4, &_volDefProc);
             }
@@ -252,10 +243,9 @@ namespace aerovista::sync
         std::unique_ptr<CigiIGSession> _udpSession;
 
         // 基础设施 processor（§8.1 通用模式，统一定义于 EventProcess.h）：
-        // IGCtrl 帧节拍/时间戳、ownship 眼点、碰撞检测段/体积定义（Host→IG）。
+        // IGCtrl 帧节拍/时间戳、ownship 眼点、碰撞检测体积定义（Host→IG）。
         IgCtrlCaptureProc _igCtrlProc;
         EyeCaptureProc _eyeProc;
-        CollDetSegDefProc _segDefProc;
         CollDetVolDefProc _volDefProc;
 
         // 数据面 I/O 线程（§5.1）：UDP recv → 入队；主线程 update() drain 解包。

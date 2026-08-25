@@ -61,11 +61,6 @@ namespace aerovista::sync
         return _dataFrameCounter;
     }
 
-    std::uint32_t HostSync::nextFrameCntr()
-    {
-        return _dataFrameCounter++;
-    }
-
     std::uint32_t HostSync::sofReceivedCount() const
     {
         const_cast<HostSync*>(this)->drainIncoming();
@@ -397,13 +392,6 @@ namespace aerovista::sync
         ensureUdpSession();
         _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);
         _udpSession->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);
-    }
-
-    std::optional<CigiCollDetSegRespV4> HostSync::takeReceivedCollDetSegResp()
-    {
-        if (!_segRespProc.got)
-            return std::nullopt;
-        return _segRespProc.segResp;
     }
 
     std::optional<CigiCollDetVolRespV4> HostSync::takeReceivedCollDetVolResp()

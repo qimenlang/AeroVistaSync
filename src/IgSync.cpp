@@ -128,13 +128,6 @@ namespace aerovista::sync
         return _eyeProc.eye;
     }
 
-    std::optional<CigiCollDetSegDefV4> IgSync::takeReceivedCollDetSegDef()
-    {
-        if (!_segDefProc.got)
-            return std::nullopt;
-        return _segDefProc.segDef;
-    }
-
     std::optional<CigiCollDetVolDefV4> IgSync::takeReceivedCollDetVolDef()
     {
         if (!_volDefProc.got)

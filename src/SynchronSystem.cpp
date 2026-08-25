@@ -252,11 +252,6 @@ namespace aerovista::sync
         _ellipsoidTransform = transform;
     }
 
-    void SynchronSystem::setChannelId(int channelId)
-    {
-        _channelId = channelId;
-    }
-
     std::optional<HostEyePose> SynchronSystem::takePendingCameraPose()
     {
         return std::exchange(_pendingApplied, std::nullopt);

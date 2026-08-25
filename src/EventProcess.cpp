@@ -29,24 +29,6 @@ namespace aerovista::sync
             count.fetch_add(1);
     }
 
-    void CollDetSegDefProc::OnPacketReceived(CigiBasePacket* packet)
-    {
-        auto* def = dynamic_cast<CigiCollDetSegDefV4*>(packet);
-        if (!def)
-            return;
-        got = true;
-        segDef = *def;
-    }
-
-    void CollDetSegRespProc::OnPacketReceived(CigiBasePacket* packet)
-    {
-        auto* resp = dynamic_cast<CigiCollDetSegRespV4*>(packet);
-        if (!resp)
-            return;
-        got = true;
-        segResp = *resp;
-    }
-
     void CollDetVolDefProc::OnPacketReceived(CigiBasePacket* packet)
     {
         auto* def = dynamic_cast<CigiCollDetVolDefV4*>(packet);

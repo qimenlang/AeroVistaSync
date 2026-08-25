@@ -24,62 +24,62 @@ namespace aerovista::sync
     class SynchronSystem
     {
     public:
+        // ===== 对外业务面（消费方：engine）=====
+
         SynchronSystem();
         ~SynchronSystem();
 
         static std::unique_ptr<SynchronSystem> create();
 
+        // ---- 生命周期 ----
         /// 初始化 IG 决策器：按 role 启动 IgSync，并应用装配配置
         /// （channelId / offsetDeg / hostEyeStalePolicy / requireConnectedIg）。
         bool initialize(const SyncRoleConfig& role, const SyncSystemConfig& syncSystem);
         void shutdown();
 
+        // ---- 帧循环（engine tickOnFrame 每帧驱动）----
         /// 帧前：IgSync::drainIncoming 收包解包 + update 帧级维护，取眼点入队（本帧相机决策的输入）。
         void preFrame();
-
-        /// 场景模式注入（lla §2 / §4.5）：宿主场景确定或重建后调用。
-        /// `transform` 非空 = 椭球模式；空 = 本地模式（唯一场景模式入口）。
-        /// sync 库不持有所有权，宿主需保证其生命周期覆盖 sync 会话。
-        void setEllipsoidTransform(const EllipsoidTransform* transform);
-        /// 通道标识（错误日志用）。
-        void setChannelId(int channelId);
-
         /// 帧级决策（不收包）：计算本帧待应用相机位姿（若有）。
         /// 收包在 preFrame（IgSync::drainIncoming）；每帧调用一次，然后读 takePendingCameraPose()。
         void update();
-
         /// 本帧应写相机的位姿（Host 眼点 ⊕ 偏移；断线 / ReuseLast 时保留最后一帧），若有。
         /// 由调用方取走（取走即清空）并驱动相机：WorldLocal → setCameraPose，LLA → setCameraPoseLla。
         std::optional<HostEyePose> takePendingCameraPose();
 
-        bool hasIg() const { return static_cast<bool>(_ig); }
-
-        IgSync& igSync();
-
+        // ---- 场景模式 / 装配 ----
+        /// 场景模式注入（lla §2 / §4.5）：宿主场景确定或重建后调用。
+        /// `transform` 非空 = 椭球模式；空 = 本地模式（唯一场景模式入口）。
+        /// sync 库不持有所有权，宿主需保证其生命周期覆盖 sync 会话。
+        void setEllipsoidTransform(const EllipsoidTransform* transform);
         void setOffsetDeg(const OffsetDeg& offset);
         const OffsetDeg& offsetDeg() const { return _offsetDeg; }
+        void setHostEyeStalePolicy(HostEyeStalePolicy policy);
+        HostEyeStalePolicy hostEyeStalePolicy() const { return _stalePolicy; }
 
+        // ---- 位姿合成工具 ----
         /// 把通道偏移合成到 Host 眼点上（刚性阵列旋转）
         /// R_ig = R_host · R_offset（Host 有 roll 时保持各通道 up 轴平行；lla设计 §3.4）。
         static HostEyePose compose(const HostEyePose& host, const OffsetDeg& offset);
 
-        void setHostEyeStalePolicy(HostEyeStalePolicy policy);
-        HostEyeStalePolicy hostEyeStalePolicy() const { return _stalePolicy; }
+        // ---- 状态观测 / 运维 ----
+        bool hasIg() const { return static_cast<bool>(_ig); }
+        /// IG TCP+UDP 均就绪。
+        bool igLinked() const;
+        /// update 最近写入的位姿（Host ⊕ 偏移），若有。
+        std::optional<HostEyePose> lastAppliedHostEye() const { return _lastApplied; }
+        /// 因线上帧类型（Attach/Detach）≠ 本地场景模式而丢弃的 Host 眼点数（lla §4.5）。
+        std::uint64_t eyePoseRejectedByFrameMismatch() const { return _eyePoseRejectedByFrameMismatch; }
+        /// 图形重建 / 模式切换后清空眼点缓存（lla §4.3）；不拆除网络。
+        void resetEyeCaches();
+
+        // ---- 内部组件访问 ----
+        IgSync& igSync();
+
+        // ===== 测试注入辅助（当前仅测试消费）=====
 
         /// 测试 / 注入：入队一个 Host 眼点（如同本帧随 IGCtrl 收到）。
         void queueHostEyePose(const HostEyePose& pose);
-
-        /// IG TCP+UDP 均就绪。
-        bool igLinked() const;
-
-        /// update 最近写入的位姿（Host ⊕ 偏移），若有。
-        std::optional<HostEyePose> lastAppliedHostEye() const { return _lastApplied; }
-
-        /// 因线上帧类型（Attach/Detach）≠ 本地场景模式而丢弃的 Host 眼点数（lla §4.5）。
-        std::uint64_t eyePoseRejectedByFrameMismatch() const { return _eyePoseRejectedByFrameMismatch; }
-
-        /// 图形重建 / 模式切换后清空眼点缓存（lla §4.3）；不拆除网络。
-        void resetEyeCaches();
 
     private:
         void applyHostEye(const HostEyePose& hostEye);

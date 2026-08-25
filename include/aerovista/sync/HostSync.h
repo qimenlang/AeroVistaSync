@@ -28,32 +28,28 @@ namespace aerovista::sync
     class HostSync
     {
     public:
+        // ===== 对外业务面（消费方：engine / viewhost）=====
+
         HostSync() = default;
         ~HostSync();
 
         HostSync(const HostSync&) = delete;
         HostSync& operator=(const HostSync&) = delete;
 
+        // ---- 生命周期 ----
         bool initialize(const HostConfig& local);
         void shutdown();
-
         void run();
 
-        const HostConfig& addressConfig() const { return _local; }
-
+        // ---- 状态观测 ----
         HostStatus status() const;
         bool hasReadyIg() const;
         int readyIgCount() const;
-
         /// 本会话已发送的数据面帧数（beginWithIgCtrlUdp 每次自动前置 IGCtrl 递增一次）。
         std::uint32_t igCtrlSentCount() const;
         std::uint32_t sofReceivedCount() const;
 
-        /// 数据面帧号由 outMsgWithIgCtrlUdp() 自动分配（内部计数器递增），业务侧无需手动调用；
-        /// 保留此接口供测试锚定下一帧号（等价于 outMsgWithIgCtrlUdp 将使用的帧号）。
-        std::uint32_t nextFrameCntr();
-
-        // ===== 命令面（状态同步设计初版.md §7）：引用式发送接口 =====
+        // ---- 命令面 / 数据面发送（状态同步设计初版.md §7）：引用式发送接口 ----
 
         /// TCP 命令面 OutgoingMsg：业务侧 << 报文后调 flushTcp 发送（fire-and-forget）。
         /// 以 IGCtrl 帧头开消息（CCL 要求 Host 消息以 IGCtrl 开头）：帧号 = 命令面计数器、
@@ -75,7 +71,7 @@ namespace aerovista::sync
             return omsg;
         }
         /// UDP 数据面 OutgoingMsg：业务侧 << 眼点 << 实时位姿 后调 flushUdp 发送。
-        /// 以 IGCtrl 帧头开消息（CCL 要求 Host 消息以 IGCtrl 开头）：帧号 = 数据面计数器（nextFrameCntr），
+        /// 以 IGCtrl 帧头开消息（CCL 要求 Host 消息以 IGCtrl 开头）：帧号 = 数据面计数器，
         /// TimeStamp = HostSync 自计时模拟时间（_startTime = steady_clock::now() 于 initialize；
         /// TimeStamp = (now - _startTime)×100，10µs 步进），TimeStampValid=true（状态同步设计初版.md §7.1）。
         /// 单次 flush 周期内可多次调用填充报文——帧头只填一次（去重），flushUdp 后重置（§7.1）。
@@ -98,7 +94,7 @@ namespace aerovista::sync
         void flushTcp();
         void flushUdp();
 
-        // ===== 收包（对等 IG 侧 §8.1）：注册 processor 处理 IG→Host 报文 =====
+        // ---- 收包（对等 IG 侧 §8.1）：注册 processor 处理 IG→Host 报文 ----
 
         /// 注册某个 CIGI 报文的业务 EventProcessor（透传到 CCL session 的 RegisterEventProcessor）。
         /// 处理 IG 经 TCP/UDP 发来的报文（如 IG 发 SymbolTextDefV4 文本指令）。
@@ -109,10 +105,12 @@ namespace aerovista::sync
         /// 业务/测试在需要处理 IG 上报时调用（Host 收包为 push 模式，无独立帧循环）。
         void drainIncoming();
 
-        /// 取走最近收到的碰撞检测段响应（IG 回发，processor 缓存，§8.1）。
-        std::optional<CigiCollDetSegRespV4> takeReceivedCollDetSegResp();
         /// 取走最近收到的碰撞检测体积响应（IG 回发，processor 缓存，§8.1）。
         std::optional<CigiCollDetVolRespV4> takeReceivedCollDetVolResp();
+
+        // ===== 测试注入 / 观测辅助（当前仅测试消费）=====
+
+        const HostConfig& addressConfig() const { return _local; }
 
     private:
         struct IgPeer
@@ -152,8 +150,6 @@ namespace aerovista::sync
                 _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(CIGI_SOF_PACKET_ID_V4,
                                                                        &_sofProc);
                 _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(
-                    CIGI_COLL_DET_SEG_RESP_PACKET_ID_V4, &_segRespProc);
-                _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(
                     CIGI_COLL_DET_VOL_RESP_PACKET_ID_V4, &_volRespProc);
             }
         }
@@ -179,9 +175,8 @@ namespace aerovista::sync
         }
 
         // 基础设施 processor（§8.1 通用模式，统一定义于 EventProcess.h）：
-        // SOF 回显计数、碰撞检测段/体积响应（IG→Host）。
+        // SOF 回显计数、碰撞检测体积响应（IG→Host）。
         SofCaptureProc _sofProc;
-        CollDetSegRespProc _segRespProc;
         CollDetVolRespProc _volRespProc;
 
         HostConfig _local{};
