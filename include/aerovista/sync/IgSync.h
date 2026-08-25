@@ -117,31 +117,41 @@ namespace aerovista::sync
         // ===== 发送（对等 Host 侧 §7）：IG 出站消息自动前置 SOF 帧头 =====
 
         /// TCP 出站 OutgoingMsg：业务侧 << 报文后调 flushTcp 发送（IG→Host 上报/回传）。
-        /// 自动前置 CigiSOFV4 帧头（CCL 要求 IG 消息以 SOF 开头），帧号回显最近 IGCtrl。
-        /// 绑定 _tcpSession（§5.1 双 session）。
-        CigiOutgoingMsg& tcpOutgoing()
+        /// 以 CigiSOFV4 帧头开消息（CCL 要求 IG 消息以 SOF 开头），帧号回显最近 IGCtrl。
+        /// 绑定 _tcpSession（§5.1 双 session）。单次 flush 周期内可多次调用填充报文——
+        /// 帧头只填一次（去重），flushTcp 后重置（§8.1）。
+        CigiOutgoingMsg& outMsgWithSofTcp()
         {
             ensureTcpSession();
             auto& omsg = _tcpSession->GetOutgoingMsgMgr();
-            omsg.BeginMsg();
-            CigiSOFV4 sof;
-            sof.SetFrameCntr(_lastFrameCntr);
-            omsg << sof;
+            if (!_tcpMsgOpen)
+            {
+                omsg.BeginMsg();
+                CigiSOFV4 sof;
+                sof.SetFrameCntr(_lastFrameCntr);
+                omsg << sof;
+                _tcpMsgOpen = true;
+            }
             return omsg;
         }
         void flushTcp();
 
         /// UDP 出站 OutgoingMsg：业务侧 << 报文后调 flushUdp 发送（IG→Host UDP 上报/回传）。
-        /// 自动前置 CigiSOFV4 帧头（CCL 要求 IG 消息以 SOF 开头）；目标 = Host `targetUdpPortRecv`。
-        /// 绑定 _udpSession（§5.1 双 session）。
-        CigiOutgoingMsg& udpOutgoing()
+        /// 以 CigiSOFV4 帧头开消息（CCL 要求 IG 消息以 SOF 开头）；目标 = Host `targetUdpPortRecv`。
+        /// 绑定 _udpSession（§5.1 双 session）。单次 flush 周期内可多次调用填充报文——
+        /// 帧头只填一次（去重），flushUdp 后重置（§8.1）。
+        CigiOutgoingMsg& outMsgWithSofUdp()
         {
             ensureUdpSession();
             auto& omsg = _udpSession->GetOutgoingMsgMgr();
-            omsg.BeginMsg();
-            CigiSOFV4 sof;
-            sof.SetFrameCntr(_lastFrameCntr);
-            omsg << sof;
+            if (!_udpMsgOpen)
+            {
+                omsg.BeginMsg();
+                CigiSOFV4 sof;
+                sof.SetFrameCntr(_lastFrameCntr);
+                omsg << sof;
+                _udpMsgOpen = true;
+            }
             return omsg;
         }
         void flushUdp();
@@ -175,7 +185,7 @@ namespace aerovista::sync
         void stopUdpThread();
         void udpLoop();
         /// 创建 TCP 命令面 IG CCL 会话并注册基础设施 processor（碰撞检测段/体积定义，Host→IG，§8.1 按链路注册）。
-        /// 主线程调用；懒创建于 tcpOutgoing/flushTcp / TCP 收包解包。
+        /// 主线程调用；懒创建于 outMsgWithSofTcp/flushTcp / TCP 收包解包。
         void ensureTcpSession()
         {
             if (!_tcpSession)
@@ -188,7 +198,7 @@ namespace aerovista::sync
             }
         }
         /// 创建 UDP 数据面 IG CCL 会话并注册基础设施 processor（IGCtrl 帧节拍 / ownship 眼点捕获，§8.1 按链路注册）。
-        /// 主线程调用；懒创建于 udpOutgoing/flushUdp / UDP 收包解包。
+        /// 主线程调用；懒创建于 outMsgWithSofUdp/flushUdp / UDP 收包解包。
         void ensureUdpSession()
         {
             if (!_udpSession)
@@ -219,6 +229,8 @@ namespace aerovista::sync
         std::atomic<std::uint32_t> _igCtrlReceivedCount{0};
         std::atomic<std::uint32_t> _sofSentCount{0};
         std::uint32_t _lastFrameCntr = 0;
+        bool _tcpMsgOpen = false; ///< 当前 TCP 消息已填 SOF 帧头（去重；flushTcp 重置）
+        bool _udpMsgOpen = false; ///< 当前 UDP 消息已填 SOF 帧头（去重；flushUdp 重置）
 
         // 时钟同步（时钟同步方案.md §3 / §4）
         bool _hasTimeStamp = false;
@@ -234,7 +246,7 @@ namespace aerovista::sync
 
         // CCL 会话（状态同步设计初版.md §5.1：CCL 单线程化 + 双 session——IG 各链路一套 CigiIGSession）；
         // ensureTcpSession/ensureUdpSession 惰性创建，堆上分配（CigiSession 内含大 handler 表，栈上会溢出）。
-        // 发送隔离：tcpOutgoing/flushTcp 只操作 _tcpSession，udpOutgoing/flushUdp 只操作 _udpSession；
+        // 发送隔离：beginWithSof/flushTcp 只操作 _tcpSession，beginWithSofUdp/flushUdp 只操作 _udpSession；
         // 收包按链路喂各 session 解包（UDP 队列 → _udpSession，TCP 队列 → _tcpSession）。
         std::unique_ptr<CigiIGSession> _tcpSession;
         std::unique_ptr<CigiIGSession> _udpSession;

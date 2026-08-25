@@ -22,8 +22,8 @@ namespace aerovista::viewhost
         bool initialize(const aerovista::sync::HostConfig& config, std::string* error = nullptr);
         void shutdown();
 
-        /// 扇出一帧 IGCtrl（可选眼点）。矛盾 A：业务侧组装 IGCtrl+眼点 → flushUdp。
-        void update(double simTimeMs, const aerovista::sync::cigi_wire::EyePose* eye);
+        /// 扇出一帧（IGCtrl 由 outMsgWithIgCtrlUdp() 自动前置，帧号/自计时时间戳 §7.1）+ 可选眼点 → flushUdp。
+        void update(const aerovista::sync::cigi_wire::EyePose* eye);
 
         bool isRunning() const;
         int readyIgCount() const;

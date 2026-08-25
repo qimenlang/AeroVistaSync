@@ -13,6 +13,7 @@
 #include "CigiIGCtrlV4.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -44,36 +45,54 @@ namespace aerovista::sync
         bool hasReadyIg() const;
         int readyIgCount() const;
 
-        /// 本会话已分配的数据面帧号数（业务侧组装 IGCtrl 时每帧调 nextFrameCntr 一次）。
-        /// 矛盾 A 后无 HostSync::update，帧号由业务侧分配，本计数 = 已分配帧号。
+        /// 本会话已发送的数据面帧数（beginWithIgCtrlUdp 每次自动前置 IGCtrl 递增一次）。
         std::uint32_t igCtrlSentCount() const;
         std::uint32_t sofReceivedCount() const;
 
-        /// 分配下一个数据面帧号（业务侧组装 IGCtrl 时使用；帧号全局递增，含命令面）。
+        /// 数据面帧号由 outMsgWithIgCtrlUdp() 自动分配（内部计数器递增），业务侧无需手动调用；
+        /// 保留此接口供测试锚定下一帧号（等价于 outMsgWithIgCtrlUdp 将使用的帧号）。
         std::uint32_t nextFrameCntr();
 
         // ===== 命令面（状态同步设计初版.md §7）：引用式发送接口 =====
 
         /// TCP 命令面 OutgoingMsg：业务侧 << 报文后调 flushTcp 发送（fire-and-forget）。
-        /// 自动前置 IGCtrl 帧头（CCL 要求 Host 消息以 IGCtrl 开头）。绑定 _tcpSession（§5.1 双 session）。
-        CigiOutgoingMsg& tcpOutgoing()
+        /// 以 IGCtrl 帧头开消息（CCL 要求 Host 消息以 IGCtrl 开头）：帧号 = 命令面计数器、
+        /// TimeStampValid=false（命令面不携带有效时间戳）。绑定 _tcpSession（§5.1 双 session）。
+        /// 单次 flush 周期内可多次调用填充报文——帧头只填一次（去重），flushTcp 后重置（§7.1）。
+        CigiOutgoingMsg& outMsgWithIgCtrlTcp()
         {
             ensureTcpSession();
             auto& omsg = _tcpSession->GetOutgoingMsgMgr();
-            omsg.BeginMsg();
-            CigiIGCtrlV4 igCtrl;
-            igCtrl.SetFrameCntr(_frameCounter++);
-            igCtrl.SetTimeStampValid(false);
-            omsg << igCtrl;
+            if (!_tcpMsgOpen)
+            {
+                omsg.BeginMsg();
+                CigiIGCtrlV4 igCtrl;
+                igCtrl.SetFrameCntr(_cmdFrameCounter++);
+                igCtrl.SetTimeStampValid(false);
+                omsg << igCtrl;
+                _tcpMsgOpen = true;
+            }
             return omsg;
         }
-        /// UDP 数据面 OutgoingMsg：业务侧完整组装（`<< IGCtrl << 眼点 << 实时位姿`）后调
-        /// flushUdp 发送（状态同步设计初版.md §7.1：数据面帧节拍由业务侧组装）。绑定 _udpSession。
-        CigiOutgoingMsg& udpOutgoing()
+        /// UDP 数据面 OutgoingMsg：业务侧 << 眼点 << 实时位姿 后调 flushUdp 发送。
+        /// 以 IGCtrl 帧头开消息（CCL 要求 Host 消息以 IGCtrl 开头）：帧号 = 数据面计数器（nextFrameCntr），
+        /// TimeStamp = HostSync 自计时模拟时间（_startTime = steady_clock::now() 于 initialize；
+        /// TimeStamp = (now - _startTime)×100，10µs 步进），TimeStampValid=true（状态同步设计初版.md §7.1）。
+        /// 单次 flush 周期内可多次调用填充报文——帧头只填一次（去重），flushUdp 后重置（§7.1）。
+        CigiOutgoingMsg& outMsgWithIgCtrlUdp()
         {
             ensureUdpSession();
             auto& omsg = _udpSession->GetOutgoingMsgMgr();
-            omsg.BeginMsg();
+            if (!_udpMsgOpen)
+            {
+                omsg.BeginMsg();
+                CigiIGCtrlV4 igCtrl;
+                igCtrl.SetFrameCntr(_dataFrameCounter++);
+                igCtrl.SetTimeStamp(cigi_wire::simTimeMsToTimeStamp(currentSimTimeMs()));
+                igCtrl.SetTimeStampValid(true);
+                omsg << igCtrl;
+                _udpMsgOpen = true;
+            }
             return omsg;
         }
         void flushTcp();
@@ -122,7 +141,7 @@ namespace aerovista::sync
         /// 主线程解包一条 TCP 报文：_tcpSession->ProcessIncomingMsg → 基础设施 + 业务 processor。
         void processIncomingTcpFrame(const unsigned char* buf, int n);
 
-        /// 懒创建 TCP 命令面 CCL 会话（§5.1 双 session）：仅 tcpOutgoing/flushTcp / TCP 收包首次使用时构造。
+        /// 懒创建 TCP 命令面 CCL 会话（§5.1 双 session）：仅 outMsgWithIgCtrlTcp/flushTcp / TCP 收包首次使用时构造。
         /// CigiSession 构造/析构在 MSVC Debug 下较贵（大 handler 表），纯收包端点不应为此买单。
         /// 基础设施 processor 按链路注册（§8.1）：SOF 计数 TCP+UDP 都注册，碰撞检测响应只注册 TCP。
         void ensureTcpSession()
@@ -138,7 +157,7 @@ namespace aerovista::sync
                     CIGI_COLL_DET_VOL_RESP_PACKET_ID_V4, &_volRespProc);
             }
         }
-        /// 懒创建 UDP 数据面 CCL 会话（§5.1 双 session）：仅 udpOutgoing/flushUdp / UDP 收包首次使用时构造。
+        /// 懒创建 UDP 数据面 CCL 会话（§5.1 双 session）：仅 outMsgWithIgCtrlUdp/flushUdp / UDP 收包首次使用时构造。
         /// SOF 计数两个 session 都注册（数据面 SOF 走 UDP，IG TCP 上报消息头也是 SOF）。
         void ensureUdpSession()
         {
@@ -151,6 +170,13 @@ namespace aerovista::sync
         }
 
         void markPeerDisconnected(std::uint64_t clientId);
+
+        /// 当前自计时模拟时间 ms（steady_clock 从 _startTime 起流逝，状态同步设计初版.md §7.1）。
+        double currentSimTimeMs() const
+        {
+            return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - _startTime)
+                .count();
+        }
 
         // 基础设施 processor（§8.1 通用模式，统一定义于 EventProcess.h）：
         // SOF 回显计数、碰撞检测段/体积响应（IG→Host）。
@@ -176,7 +202,11 @@ namespace aerovista::sync
 
         mutable std::mutex _udpMutex;
 
-        std::uint32_t _frameCounter = 0; ///< 已分配帧号数（tcpOutgoing/nextFrameCntr 递增）
+        std::uint32_t _dataFrameCounter = 0; ///< 数据面帧号（beginWithIgCtrlUdp 自动递增）
+        std::uint32_t _cmdFrameCounter = 0;  ///< 命令面帧号（beginWithIgCtrl 自动递增，与数据面解耦）
+        std::chrono::steady_clock::time_point _startTime{}; ///< 自计时起点（initialize 时记录）
+        bool _tcpMsgOpen = false; ///< 当前 TCP 消息已填 IGCtrl 帧头（去重；flushTcp 重置）
+        bool _udpMsgOpen = false; ///< 当前 UDP 消息已填 IGCtrl 帧头（去重；flushUdp 重置）
         std::uint64_t _nextClientId = 0;
 
         // 收包 payload 队列：I/O 线程（udpLoop / commandReadLoop）入队，主线程 drainIncoming 解包。
@@ -188,7 +218,7 @@ namespace aerovista::sync
 
         // CCL 会话（状态同步设计初版.md §5.1：CCL 单线程化 + 双 session——Host 各链路一套 CigiHostSession）；
         // 懒初始化（ensureTcpSession/ensureUdpSession），堆上分配（CigiSession 内含大 handler 表，栈上会溢出）。
-        // 发送隔离：tcpOutgoing/flushTcp 只操作 _tcpSession，udpOutgoing/flushUdp 只操作 _udpSession；
+        // 发送隔离：beginWithIgCtrl/flushTcp 只操作 _tcpSession，beginWithIgCtrlUdp/flushUdp 只操作 _udpSession；
         // 收包按链路喂各 session 解包（UDP 队列 → _udpSession，TCP 队列 → _tcpSession）。
         std::unique_ptr<CigiHostSession> _tcpSession;
         std::unique_ptr<CigiHostSession> _udpSession;

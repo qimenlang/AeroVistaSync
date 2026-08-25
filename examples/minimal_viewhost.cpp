@@ -47,14 +47,12 @@ int main(int argc, char** argv)
     std::cout << "[viewhost] Host waiting on UDP "
               << host.udpPortRecv << " / TCP " << host.tcpPort << "\n";
 
-    // 3) 无渲染节拍：按 60fps 驱动 update 扇出（HostSync 线程只收，扇出需外部驱动）。
-    constexpr double kFrameMs = 16.667;
-    const auto start = std::chrono::steady_clock::now();
+    // 3) 无渲染节拍：按 60fps 驱动 outMsgWithIgCtrlUdp+flushUdp 扇出（HostSync 线程只收，扇出需外部驱动）。
+    //    IGCtrl（帧号/时间戳）由 outMsgWithIgCtrlUdp() 自动填充（HostSync 自计时，状态同步设计初版.md §7.1）。
     for (int frame = 0; frame < 600; ++frame)
     {
-        const double elapsedMs =
-            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-        hostSync.update(elapsedMs);
+        hostSync.outMsgWithIgCtrlUdp();
+        hostSync.flushUdp();
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 

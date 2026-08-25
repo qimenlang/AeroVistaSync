@@ -65,6 +65,8 @@ namespace aerovista::sync
         _igCtrlReceivedCount = 0;
         _sofSentCount = 0;
         _lastFrameCntr = 0;
+        _tcpMsgOpen = false;
+        _udpMsgOpen = false;
         _hostTarget = {};
         resetHostSession();
 
@@ -250,7 +252,7 @@ namespace aerovista::sync
     {
         // 主线程收包入口（对等 HostSync::drainIncoming）：统一 drain TCP+UDP 队列 → 按链路解包（§5.1 双 session）。
         // 无条件 drain（不检查连接状态，与 Host 对等）。顺序先 UDP 后 TCP：
-        // 同帧内 UDP 先更新 _lastFrameCntr，TCP 出站 tcpOutgoing() 的 SOF 帧号才是最新。
+        // 同帧内 UDP 先更新 _lastFrameCntr，TCP 出站 outMsgWithSofTcp() 的 SOF 帧号才是最新。
 
         // UDP 数据面：生产-消费等待（I/O 线程 1ms 轮询），保证刚发到的数据报当帧可见。
         std::vector<IncomingFrame> udpFrames;
@@ -560,14 +562,17 @@ namespace aerovista::sync
             if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
             {
                 omsg.FreeMsg();
+                _tcpMsgOpen = false;
                 return;
             }
         }
         catch (...)
         {
             // 空缓冲（该链路从未 BeginMsg）→ 不发送任何字节（双 session 隔离的物理保障）。
+            _tcpMsgOpen = false;
             return;
         }
+        _tcpMsgOpen = false; // 消息已打包：下一轮 outMsgWithSofTcp 重新填帧头（§8.1 去重）
         if (_tcp.valid())
             _tcp.sendAll(buf, len);
         omsg.FreeMsg();
@@ -588,14 +593,17 @@ namespace aerovista::sync
             if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
             {
                 omsg.FreeMsg();
+                _udpMsgOpen = false;
                 return;
             }
         }
         catch (...)
         {
             // 空缓冲（该链路从未 BeginMsg）→ 不发送任何字节（双 session 隔离的物理保障）。
+            _udpMsgOpen = false;
             return;
         }
+        _udpMsgOpen = false; // 消息已打包：下一轮 outMsgWithSofUdp 重新填帧头（§8.1 去重）
         _udp.sendTo(_hostTarget.targetAddr, _hostTarget.targetUdpPortRecv, buf, len);
         omsg.FreeMsg();
     }

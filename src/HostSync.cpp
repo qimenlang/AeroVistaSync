@@ -58,12 +58,12 @@ namespace aerovista::sync
 
     std::uint32_t HostSync::igCtrlSentCount() const
     {
-        return _frameCounter;
+        return _dataFrameCounter;
     }
 
     std::uint32_t HostSync::nextFrameCntr()
     {
-        return _frameCounter++;
+        return _dataFrameCounter++;
     }
 
     std::uint32_t HostSync::sofReceivedCount() const
@@ -113,7 +113,11 @@ namespace aerovista::sync
         _local = local;
         _status = HostStatus::IDLE;
         _sofProc.count = 0;
-        _frameCounter = 0;
+        _dataFrameCounter = 0;
+        _cmdFrameCounter = 0;
+        _tcpMsgOpen = false;
+        _udpMsgOpen = false;
+        _startTime = std::chrono::steady_clock::now();
 
         std::string udpError;
         if (!_udp.initialize(_local.udpPortSend, _local.udpPortRecv, &udpError))
@@ -422,14 +426,17 @@ namespace aerovista::sync
             if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
             {
                 omsg.FreeMsg();
+                _tcpMsgOpen = false;
                 return;
             }
         }
         catch (...)
         {
             // 空缓冲（该链路从未 BeginMsg）→ 不发送任何字节（双 session 隔离的物理保障）。
+            _tcpMsgOpen = false;
             return;
         }
+        _tcpMsgOpen = false; // 消息已打包：下一轮 outMsgWithIgCtrlTcp 重新填帧头（§7.1 去重）
 
         std::vector<std::shared_ptr<TcpSocket>> targets;
         {
@@ -459,14 +466,17 @@ namespace aerovista::sync
             if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
             {
                 omsg.FreeMsg();
+                _udpMsgOpen = false;
                 return;
             }
         }
         catch (...)
         {
             // 空缓冲（该链路从未 BeginMsg）→ 不发送任何字节（双 session 隔离的物理保障）。
+            _udpMsgOpen = false;
             return;
         }
+        _udpMsgOpen = false; // 消息已打包：下一轮 outMsgWithIgCtrlUdp 重新填帧头（§7.1 去重）
 
         std::vector<std::pair<std::string, uint32_t>> targets;
         {

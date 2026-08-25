@@ -61,12 +61,11 @@ namespace aerovista::sync
         /// 因纬度/俯仰超出范围而被丢弃的 LLA 眼点数（lla设计 §5）。
         std::uint64_t eyePoseRejectedByRange();
 
-        /// 把 Host 数据面帧（IGCtrlV4 [+ 眼点非空时 EntityPositionCtrlV4]）组装进 omsg。
+        /// 把 ownship 眼点（EntityPositionCtrlV4）组装进 omsg（IGCtrl 已由 outMsgWithIgCtrlUdp() 自动前置）。
         /// WorldLocal → Attach+XYZ ParentID=1；Lla → Detach+LLA ParentID=0。
-        /// 业务侧（矛盾 A）用 host.udpOutgoing() 拿到 omsg 后调本函数组装，再 flushUdp()。
-        /// LLA 越界丢弃逻辑在内（eyePoseRejectedByRange 计数）。
-        void appendHostFrame(CigiOutgoingMsg& omsg, std::uint32_t frameCntr, double simTimeMs,
-                             const EyePose* eye);
+        /// 业务侧（矛盾 A + IGCtrl 自动填充）用 host.outMsgWithIgCtrlUdp() 拿到 omsg 后调本函数追加眼点，再 flushUdp()。
+        /// LLA 越界丢弃逻辑在内（eyePoseRejectedByRange 计数）。eye 为空则只发 IGCtrl（无眼点帧）。
+        void appendEye(CigiOutgoingMsg& omsg, const EyePose* eye);
 
         /// 打包 Host→IG：IGCtrlV4 [+ 眼点非空时 EntityPositionCtrlV4]（线格式测试锚定用）。
         bool packHostFrame(std::uint32_t frameCntr, double simTimeMs, const EyePose* eye,

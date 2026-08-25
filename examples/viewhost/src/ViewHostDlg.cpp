@@ -115,7 +115,7 @@ void CViewHostDlg::OnTimer(UINT_PTR nIDEvent)
         aerovista::viewhost::applyManualStep(_eye, dFwd, dRight, dUp, dyaw, dpitch);
     }
 
-    _driver.update(simTimeMs, &_eye);
+    _driver.update(&_eye);
     updateStatusText();
 }
 

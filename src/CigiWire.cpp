@@ -186,15 +186,8 @@ namespace aerovista::sync
             return gEyePoseRejectedByRange;
         }
 
-        void appendHostFrame(CigiOutgoingMsg& omsg, std::uint32_t frameCntr, double simTimeMs,
-                             const EyePose* eye)
+        void appendEye(CigiOutgoingMsg& omsg, const EyePose* eye)
         {
-            CigiIGCtrlV4 igCtrl;
-            igCtrl.SetFrameCntr(frameCntr);
-            igCtrl.SetTimeStamp(simTimeMsToTimeStamp(simTimeMs));
-            igCtrl.SetTimeStampValid(true);
-            omsg << igCtrl;
-
             if (!eye)
                 return;
 
@@ -240,7 +233,12 @@ namespace aerovista::sync
 
             CigiOutgoingMsg& omsg = rt.host.GetOutgoingMsgMgr();
             omsg.BeginMsg();
-            appendHostFrame(omsg, frameCntr, simTimeMs, eye);
+            CigiIGCtrlV4 igCtrl;
+            igCtrl.SetFrameCntr(frameCntr);
+            igCtrl.SetTimeStamp(simTimeMsToTimeStamp(simTimeMs));
+            igCtrl.SetTimeStampValid(true);
+            omsg << igCtrl;
+            appendEye(omsg, eye);
 
             Cigi_uint8* buf = nullptr;
             int len = 0;
