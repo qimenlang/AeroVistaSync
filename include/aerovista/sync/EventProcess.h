@@ -9,6 +9,7 @@
 
 #include "CigiBaseEventProcessor.h"
 #include "CigiIGCtrlV4.h"
+#include "CigiEntityPositionCtrlV4.h"
 
 namespace aerovista::sync
 {
@@ -76,6 +77,16 @@ namespace aerovista::sync
     /// `PacketCaptureProc<CigiEntityPositionCtrlV4>`——后者 sink 是原始 CCL 类型）。
     /// OnPacketReceived：捕获 ownship 眼点 → 翻译 HostEyePose → 基类 `setSink` 投递。
     class EyeCaptureProc : public CigiBaseEventProcessor, public Sinkable<HostEyePose>
+    {
+    public:
+        void OnPacketReceived(CigiBasePacket* packet) override;
+    };
+
+    /// 命令实体摆放捕获（IG 侧）：投递 `EntityID≠0` 的 EntityPositionCtrlV4（ownship 眼点归
+    /// EyeCaptureProc）。继承 `PacketCaptureProc<CigiEntityPositionCtrlV4>` 以兼容
+    /// `subscribe<CigiEntityPositionCtrlV4>()` 的 dynamic_cast 定位；override OnPacketReceived
+    /// 过滤 ownship（§4.1）后经基类 sink 投递。
+    class EntityPoseControlProc : public PacketCaptureProc<CigiEntityPositionCtrlV4>
     {
     public:
         void OnPacketReceived(CigiBasePacket* packet) override;

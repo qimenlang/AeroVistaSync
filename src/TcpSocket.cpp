@@ -200,6 +200,7 @@ namespace aerovista::sync
 
     void TcpSocket::setRecvTimeout(int timeoutMs)
     {
+        return;
         if (socket_common::isValid(_sock))
             socket_common::setRecvTimeout(_sock, timeoutMs);
     }

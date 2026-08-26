@@ -2,8 +2,6 @@
 #include <aerovista/sync/CigiWire.h>
 #include <aerovista/sync/SyncProtocol.h>
 
-#include "CigiEntityPositionCtrlV4.h"
-
 #include <chrono>
 #include <cstring>
 #include <iostream>
@@ -37,6 +35,7 @@ namespace aerovista::sync
         // 数据面（UDP）：IGCtrl / ownship 眼点 + 持续/每帧控制类（cigi梳理.md 链路矩阵）。
         session.GetIncomingMsgMgr().RegisterEventProcessor(CIGI_IG_CTRL_PACKET_ID_V4, &_igCtrlProc);
         session.GetIncomingMsgMgr().RegisterEventProcessor(CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4, &_eyeProc);
+
         registerCapture(session, CIGI_CONF_CLAMP_ENTITY_CTRL_PACKET_ID_V4, _confClampProc, _captureProcs);
         registerCapture(session, CIGI_VELOCITY_CTRL_PACKET_ID_V4, _velocityProc, _captureProcs);
         registerCapture(session, CIGI_ACCELERATION_CTRL_PACKET_ID_V4, _accelerationProc, _captureProcs);
@@ -46,6 +45,9 @@ namespace aerovista::sync
     void IgSync::registerTcpProcessors(CigiIGSession& session)
     {
         // 命令面（TCP）：一次性 / 配置 / 请求 / 符号类（cigi梳理.md 链路矩阵）。
+        // 命令实体摆放（EntityPositionCtrlV4, EntityID≠0）：命令面一次性摆放，注册于 TCP；
+        // ownship 眼点（EntityID==0）由 UDP 侧 EyeCaptureProc 处理（cigi梳理.md 链路矩阵）。
+        registerCapture(session, CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4, _entityPoseProc, _captureProcs);
         registerCapture(session, CIGI_COLL_DET_VOL_DEF_PACKET_ID_V4, _collDetVolDefProc, _captureProcs);
         registerCapture(session, CIGI_ENTITY_CTRL_PACKET_ID_V4, _entityCtrlProc, _captureProcs);
         registerCapture(session, CIGI_ART_PART_CTRL_PACKET_ID_V4, _artPartCtrlProc, _captureProcs);

@@ -2,12 +2,16 @@
 
 #include <aerovista/sync/SyncConfig.h>
 
+#include <atlconv.h>
+
+#include <sstream>
 #include <string>
 
 BEGIN_MESSAGE_MAP(CViewHostDlg, CDialog)
     ON_WM_TIMER()
     ON_WM_DESTROY()
     ON_BN_CLICKED(IDC_TOGGLE_CONTROL, &CViewHostDlg::OnToggleControl)
+    ON_BN_CLICKED(IDC_ENTITY_PLACE, &CViewHostDlg::OnPlaceEntity)
     ON_BN_CLICKED(IDC_EXIT, &CViewHostDlg::OnExit)
 END_MESSAGE_MAP()
 
@@ -52,6 +56,13 @@ BOOL CViewHostDlg::OnInitDialog()
     _startTime = std::chrono::steady_clock::now();
     _started = true;
     SetTimer(kTimerId, 16, nullptr);
+
+    // 实体摆放默认值（模型群中心，viewhost_ig_*.json 实体所在区域）。
+    SetDlgItemText(IDC_ENTITY_ID, _T("7"));
+    SetDlgItemText(IDC_ENTITY_LAT, _T("39.908700"));
+    SetDlgItemText(IDC_ENTITY_LON, _T("116.397500"));
+    SetDlgItemText(IDC_ENTITY_ALT, _T("0.0"));
+    SetDlgItemText(IDC_ENTITY_YPR, _T("0.0 0.0 0.0"));
 
     updateStatusText();
     return TRUE;
@@ -130,6 +141,42 @@ void CViewHostDlg::OnToggleControl()
 {
     _controlling = !_controlling;
     updateStatusText();
+}
+
+void CViewHostDlg::OnPlaceEntity()
+{
+    CString idText, latText, lonText, altText, yprText;
+    GetDlgItemText(IDC_ENTITY_ID, idText);
+    GetDlgItemText(IDC_ENTITY_LAT, latText);
+    GetDlgItemText(IDC_ENTITY_LON, lonText);
+    GetDlgItemText(IDC_ENTITY_ALT, altText);
+    GetDlgItemText(IDC_ENTITY_YPR, yprText);
+
+    // yaw pitch roll 空格分隔解析；缺省为 0。
+    double yaw = 0.0, pitch = 0.0, roll = 0.0;
+    const std::string yprA = CT2A(yprText.GetString()).m_psz;
+    std::istringstream ypr(yprA);
+    ypr >> yaw;
+    ypr >> pitch;
+    ypr >> roll;
+
+    const int entityId = _ttoi(idText);
+    const double lat = _ttof(latText);
+    const double lon = _ttof(lonText);
+    const double alt = _ttof(altText);
+    if (entityId <= 0)
+    {
+        SetDlgItemText(IDC_STATUS_PLACE, _T("最近摆放: Entity ID 无效"));
+        return;
+    }
+
+    // 命令面（TCP）一次性摆放：绝对 LLA（Detach）。
+    _driver.sendEntityPose(static_cast<std::uint16_t>(entityId), lat, lon, alt, yaw, pitch, roll);
+
+    CString status;
+    status.Format(_T("最近摆放: id=%d lat=%.6f lon=%.6f alt=%.1f ypr=%.2f/%.2f/%.2f"), entityId, lat, lon, alt, yaw,
+                  pitch, roll);
+    SetDlgItemText(IDC_STATUS_PLACE, status);
 }
 
 void CViewHostDlg::OnExit()

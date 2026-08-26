@@ -44,4 +44,14 @@ namespace aerovista::sync
         if (dynamic_cast<CigiSOFV4*>(packet))
             count.fetch_add(1);
     }
+
+    void EntityPoseControlProc::OnPacketReceived(CigiBasePacket* packet)
+    {
+        auto* ent = dynamic_cast<CigiEntityPositionCtrlV4*>(packet);
+        if (!ent || ent->GetEntityID() == 0)
+            return; // ownship 眼点（EntityID==0）由 EyeCaptureProc 处理；这里只投递命令实体（EntityID≠0）。
+
+        if (this->_sink)
+            this->_sink(*ent);
+    }
 } // namespace aerovista::sync

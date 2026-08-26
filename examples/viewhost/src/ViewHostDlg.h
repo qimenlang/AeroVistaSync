@@ -24,6 +24,7 @@ protected:
     afx_msg void OnTimer(UINT_PTR nIDEvent);
     afx_msg void OnDestroy();
     afx_msg void OnToggleControl();
+    afx_msg void OnPlaceEntity();
     afx_msg void OnExit();
 
     DECLARE_MESSAGE_MAP()

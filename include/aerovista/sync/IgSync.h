@@ -319,6 +319,10 @@ namespace aerovista::sync
         // CollDetVolDef 订阅经通用捕获 `subscribe<CigiCollDetVolDefV4>()`。
         PacketCaptureProc<CigiCollDetVolDefV4> _collDetVolDefProc;
         PacketCaptureProc<CigiEntityCtrlV4> _entityCtrlProc;
+        // 命令实体摆放（EntityPositionCtrlV4，EntityID≠0）：命令面一次性摆放，注册于 TCP（cigi梳理.md
+        // 链路矩阵）。ownship 眼点（EntityID==0）已被 UDP 侧 EyeCaptureProc 占用；同 PacketID 双 processor
+        // 均触发，EntityPoseControlProc 过滤 EntityID==0（§4.1）。
+        EntityPoseControlProc _entityPoseProc;
         PacketCaptureProc<CigiArtPartCtrlV4> _artPartCtrlProc;
         PacketCaptureProc<CigiShortArtPartCtrlV4> _shortArtPartCtrlProc;
         PacketCaptureProc<CigiCompCtrlV4> _compCtrlProc;
