@@ -47,7 +47,7 @@ namespace aerovista::sync
     class HostSync
     {
     public:
-        // ===== 对外业务面（消费方：engine / viewhost）=====
+        // ===== 对外业务面（消费方：viewhost / 测试）=====
 
         HostSync() = default;
         ~HostSync();
@@ -64,7 +64,7 @@ namespace aerovista::sync
         HostStatus status() const;
         bool hasReadyIg() const;
         int readyIgCount() const;
-        /// 本会话已发送的数据面帧数（beginWithIgCtrlUdp 每次自动前置 IGCtrl 递增一次）。
+        /// 本会话已发送的数据面帧数（outMsgWithIgCtrlUdp 每次自动前置 IGCtrl 递增一次）。
         std::uint32_t igCtrlSentCount() const;
         std::uint32_t sofReceivedCount() const;
 
@@ -116,7 +116,7 @@ namespace aerovista::sync
         // ---- 收包（对等 IG 侧 §8.1）：注册 processor 处理 IG→Host 报文 ----
 
         /// 注册某个 CIGI 报文的业务 EventProcessor（透传到 CCL session 的 RegisterEventProcessor）。
-        /// 处理 IG 经 TCP/UDP 发来的报文（如 IG 发 SymbolTextDefV4 文本指令）。
+        /// 处理 IG 经 TCP/UDP 发来的报文（如 IG 发 CigiIGMsgV4 / CigiPositionRespV4，见 registerTcpProcessors）。
         /// processor 由业务层定义；生命周期需覆盖 HostSync 会话。
         void registerEventProcessor(int packetId, CigiBaseEventProcessor* processor);
 
@@ -199,6 +199,8 @@ namespace aerovista::sync
         void registerUdpProcessors(CigiHostSession& session);
         /// 注册 TCP 命令面可达的 IG→Host 报文捕获（响应/通知/上报类 + 碰撞检测响应）。
         void registerTcpProcessors(CigiHostSession& session);
+        /// 注册单个通用捕获 processor（§8.1）：RegisterEventProcessor + 入 _captureProcs（供 subscribe 定位）。
+        void registerCapture(CigiHostSession& session, int packetId, CigiBaseEventProcessor* proc);
 
         void markPeerDisconnected(std::uint64_t clientId);
 
@@ -254,8 +256,8 @@ namespace aerovista::sync
 
         mutable std::mutex _udpMutex;
 
-        std::uint32_t _dataFrameCounter = 0; ///< 数据面帧号（beginWithIgCtrlUdp 自动递增）
-        std::uint32_t _cmdFrameCounter = 0;  ///< 命令面帧号（beginWithIgCtrl 自动递增，与数据面解耦）
+        std::uint32_t _dataFrameCounter = 0; ///< 数据面帧号（outMsgWithIgCtrlUdp 自动递增）
+        std::uint32_t _cmdFrameCounter = 0;  ///< 命令面帧号（outMsgWithIgCtrlTcp 自动递增，与数据面解耦）
         std::chrono::steady_clock::time_point _startTime{}; ///< 自计时起点（initialize 时记录）
         bool _tcpMsgOpen = false; ///< 当前 TCP 消息已填 IGCtrl 帧头（去重；flushTcp 重置）
         bool _udpMsgOpen = false; ///< 当前 UDP 消息已填 IGCtrl 帧头（去重；flushUdp 重置）
@@ -270,7 +272,7 @@ namespace aerovista::sync
 
         // CCL 会话（状态同步设计初版.md §5.1：CCL 单线程化 + 双 session——Host 各链路一套 CigiHostSession）；
         // 懒初始化（ensureTcpSession/ensureUdpSession），堆上分配（CigiSession 内含大 handler 表，栈上会溢出）。
-        // 发送隔离：beginWithIgCtrl/flushTcp 只操作 _tcpSession，beginWithIgCtrlUdp/flushUdp 只操作 _udpSession；
+        // 发送隔离：outMsgWithIgCtrlTcp/flushTcp 只操作 _tcpSession，outMsgWithIgCtrlUdp/flushUdp 只操作 _udpSession；
         // 收包按链路喂各 session 解包（UDP 队列 → _udpSession，TCP 队列 → _tcpSession）。
         std::unique_ptr<CigiHostSession> _tcpSession;
         std::unique_ptr<CigiHostSession> _udpSession;

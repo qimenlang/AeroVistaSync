@@ -9,17 +9,12 @@
 
 namespace aerovista::sync
 {
-    namespace
+
+    void HostSync::registerCapture(CigiHostSession& session, int packetId, CigiBaseEventProcessor* proc)
     {
-        /// 注册单个通用捕获 processor（§8.1）：RegisterEventProcessor + 入注册表（供 subscribe 定位）。
-        template <typename PacketT>
-        void registerCapture(CigiHostSession& session, int packetId, PacketCaptureProc<PacketT>& proc,
-                             std::vector<CigiBaseEventProcessor*>& registry)
-        {
-            session.GetIncomingMsgMgr().RegisterEventProcessor(packetId, &proc);
-            registry.push_back(&proc);
-        }
-    } // namespace
+        session.GetIncomingMsgMgr().RegisterEventProcessor(packetId, proc);
+        _captureProcs.push_back(proc);
+    }
 
     void HostSync::registerUdpProcessors(CigiHostSession& session)
     {
@@ -32,23 +27,22 @@ namespace aerovista::sync
         // 命令面（TCP）：SOF 计数（IG TCP 上报消息头也是 SOF）+ 响应/通知/上报类
         //（cigi梳理.md 链路矩阵；VolResp 为既有基础设施）。
         session.GetIncomingMsgMgr().RegisterEventProcessor(CIGI_SOF_PACKET_ID_V4, &_sofProc);
-        registerCapture(session, CIGI_COLL_DET_VOL_RESP_PACKET_ID_V4, _collDetVolRespProc, _captureProcs);
-        registerCapture(session, CIGI_IG_MSG_PACKET_ID_V4, _igMsgProc, _captureProcs);
-        registerCapture(session, CIGI_EVENT_NOTIFICATION_PACKET_ID_V4, _eventNotificationProc, _captureProcs);
-        registerCapture(session, CIGI_ANIMATION_STOP_PACKET_ID_V4, _animationStopProc, _captureProcs);
-        registerCapture(session, CIGI_HAT_HOT_RESP_PACKET_ID_V4, _hatHotRespProc, _captureProcs);
-        registerCapture(session, CIGI_HAT_HOT_XRESP_PACKET_ID_V4, _hatHotXRespProc, _captureProcs);
-        registerCapture(session, CIGI_LOS_RESP_PACKET_ID_V4, _losRespProc, _captureProcs);
-        registerCapture(session, CIGI_LOS_XRESP_PACKET_ID_V4, _losXRespProc, _captureProcs);
-        registerCapture(session, CIGI_SENSOR_RESP_PACKET_ID_V4, _sensorRespProc, _captureProcs);
-        registerCapture(session, CIGI_SENSOR_XRESP_PACKET_ID_V4, _sensorXRespProc, _captureProcs);
-        registerCapture(session, CIGI_POSITION_RESP_PACKET_ID_V4, _positionRespProc, _captureProcs);
-        registerCapture(session, CIGI_WEATHER_COND_RESP_PACKET_ID_V4, _weatherCondRespProc, _captureProcs);
-        registerCapture(session, CIGI_AEROSOL_RESP_PACKET_ID_V4, _aerosolRespProc, _captureProcs);
-        registerCapture(session, CIGI_MARITIME_SURFACE_RESP_PACKET_ID_V4, _maritimeSurfaceRespProc, _captureProcs);
-        registerCapture(session, CIGI_TERRESTRIAL_SURFACE_RESP_PACKET_ID_V4, _terrestrialSurfaceRespProc,
-                        _captureProcs);
-        registerCapture(session, CIGI_COLL_DET_SEG_RESP_PACKET_ID_V4, _collDetSegRespProc, _captureProcs);
+        registerCapture(session, CIGI_COLL_DET_VOL_RESP_PACKET_ID_V4, &_collDetVolRespProc);
+        registerCapture(session, CIGI_IG_MSG_PACKET_ID_V4, &_igMsgProc);
+        registerCapture(session, CIGI_EVENT_NOTIFICATION_PACKET_ID_V4, &_eventNotificationProc);
+        registerCapture(session, CIGI_ANIMATION_STOP_PACKET_ID_V4, &_animationStopProc);
+        registerCapture(session, CIGI_HAT_HOT_RESP_PACKET_ID_V4, &_hatHotRespProc);
+        registerCapture(session, CIGI_HAT_HOT_XRESP_PACKET_ID_V4, &_hatHotXRespProc);
+        registerCapture(session, CIGI_LOS_RESP_PACKET_ID_V4, &_losRespProc);
+        registerCapture(session, CIGI_LOS_XRESP_PACKET_ID_V4, &_losXRespProc);
+        registerCapture(session, CIGI_SENSOR_RESP_PACKET_ID_V4, &_sensorRespProc);
+        registerCapture(session, CIGI_SENSOR_XRESP_PACKET_ID_V4, &_sensorXRespProc);
+        registerCapture(session, CIGI_POSITION_RESP_PACKET_ID_V4, &_positionRespProc);
+        registerCapture(session, CIGI_WEATHER_COND_RESP_PACKET_ID_V4, &_weatherCondRespProc);
+        registerCapture(session, CIGI_AEROSOL_RESP_PACKET_ID_V4, &_aerosolRespProc);
+        registerCapture(session, CIGI_MARITIME_SURFACE_RESP_PACKET_ID_V4, &_maritimeSurfaceRespProc);
+        registerCapture(session, CIGI_TERRESTRIAL_SURFACE_RESP_PACKET_ID_V4, &_terrestrialSurfaceRespProc);
+        registerCapture(session, CIGI_COLL_DET_SEG_RESP_PACKET_ID_V4, &_collDetSegRespProc);
     }
 
     HostSync::~HostSync()

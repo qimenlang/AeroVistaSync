@@ -20,15 +20,13 @@ namespace aerovista::sync
                     .count());
         }
 
-        /// 注册单个通用捕获 processor（§8.1）：RegisterEventProcessor + 入注册表（供 subscribe 定位）。
-        template <typename PacketT>
-        void registerCapture(CigiIGSession& session, int packetId, PacketCaptureProc<PacketT>& proc,
-                             std::vector<CigiBaseEventProcessor*>& registry)
-        {
-            session.GetIncomingMsgMgr().RegisterEventProcessor(packetId, &proc);
-            registry.push_back(&proc);
-        }
     } // namespace
+
+    void IgSync::registerCapture(CigiIGSession& session, int packetId, CigiBaseEventProcessor* proc)
+    {
+        session.GetIncomingMsgMgr().RegisterEventProcessor(packetId, proc);
+        _captureProcs.push_back(proc);
+    }
 
     void IgSync::registerUdpProcessors(CigiIGSession& session)
     {
@@ -36,10 +34,10 @@ namespace aerovista::sync
         session.GetIncomingMsgMgr().RegisterEventProcessor(CIGI_IG_CTRL_PACKET_ID_V4, &_igCtrlProc);
         session.GetIncomingMsgMgr().RegisterEventProcessor(CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4, &_eyeProc);
 
-        registerCapture(session, CIGI_CONF_CLAMP_ENTITY_CTRL_PACKET_ID_V4, _confClampProc, _captureProcs);
-        registerCapture(session, CIGI_VELOCITY_CTRL_PACKET_ID_V4, _velocityProc, _captureProcs);
-        registerCapture(session, CIGI_ACCELERATION_CTRL_PACKET_ID_V4, _accelerationProc, _captureProcs);
-        registerCapture(session, CIGI_VIEW_CTRL_PACKET_ID_V4, _viewCtrlProc, _captureProcs);
+        registerCapture(session, CIGI_CONF_CLAMP_ENTITY_CTRL_PACKET_ID_V4, &_confClampProc);
+        registerCapture(session, CIGI_VELOCITY_CTRL_PACKET_ID_V4, &_velocityProc);
+        registerCapture(session, CIGI_ACCELERATION_CTRL_PACKET_ID_V4, &_accelerationProc);
+        registerCapture(session, CIGI_VIEW_CTRL_PACKET_ID_V4, &_viewCtrlProc);
     }
 
     void IgSync::registerTcpProcessors(CigiIGSession& session)
@@ -47,43 +45,40 @@ namespace aerovista::sync
         // 命令面（TCP）：一次性 / 配置 / 请求 / 符号类（cigi梳理.md 链路矩阵）。
         // 命令实体摆放（EntityPositionCtrlV4, EntityID≠0）：命令面一次性摆放，注册于 TCP；
         // ownship 眼点（EntityID==0）由 UDP 侧 EyeCaptureProc 处理（cigi梳理.md 链路矩阵）。
-        registerCapture(session, CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4, _entityPoseProc, _captureProcs);
-        registerCapture(session, CIGI_COLL_DET_VOL_DEF_PACKET_ID_V4, _collDetVolDefProc, _captureProcs);
-        registerCapture(session, CIGI_ENTITY_CTRL_PACKET_ID_V4, _entityCtrlProc, _captureProcs);
-        registerCapture(session, CIGI_ART_PART_CTRL_PACKET_ID_V4, _artPartCtrlProc, _captureProcs);
-        registerCapture(session, CIGI_SHORT_ART_PART_CTRL_PACKET_ID_V4, _shortArtPartCtrlProc, _captureProcs);
-        registerCapture(session, CIGI_COMP_CTRL_PACKET_ID_V4, _compCtrlProc, _captureProcs);
-        registerCapture(session, CIGI_SHORT_COMP_CTRL_PACKET_ID_V4, _shortCompCtrlProc, _captureProcs);
-        registerCapture(session, CIGI_ANIMATION_CTRL_PACKET_ID_V4, _animationCtrlProc, _captureProcs);
-        registerCapture(session, CIGI_VIEW_DEF_PACKET_ID_V4, _viewDefProc, _captureProcs);
-        registerCapture(session, CIGI_SENSOR_CTRL_PACKET_ID_V4, _sensorCtrlProc, _captureProcs);
-        registerCapture(session, CIGI_MOTION_TRACK_CTRL_PACKET_ID_V4, _motionTrackCtrlProc, _captureProcs);
-        registerCapture(session, CIGI_ATMOS_CTRL_PACKET_ID_V4, _atmosCtrlProc, _captureProcs);
-        registerCapture(session, CIGI_CELESTIAL_CTRL_PACKET_ID_V4, _celestialCtrlProc, _captureProcs);
-        registerCapture(session, CIGI_ENV_RGN_CTRL_PACKET_ID_V4, _envRgnCtrlProc, _captureProcs);
-        registerCapture(session, CIGI_WEATHER_CTRL_PACKET_ID_V4, _weatherCtrlProc, _captureProcs);
-        registerCapture(session, CIGI_MARITIME_SURFACE_CTRL_PACKET_ID_V4, _maritimeSurfaceCtrlProc, _captureProcs);
-        registerCapture(session, CIGI_TERRESTRIAL_SURFACE_CTRL_PACKET_ID_V4, _terrestrialSurfaceCtrlProc,
-                        _captureProcs);
-        registerCapture(session, CIGI_WAVE_CTRL_PACKET_ID_V4, _waveCtrlProc, _captureProcs);
-        registerCapture(session, CIGI_EARTH_MODEL_DEF_PACKET_ID_V4, _earthModelDefProc, _captureProcs);
-        registerCapture(session, CIGI_COLL_DET_SEG_DEF_PACKET_ID_V4, _collDetSegDefProc, _captureProcs);
-        registerCapture(session, CIGI_HAT_HOT_REQ_PACKET_ID_V4, _hatHotReqProc, _captureProcs);
-        registerCapture(session, CIGI_LOS_SEG_REQ_PACKET_ID_V4, _losSegReqProc, _captureProcs);
-        registerCapture(session, CIGI_LOS_VECT_REQ_PACKET_ID_V4, _losVectReqProc, _captureProcs);
-        registerCapture(session, CIGI_POSITION_REQ_PACKET_ID_V4, _positionReqProc, _captureProcs);
-        registerCapture(session, CIGI_ENV_COND_REQ_PACKET_ID_V4, _envCondReqProc, _captureProcs);
-        registerCapture(session, CIGI_SYMBOL_CONTROL_PACKET_ID_V4, _symbolCtrlProc, _captureProcs);
-        registerCapture(session, CIGI_SHORT_SYMBOL_CONTROL_PACKET_ID_V4, _shortSymbolCtrlProc, _captureProcs);
-        registerCapture(session, CIGI_SYMBOL_SURFACE_DEF_PACKET_ID_V4, _symbolSurfaceDefProc, _captureProcs);
-        registerCapture(session, CIGI_SYMBOL_TEXT_DEFINITION_PACKET_ID_V4, _symbolTextDefProc, _captureProcs);
-        registerCapture(session, CIGI_SYMBOL_CIRCLE_DEFINITION_PACKET_ID_V4, _symbolCircleDefProc, _captureProcs);
-        registerCapture(session, CIGI_SYMBOL_POLYGON_DEFINITION_PACKET_ID_V4, _symbolPolygonDefProc, _captureProcs);
-        registerCapture(session, CIGI_SYMBOL_TEXTURED_CIRCLE_DEFINITION_PACKET_ID_V4, _symbolTexturedCircleDefProc,
-                        _captureProcs);
-        registerCapture(session, CIGI_SYMBOL_TEXTURED_POLYGON_DEFINITION_PACKET_ID_V4, _symbolTexturedPolygonDefProc,
-                        _captureProcs);
-        registerCapture(session, CIGI_SYMBOL_CLONE_PACKET_ID_V4, _symbolCloneProc, _captureProcs);
+        registerCapture(session, CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4, &_entityPoseProc);
+        registerCapture(session, CIGI_COLL_DET_VOL_DEF_PACKET_ID_V4, &_collDetVolDefProc);
+        registerCapture(session, CIGI_ENTITY_CTRL_PACKET_ID_V4, &_entityCtrlProc);
+        registerCapture(session, CIGI_ART_PART_CTRL_PACKET_ID_V4, &_artPartCtrlProc);
+        registerCapture(session, CIGI_SHORT_ART_PART_CTRL_PACKET_ID_V4, &_shortArtPartCtrlProc);
+        registerCapture(session, CIGI_COMP_CTRL_PACKET_ID_V4, &_compCtrlProc);
+        registerCapture(session, CIGI_SHORT_COMP_CTRL_PACKET_ID_V4, &_shortCompCtrlProc);
+        registerCapture(session, CIGI_ANIMATION_CTRL_PACKET_ID_V4, &_animationCtrlProc);
+        registerCapture(session, CIGI_VIEW_DEF_PACKET_ID_V4, &_viewDefProc);
+        registerCapture(session, CIGI_SENSOR_CTRL_PACKET_ID_V4, &_sensorCtrlProc);
+        registerCapture(session, CIGI_MOTION_TRACK_CTRL_PACKET_ID_V4, &_motionTrackCtrlProc);
+        registerCapture(session, CIGI_ATMOS_CTRL_PACKET_ID_V4, &_atmosCtrlProc);
+        registerCapture(session, CIGI_CELESTIAL_CTRL_PACKET_ID_V4, &_celestialCtrlProc);
+        registerCapture(session, CIGI_ENV_RGN_CTRL_PACKET_ID_V4, &_envRgnCtrlProc);
+        registerCapture(session, CIGI_WEATHER_CTRL_PACKET_ID_V4, &_weatherCtrlProc);
+        registerCapture(session, CIGI_MARITIME_SURFACE_CTRL_PACKET_ID_V4, &_maritimeSurfaceCtrlProc);
+        registerCapture(session, CIGI_TERRESTRIAL_SURFACE_CTRL_PACKET_ID_V4, &_terrestrialSurfaceCtrlProc);
+        registerCapture(session, CIGI_WAVE_CTRL_PACKET_ID_V4, &_waveCtrlProc);
+        registerCapture(session, CIGI_EARTH_MODEL_DEF_PACKET_ID_V4, &_earthModelDefProc);
+        registerCapture(session, CIGI_COLL_DET_SEG_DEF_PACKET_ID_V4, &_collDetSegDefProc);
+        registerCapture(session, CIGI_HAT_HOT_REQ_PACKET_ID_V4, &_hatHotReqProc);
+        registerCapture(session, CIGI_LOS_SEG_REQ_PACKET_ID_V4, &_losSegReqProc);
+        registerCapture(session, CIGI_LOS_VECT_REQ_PACKET_ID_V4, &_losVectReqProc);
+        registerCapture(session, CIGI_POSITION_REQ_PACKET_ID_V4, &_positionReqProc);
+        registerCapture(session, CIGI_ENV_COND_REQ_PACKET_ID_V4, &_envCondReqProc);
+        registerCapture(session, CIGI_SYMBOL_CONTROL_PACKET_ID_V4, &_symbolCtrlProc);
+        registerCapture(session, CIGI_SHORT_SYMBOL_CONTROL_PACKET_ID_V4, &_shortSymbolCtrlProc);
+        registerCapture(session, CIGI_SYMBOL_SURFACE_DEF_PACKET_ID_V4, &_symbolSurfaceDefProc);
+        registerCapture(session, CIGI_SYMBOL_TEXT_DEFINITION_PACKET_ID_V4, &_symbolTextDefProc);
+        registerCapture(session, CIGI_SYMBOL_CIRCLE_DEFINITION_PACKET_ID_V4, &_symbolCircleDefProc);
+        registerCapture(session, CIGI_SYMBOL_POLYGON_DEFINITION_PACKET_ID_V4, &_symbolPolygonDefProc);
+        registerCapture(session, CIGI_SYMBOL_TEXTURED_CIRCLE_DEFINITION_PACKET_ID_V4, &_symbolTexturedCircleDefProc);
+        registerCapture(session, CIGI_SYMBOL_TEXTURED_POLYGON_DEFINITION_PACKET_ID_V4, &_symbolTexturedPolygonDefProc);
+        registerCapture(session, CIGI_SYMBOL_CLONE_PACKET_ID_V4, &_symbolCloneProc);
     }
 
     IgSync::~IgSync()
@@ -526,7 +521,7 @@ namespace aerovista::sync
     }
 
     // =============================================================================
-    // 命令面（状态同步设计初版.md §3.1 / §4 / §6）
+    // 命令面（状态同步设计初版.md §4 / §6）
     // =============================================================================
 
     void IgSync::startCommandThread()
@@ -572,7 +567,7 @@ namespace aerovista::sync
                 _tcpPayloadQueue.push_back(std::move(f));
             });
         }
-        // recv PEER_CLOSED/错误退出 = Host 断开（TCP 存活检测并入命令读循环线程，§3.3）。
+        // recv PEER_CLOSED/错误退出 = Host 断开（TCP 存活检测并入命令读循环线程，状态同步设计.md §3.3）。
         // 主动 shutdown（_cmdThreadRunning 被置 false）时跳过——shutdown 已处理连接状态。
         if (_cmdThreadRunning.load())
             markDisconnected();

@@ -17,8 +17,8 @@ namespace aerovista::sync
     /// queueHostEyePose 注入）入队决策器，场景模式由宿主 setEllipsoidMode() 注入，产出位姿经
     /// takePendingCameraPose() 取走。
     ///
-    /// 公开接口零 vsg：所有类型为自有 POD（DVec3）。消费方（含无 vsg 的 viewhost）
-    /// 不接触 vsg 头文件。Host 采样/扇出不在本类，由宿主（Engine）自行持有 HostSync 完成。
+    /// 公开接口零 vsg：所有类型为自有 POD（DVec3）。消费方（engine）
+    /// 不接触 vsg 头文件。Host 采样/扇出不在本类，由独立 viewhost 进程（HostDriver）完成。
     class SynchronSystem
     {
     public:
@@ -30,7 +30,7 @@ namespace aerovista::sync
         static std::unique_ptr<SynchronSystem> create();
 
         // ---- 生命周期 ----
-        /// 初始化 IG 决策器：`igConfig` 非空则按它启动 IgSync 并连接，空则不启 IG（纯 Host 宿主 / 关闭同步）；
+        /// 初始化 IG 决策器：`igConfig` 非空则按它启动 IgSync 并连接，空则不启 IG（关闭同步）；
         /// 装配配置（channelId / offsetDeg / hostEyeStalePolicy / requireConnectedIg）经 `syncSystem` 应用。
         bool initialize(const std::optional<IgConfig>& igConfig, const SyncSystemConfig& syncSystem);
         void shutdown();

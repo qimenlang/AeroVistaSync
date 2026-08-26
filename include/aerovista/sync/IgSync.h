@@ -73,7 +73,7 @@ namespace aerovista::sync
     class IgSync
     {
     public:
-        // ===== 对外业务面（消费方：SynchronSystem / engine / viewhost）=====
+        // ===== 对外业务面（消费方：SynchronSystem / engine）=====
 
         IgSync() = default;
         ~IgSync();
@@ -268,6 +268,9 @@ namespace aerovista::sync
         void stopCommandThread();
         void commandLoop();
 
+        /// 注册单个通用捕获 processor（§8.1）：RegisterEventProcessor + 入 _captureProcs（供 subscribe 定位）。
+        void registerCapture(CigiIGSession& session, int packetId, CigiBaseEventProcessor* proc);
+
         IgConfig _local{};
         IgConfig _hostTarget{};
         UdpSocket _udp;
@@ -298,7 +301,7 @@ namespace aerovista::sync
 
         // CCL 会话（状态同步设计初版.md §5.1：CCL 单线程化 + 双 session——IG 各链路一套 CigiIGSession）；
         // ensureTcpSession/ensureUdpSession 惰性创建，堆上分配（CigiSession 内含大 handler 表，栈上会溢出）。
-        // 发送隔离：beginWithSof/flushTcp 只操作 _tcpSession，beginWithSofUdp/flushUdp 只操作 _udpSession；
+        // 发送隔离：outMsgWithSofTcp/flushTcp 只操作 _tcpSession，outMsgWithSofUdp/flushUdp 只操作 _udpSession；
         // 收包按链路喂各 session 解包（UDP 队列 → _udpSession，TCP 队列 → _tcpSession）。
         std::unique_ptr<CigiIGSession> _tcpSession;
         std::unique_ptr<CigiIGSession> _udpSession;

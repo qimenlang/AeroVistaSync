@@ -33,9 +33,10 @@ target_link_libraries(your_target PRIVATE aerovista::aerovistaSync)
 #include <aerovista/sync/SyncConfig.h>
 
 IgConfig ig;
+SyncSystemConfig syncSystem;
 loadIgConfig("ig.json", ig, &error);
 auto sync = aerovista::sync::SynchronSystem::create();
-sync->initialize(ig);
+sync->initialize(std::optional<IgConfig>{ig}, syncSystem);
 ```
 
 ## 快速开始
