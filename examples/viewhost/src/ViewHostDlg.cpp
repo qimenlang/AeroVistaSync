@@ -12,6 +12,8 @@ BEGIN_MESSAGE_MAP(CViewHostDlg, CDialog)
     ON_WM_DESTROY()
     ON_BN_CLICKED(IDC_TOGGLE_CONTROL, &CViewHostDlg::OnToggleControl)
     ON_BN_CLICKED(IDC_ENTITY_PLACE, &CViewHostDlg::OnPlaceEntity)
+    ON_BN_CLICKED(IDC_TEST_TCP, &CViewHostDlg::OnTestTcp)
+    ON_BN_CLICKED(IDC_TEST_UDP, &CViewHostDlg::OnTestUdp)
     ON_BN_CLICKED(IDC_EXIT, &CViewHostDlg::OnExit)
 END_MESSAGE_MAP()
 
@@ -64,6 +66,7 @@ BOOL CViewHostDlg::OnInitDialog()
     SetDlgItemText(IDC_ENTITY_ALT, _T("0.0"));
     SetDlgItemText(IDC_ENTITY_YPR, _T("0.0 0.0 0.0"));
 
+    subscribeIgPackets();
     updateStatusText();
     return TRUE;
 }
@@ -127,6 +130,7 @@ void CViewHostDlg::OnTimer(UINT_PTR nIDEvent)
     }
 
     _driver.update(&_eye);
+    _driver.pollIncoming(); // Host push 收包：drain 并解包 IG→Host 报文，触发订阅回调（§8.1）。
     updateStatusText();
 }
 
@@ -179,6 +183,22 @@ void CViewHostDlg::OnPlaceEntity()
     SetDlgItemText(IDC_STATUS_PLACE, status);
 }
 
+void CViewHostDlg::OnTestTcp()
+{
+    const std::string name = _driver.sendRandomTcpPacket();
+    CString status;
+    status.Format(_T("最近测试: TCP %hs"), name.c_str());
+    SetDlgItemText(IDC_STATUS_TEST, status);
+}
+
+void CViewHostDlg::OnTestUdp()
+{
+    const std::string name = _driver.sendRandomUdpPacket();
+    CString status;
+    status.Format(_T("最近测试: UDP %hs"), name.c_str());
+    SetDlgItemText(IDC_STATUS_TEST, status);
+}
+
 void CViewHostDlg::OnExit()
 {
     EndDialog(IDCANCEL);
@@ -214,5 +234,34 @@ void CViewHostDlg::updateStatusText()
     setText(IDC_EYE_ALT, alt);
     setText(IDC_EYE_YPR, ypr);
 
+    if (!_lastRecvName.empty())
+    {
+        CString recv;
+        recv.Format(_T("最近接收: %hs"), _lastRecvName.c_str());
+        setText(IDC_STATUS_RECV, recv);
+    }
+
     setText(IDC_TOGGLE_CONTROL, _controlling ? _T("停止控制") : _T("开始控制"));
+}
+
+void CViewHostDlg::subscribeIgPackets()
+{
+    // IG→Host TCP 上行报文自检（§4.7）：F9 随机发送，Host 侧 subscribe 收到即刷新「最近接收」。
+    // 与 engine PacketProbeHandler 的 kTcpProbes 16 类一一对应（HostSync registerTcpProcessors 已注册）。
+    _driver.subscribe<CigiIGMsgV4>([this](const CigiIGMsgV4&) { _lastRecvName = "CigiIGMsgV4"; });
+    _driver.subscribe<CigiEventNotificationV4>([this](const CigiEventNotificationV4&) { _lastRecvName = "CigiEventNotificationV4"; });
+    _driver.subscribe<CigiAnimationStopV4>([this](const CigiAnimationStopV4&) { _lastRecvName = "CigiAnimationStopV4"; });
+    _driver.subscribe<CigiHatHotRespV4>([this](const CigiHatHotRespV4&) { _lastRecvName = "CigiHatHotRespV4"; });
+    _driver.subscribe<CigiHatHotXRespV4>([this](const CigiHatHotXRespV4&) { _lastRecvName = "CigiHatHotXRespV4"; });
+    _driver.subscribe<CigiLosRespV4>([this](const CigiLosRespV4&) { _lastRecvName = "CigiLosRespV4"; });
+    _driver.subscribe<CigiLosXRespV4>([this](const CigiLosXRespV4&) { _lastRecvName = "CigiLosXRespV4"; });
+    _driver.subscribe<CigiSensorRespV4>([this](const CigiSensorRespV4&) { _lastRecvName = "CigiSensorRespV4"; });
+    _driver.subscribe<CigiSensorXRespV4>([this](const CigiSensorXRespV4&) { _lastRecvName = "CigiSensorXRespV4"; });
+    _driver.subscribe<CigiPositionRespV4>([this](const CigiPositionRespV4&) { _lastRecvName = "CigiPositionRespV4"; });
+    _driver.subscribe<CigiWeatherCondRespV4>([this](const CigiWeatherCondRespV4&) { _lastRecvName = "CigiWeatherCondRespV4"; });
+    _driver.subscribe<CigiAerosolRespV4>([this](const CigiAerosolRespV4&) { _lastRecvName = "CigiAerosolRespV4"; });
+    _driver.subscribe<CigiMaritimeSurfaceRespV4>([this](const CigiMaritimeSurfaceRespV4&) { _lastRecvName = "CigiMaritimeSurfaceRespV4"; });
+    _driver.subscribe<CigiTerrestrialSurfaceRespV4>([this](const CigiTerrestrialSurfaceRespV4&) { _lastRecvName = "CigiTerrestrialSurfaceRespV4"; });
+    _driver.subscribe<CigiCollDetSegRespV4>([this](const CigiCollDetSegRespV4&) { _lastRecvName = "CigiCollDetSegRespV4"; });
+    _driver.subscribe<CigiCollDetVolRespV4>([this](const CigiCollDetVolRespV4&) { _lastRecvName = "CigiCollDetVolRespV4"; });
 }

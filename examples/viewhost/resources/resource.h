@@ -20,3 +20,9 @@
 #define IDC_ENTITY_YPR     1014
 #define IDC_ENTITY_PLACE   1015
 #define IDC_STATUS_PLACE   1016
+
+// 报文自检控件（testtcp / testudp）
+#define IDC_TEST_TCP       1017
+#define IDC_TEST_UDP       1018
+#define IDC_STATUS_TEST    1019
+#define IDC_STATUS_RECV    1020
