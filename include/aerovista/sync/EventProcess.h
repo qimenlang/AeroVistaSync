@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 
 #include "CigiBaseEventProcessor.h"
 #include "CigiEntityPositionCtrlV4.h"
@@ -72,6 +73,11 @@ namespace aerovista::sync
     /// 通用报文捕获（§8.1）：按 PacketID 注册到收包端 CCL session，OnPacketReceived 值拷贝缓存整包。
     /// 捕获的是 CCL 复用单例，必须立即值拷贝（§8.1）；变长字段（Text/Msg 等）为 std::string/vector，深拷贝安全。
     /// 按发送源（IgSync/HostSync）与链路（UDP 持续 / TCP 一次性）注册到对应 session（cigi梳理.md 链路频率矩阵）。
+    ///
+    /// 数据交付双模式（2026-08）：
+    ///  - 拉：has()/take()/captured() —— 收包端经 takeReceived<PacketT>() 轮询取走（取走即清）。
+    ///  - 推：setSink(cb) —— 捕获到报文时同步值拷贝投递回调（订阅模式，宿主注入；回调内只轻量处理，§8.1）。
+    /// 两者并存互不消费：订阅不改变捕获缓存，takeReceived 仍可正常取走。
     template <typename PacketT>
     class PacketCaptureProc final : public CigiBaseEventProcessor, public CaptureProcBase
     {
@@ -83,6 +89,8 @@ namespace aerovista::sync
                 return;
             _captured = *typed;
             _has = true;
+            if (_sink)
+                _sink(*typed);
         }
 
         bool has() const override { return _has; }
@@ -96,8 +104,13 @@ namespace aerovista::sync
         /// 最近捕获的报文值（has() 为 true 时有效）。
         const PacketT& captured() const { return _captured; }
 
+        /// 注入业务投递回调（值持有；空 = 取消订阅）。宿主在 sync 会话生命周期内管理（同业务 processor 约定）。
+        /// 回调在主线程解包时同步调用；只做轻量翻译/入队/置标志（§8.1），重量业务留帧循环消费。
+        void setSink(std::function<void(const PacketT&)> sink) { _sink = std::move(sink); }
+
     private:
         bool _has = false;
         PacketT _captured{};
+        std::function<void(const PacketT&)> _sink;
     };
 } // namespace aerovista::sync

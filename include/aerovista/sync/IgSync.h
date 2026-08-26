@@ -53,6 +53,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -121,6 +122,26 @@ namespace aerovista::sync
                 }
             }
             return std::nullopt;
+        }
+
+        /// 订阅某类 Host→IG 报文的到达通知（订阅模式，2026-08）：报文被解包捕获时同步值拷贝投递回调。
+        /// 与 takeReceived<T>() 并存互不消费（订阅不改捕获缓存）。回调在主线程解包时调用，
+        /// 只做轻量翻译/入队/置标志（§8.1）；重量业务留帧循环消费。空回调 = 取消订阅。
+        /// 生命周期：回调体捕获的对象须存活至 sync 会话结束（同业务 processor 约定）。
+        /// 可在任何时机调用（先于收包）：内部确保会话已创建、捕获注册表已填充。
+        template <typename PacketT>
+        void subscribe(std::function<void(const PacketT&)> callback)
+        {
+            ensureTcpSession();
+            ensureUdpSession();
+            for (auto* proc : _captureProcs)
+            {
+                if (auto* typed = dynamic_cast<PacketCaptureProc<PacketT>*>(proc))
+                {
+                    typed->setSink(std::move(callback));
+                    return;
+                }
+            }
         }
 
         // ---- 状态观测 ----
