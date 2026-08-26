@@ -56,7 +56,6 @@
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <thread>
 #include <vector>
 
@@ -84,8 +83,7 @@ namespace aerovista::sync
 
         /// Host 每帧 IGCtrl 携带的时间戳信息（时钟同步方案.md §3 / §4）。
         /// `rawTimeStamp` = CIGI IGCtrl.TimeStamp（uint32，10µs tick）；
-        /// `receivedAtUs` = 本机单调时钟收到时刻（us）。注入式测试直接传该值；
-        /// 真实链路下由 `IgSync::update` 记录 `vsg::clock::now()` 转 us。
+        /// `receivedAtUs` = 本机单调时钟收到时刻（us，I/O 线程 recv 时记录）。
         struct HostTimeStamp
         {
             std::uint32_t frameCntr = 0;
@@ -104,31 +102,11 @@ namespace aerovista::sync
         void drainIncoming(bool sendSof = true);
         /// 帧级维护（不收包）：外推冻结检查 + RUNNING 状态判定。每帧都应调用。
         void update();
-        /// 取走上一次 Update 期间收到的 Host 眼点（CCL 报文值拷贝；processor 缓存，§8.1）。
-        std::optional<CigiEntityPositionCtrlV4> takeReceivedHostEye();
 
-        /// 取走最近收到的任意 Host→IG 报文（值拷贝；§8.1 通用捕获，按链路注册）。
-        /// 未捕获到该类型报文时返回空。持续类（UDP）与一次性类（TCP）均在此查（cigi梳理.md 链路矩阵）。
-        template <typename PacketT>
-        std::optional<PacketT> takeReceived()
-        {
-            for (auto* proc : _captureProcs)
-            {
-                auto* typed = dynamic_cast<PacketCaptureProc<PacketT>*>(proc);
-                if (typed && typed->has())
-                {
-                    typed->take();
-                    return typed->captured();
-                }
-            }
-            return std::nullopt;
-        }
-
-        /// 订阅某类 Host→IG 报文的到达通知（订阅模式，2026-08）：报文被解包捕获时同步值拷贝投递回调。
-        /// 与 takeReceived<T>() 并存互不消费（订阅不改捕获缓存）。回调在主线程解包时调用，
-        /// 只做轻量翻译/入队/置标志（§8.1）；重量业务留帧循环消费。空回调 = 取消订阅。
-        /// 生命周期：回调体捕获的对象须存活至 sync 会话结束（同业务 processor 约定）。
-        /// 可在任何时机调用（先于收包）：内部确保会话已创建、捕获注册表已填充。
+        /// 订阅某类 Host→IG 报文的到达通知：报文解包捕获时同步投递回调。
+        /// 回调只做轻量翻译/入队/置标志（§8.1）；空回调 = 取消订阅；
+        /// 回调体捕获对象须存活至 sync 会话结束（同业务 processor 约定）。
+        /// 可在任何时机调用（先于收包）：内部确保会话已创建。
         template <typename PacketT>
         void subscribe(std::function<void(const PacketT&)> callback)
         {
@@ -142,6 +120,14 @@ namespace aerovista::sync
                     return;
                 }
             }
+        }
+
+        /// 订阅 ownship 眼点的到达通知：EyeCaptureProc 捕获时翻译为 HostEyePose 后投递
+        /// （§8.1 眼点链路收敛）。供 SynchronSystem 直接把翻译结果入队决策。空回调 = 取消订阅。
+        void subscribeEyePose(std::function<void(const HostEyePose&)> callback)
+        {
+            ensureUdpSession();
+            _eyeProc.setSink(std::move(callback));
         }
 
         // ---- 状态观测 ----
@@ -330,7 +316,7 @@ namespace aerovista::sync
         PacketCaptureProc<CigiViewCtrlV4> _viewCtrlProc;
 
         // Host→IG 一次性/配置/请求类（TCP 命令面）。
-        // CollDetVolDef 取走经通用捕获 `takeReceived<CigiCollDetVolDefV4>()`。
+        // CollDetVolDef 订阅经通用捕获 `subscribe<CigiCollDetVolDefV4>()`。
         PacketCaptureProc<CigiCollDetVolDefV4> _collDetVolDefProc;
         PacketCaptureProc<CigiEntityCtrlV4> _entityCtrlProc;
         PacketCaptureProc<CigiArtPartCtrlV4> _artPartCtrlProc;
@@ -365,8 +351,8 @@ namespace aerovista::sync
         PacketCaptureProc<CigiSymbolTexturedPolygonDefV4> _symbolTexturedPolygonDefProc;
         PacketCaptureProc<CigiSymbolCloneV4> _symbolCloneProc;
 
-        /// 全部通用捕获实例的注册表（takeReceived<PacketT>() 遍历用；注册时填充一次）。
-        std::vector<CaptureProcBase*> _captureProcs;
+        /// 全部通用捕获实例的注册表（subscribe<PacketT>() 定位用；注册时填充一次）。
+        std::vector<CigiBaseEventProcessor*> _captureProcs;
 
         // 数据面 I/O 线程（§5.1）：UDP recv → 入队；主线程 update() drain 解包。
         std::thread _udpThread;

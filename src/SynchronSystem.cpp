@@ -92,6 +92,11 @@ namespace aerovista::sync
                 return false;
             }
 
+            // 眼点链路收敛（2026-08）：EyeCaptureProc 捕获时翻译为 HostEyePose 并经订阅投递，
+            // 这里直接入队决策器（preFrame 不再拉取 + 翻译）。回调只入队 _pendingHostEye（轻量，§8.1），
+            // frame 校验 / offset 合成 / stale 决策仍在 update()（帧驱动语义不变）。
+            _ig->subscribeEyePose([this](const HostEyePose& pose) { queueHostEyePose(pose); });
+
             if (!_ig->connect(*igConfig))
             {
                 if (syncSystem.requireConnectedIg)
@@ -118,7 +123,7 @@ namespace aerovista::sync
 
     void SynchronSystem::resetEyeCaches()
     {
-        _pendingEye.reset();
+        _pendingHostEye.reset();
         _cachedHostEye.reset();
         _lastApplied.reset();
         _hasPendingApplied = false;
@@ -131,25 +136,10 @@ namespace aerovista::sync
             return;
 
         // 收包入口对等化（§8.1）：统一 drain TCP+UDP → 解包 → processor；帧级维护随后。
-        // 眼点由 IgSync 以 CCL 报文值拷贝缓存（§8.1），此处转决策器类型 HostEyePose（临时映射）。
+        // 眼点翻译（CCL→HostEyePose）已在 EyeCaptureProc 内完成并经订阅投递入队 _pendingHostEye
+        // （2026-08 眼点链路收敛，见 initialize）；此处不再拉取 + 翻译。
         _ig->drainIncoming(/*sendSof=*/true);
         _ig->update();
-        if (auto ent = _ig->takeReceivedHostEye())
-        {
-            HostEyePose pose;
-            pose.eulerYprDeg = {ent->GetYaw(), ent->GetPitch(), ent->GetRoll()};
-            if (ent->GetAttachState() == CigiBaseEntityPositionCtrl::Detach)
-            {
-                pose.frame = HostEyeCoordFrame::LLA;
-                pose.position = {ent->GetLat(), ent->GetLon(), ent->GetAlt()};
-            }
-            else
-            {
-                pose.frame = HostEyeCoordFrame::WORLD_LOCAL;
-                pose.position = {ent->GetXoff(), ent->GetYoff(), ent->GetZoff()};
-            }
-            queueHostEyePose(pose);
-        }
     }
 
     HostEyePose SynchronSystem::compose(const HostEyePose& host, const OffsetDeg& offset)
@@ -176,7 +166,7 @@ namespace aerovista::sync
         const vsg::dvec3 forward = vsg::normalize(qIg * vsg::dvec3(0.0, 1.0, 0.0));
         const vsg::dvec3 up = vsg::normalize(qIg * vsg::dvec3(0.0, 0.0, 1.0));
 
-        // 在同一 Rz·Rx·Ry 约定下重新提取 YPR，使 applyHostEye 的 setCameraPose
+        // 在同一 Rz·Rx·Ry 约定下重新提取 YPR，使 applyComposed 的 setCameraPose
         // 精确写入合成后的旋转（写↔采样保持互逆）。
         HostEyePose out = host;
         vsg::dvec3 eulerYprDeg;
@@ -185,32 +175,37 @@ namespace aerovista::sync
         return out;
     }
 
+    void SynchronSystem::rejectPendingFrameMismatch()
+    {
+        ++_eyePoseRejectedByFrameMismatch;
+        if (!_frameMismatchErrorLogged)
+        {
+            const char* expected = sceneIsEllipsoid() ? "Lla/Detach" : "WorldLocal/Attach";
+            const char* got = (_pendingHostEye->frame == HostEyeCoordFrame::LLA) ? "Lla/Detach" : "WorldLocal/Attach";
+            std::cerr << "[ERROR] eye pose rejected by frame mismatch: expected " << expected << ", got " << got
+                      << " (channelId=" << _channelId << ")\n";
+            _frameMismatchErrorLogged = true;
+        }
+    }
+
     bool SynchronSystem::tryAcceptPendingEye()
     {
-        if (!_pendingEye)
+        if (!_pendingHostEye)
             return false;
 
-        if (!eyeFrameMatchesScene(*_pendingEye, sceneIsEllipsoid()))
+        if (!eyeFrameMatchesScene(*_pendingHostEye, sceneIsEllipsoid()))
         {
-            ++_eyePoseRejectedByFrameMismatch;
-            if (!_frameMismatchErrorLogged)
-            {
-                const char* expected = sceneIsEllipsoid() ? "Lla/Detach" : "WorldLocal/Attach";
-                const char* got = (_pendingEye->frame == HostEyeCoordFrame::LLA) ? "Lla/Detach" : "WorldLocal/Attach";
-                std::cerr << "[ERROR] eye pose rejected by frame mismatch: expected " << expected
-                          << ", got " << got << " (channelId=" << _channelId << ")\n";
-                _frameMismatchErrorLogged = true;
-            }
-            _pendingEye.reset();
+            rejectPendingFrameMismatch();
+            _pendingHostEye.reset();
             return false;
         }
 
-        _cachedHostEye = *_pendingEye;
-        _pendingEye.reset();
+        _cachedHostEye = *_pendingHostEye;
+        _pendingHostEye.reset();
         return true;
     }
 
-    void SynchronSystem::applyHostEye(const HostEyePose& hostEye)
+    void SynchronSystem::applyComposed(const HostEyePose& hostEye)
     {
         const HostEyePose composed = compose(hostEye, _offsetDeg);
         _lastApplied = composed;
@@ -222,28 +217,26 @@ namespace aerovista::sync
         _hasPendingApplied = false;
         const bool linked = igLinked();
 
-        if (linked)
+        // 未连接：本帧新输入无效（从未连接不得应用）；断线后保留最后一帧 Host 眼点。
+        if (!linked)
         {
-            if (_pendingEye)
-            {
-                if (tryAcceptPendingEye())
-                    applyHostEye(*_cachedHostEye);
-            }
-            else if (_cachedHostEye)
-            {
-                if (_stalePolicy == HostEyeStalePolicy::REUSE_LAST)
-                    applyHostEye(*_cachedHostEye);
-                // Freeze：相机保持不动
-            }
+            _pendingHostEye.reset();
+            if (_cachedHostEye)
+                applyComposed(*_cachedHostEye);
             return;
         }
 
-        // 未连接：丢弃任何注入的待处理眼点（从未连接不得应用）。
-        _pendingEye.reset();
+        // 已连接：有新输入 → 帧校验通过则应用（失败不应用）；无新输入 → 走 stale 策略。
+        if (_pendingHostEye)
+        {
+            if (tryAcceptPendingEye())
+                applyComposed(*_cachedHostEye);
+            return;
+        }
 
-        // 断线后（或仍持有先前连接的缓存时），保留最后一帧 Host 眼点。
-        if (_cachedHostEye)
-            applyHostEye(*_cachedHostEye);
+        if (_cachedHostEye && _stalePolicy == HostEyeStalePolicy::REUSE_LAST)
+            applyComposed(*_cachedHostEye);
+        // Freeze：相机保持不动
     }
 
     void SynchronSystem::setEllipsoidMode(bool ellipsoid)
@@ -276,7 +269,7 @@ namespace aerovista::sync
 
     void SynchronSystem::queueHostEyePose(const HostEyePose& pose)
     {
-        _pendingEye = pose;
+        _pendingHostEye = pose;
     }
 
     bool SynchronSystem::igLinked() const

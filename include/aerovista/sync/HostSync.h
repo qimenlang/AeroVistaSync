@@ -124,28 +124,10 @@ namespace aerovista::sync
         /// 业务/测试在需要处理 IG 上报时调用（Host 收包为 push 模式，无独立帧循环）。
         void drainIncoming();
 
-        /// 取走最近收到的任意 IG→Host 报文（值拷贝；§8.1 通用捕获，按链路注册）。
-        /// 未捕获到该类型报文时返回空。持续类（UDP，SOF）与一次性类（TCP）均在此查（cigi梳理.md 链路矩阵）。
-        template <typename PacketT>
-        std::optional<PacketT> takeReceived()
-        {
-            for (auto* proc : _captureProcs)
-            {
-                auto* typed = dynamic_cast<PacketCaptureProc<PacketT>*>(proc);
-                if (typed && typed->has())
-                {
-                    typed->take();
-                    return typed->captured();
-                }
-            }
-            return std::nullopt;
-        }
-
-        /// 订阅某类 IG→Host 报文的到达通知（订阅模式，2026-08）：报文被解包捕获时同步值拷贝投递回调。
-        /// 与 takeReceived<T>() 并存互不消费。回调在主线程解包时调用（Host push 模式，drainIncoming 内），
-        /// 只做轻量翻译/入队/置标志（§8.1）；重量业务留业务侧消费。空回调 = 取消订阅。
-        /// 生命周期：回调体捕获的对象须存活至 sync 会话结束（同业务 processor 约定）。
-        /// 可在任何时机调用（先于收包）：内部确保会话已创建、捕获注册表已填充。
+        /// 订阅某类 IG→Host 报文的到达通知：报文解包捕获时同步投递回调。
+        /// 回调在主线程解包时调用（Host push 模式，drainIncoming 内），只做轻量翻译/入队/置标志（§8.1）；
+        /// 空回调 = 取消订阅；回调体捕获对象须存活至 sync 会话结束（同业务 processor 约定）。
+        /// 可在任何时机调用（先于收包）：内部确保会话已创建。
         template <typename PacketT>
         void subscribe(std::function<void(const PacketT&)> callback)
         {
@@ -233,7 +215,7 @@ namespace aerovista::sync
         SofCaptureProc _sofProc;
 
         // IG→Host 一次性/响应/通知类（TCP 命令面，cigi梳理.md §1/§3~§7 链路矩阵）。
-        // CollDetVolResp 取走经通用捕获 `takeReceived<CigiCollDetVolRespV4>()`。
+        // CollDetVolResp 订阅经通用捕获 `subscribe<CigiCollDetVolRespV4>()`。
         PacketCaptureProc<CigiCollDetVolRespV4> _collDetVolRespProc;
         PacketCaptureProc<CigiIGMsgV4> _igMsgProc;
         PacketCaptureProc<CigiEventNotificationV4> _eventNotificationProc;
@@ -251,8 +233,8 @@ namespace aerovista::sync
         PacketCaptureProc<CigiTerrestrialSurfaceRespV4> _terrestrialSurfaceRespProc;
         PacketCaptureProc<CigiCollDetSegRespV4> _collDetSegRespProc;
 
-        /// 全部通用捕获实例的注册表（takeReceived<PacketT>() 遍历用；注册时填充一次）。
-        std::vector<CaptureProcBase*> _captureProcs;
+        /// 全部通用捕获实例的注册表（subscribe<PacketT>() 定位用；注册时填充一次）。
+        std::vector<CigiBaseEventProcessor*> _captureProcs;
 
         HostConfig _local{};
         UdpSocket _udp;

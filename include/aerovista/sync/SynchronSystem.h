@@ -13,9 +13,9 @@ namespace aerovista::sync
     /// 持有 IgSync，收包后做 frame 校验 / offset 合成 / stale policy / 断线兜底，
     /// 经 takePendingCameraPose() 产出本帧应写相机的位姿。见 doc/design/多通道同步模块设计.md。
     ///
-    /// 数据流契约（sync模块化设计.md §3.1）：Host 眼点由宿主经 queueHostEyePose()
-    /// 喂入（测试注入）或经 preFrame() 从 IgSync 收包，场景模式由宿主注入
-    /// setEllipsoidMode()，产出位姿由宿主经 takePendingCameraPose() 取走。
+    /// 数据流契约（sync模块化设计.md §3.1）：Host 眼点经 subscribeEyePose 订阅投递（或测试
+    /// queueHostEyePose 注入）入队决策器，场景模式由宿主 setEllipsoidMode() 注入，产出位姿经
+    /// takePendingCameraPose() 取走。
     ///
     /// 公开接口零 vsg：所有类型为自有 POD（DVec3）。消费方（含无 vsg 的 viewhost）
     /// 不接触 vsg 头文件。Host 采样/扇出不在本类，由宿主（Engine）自行持有 HostSync 完成。
@@ -79,8 +79,12 @@ namespace aerovista::sync
         void queueHostEyePose(const HostEyePose& pose);
 
     private:
-        void applyHostEye(const HostEyePose& hostEye);
+        /// compose + 标记本帧待应用（供 update 帧决策调用；takePendingCameraPose 取走）。
+        void applyComposed(const HostEyePose& hostEye);
+        /// 本帧新输入 → 帧校验（scene 模式匹配）→ 通过则入缓存并弃输入，失败则拒绝（计数 + 首错日志）。
         bool tryAcceptPendingEye();
+        /// frame 校验失败：计数 + 首次错误日志（从 tryAcceptPendingEye 拆出，单一职责）。
+        void rejectPendingFrameMismatch();
         bool sceneIsEllipsoid() const { return _ellipsoidMode; }
 
         std::unique_ptr<IgSync> _ig;
@@ -92,7 +96,7 @@ namespace aerovista::sync
         int _channelId = 0;
 
         /// 本帧新输入（收包/注入）；空 = 本帧无新输入。经 tryAcceptPendingEye 消费（成功入缓存或弃值）。
-        std::optional<HostEyePose> _pendingEye;
+        std::optional<HostEyePose> _pendingHostEye;
         std::optional<HostEyePose> _cachedHostEye;
         /// 最近合成位姿（Host ⊕ offset，持久；供 lastAppliedHostEye 观测）。
         std::optional<HostEyePose> _lastApplied;

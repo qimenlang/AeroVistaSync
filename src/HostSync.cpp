@@ -11,10 +11,10 @@ namespace aerovista::sync
 {
     namespace
     {
-        /// 注册单个通用捕获 processor（§8.1）：RegisterEventProcessor + 入注册表（供 takeReceived 遍历）。
+        /// 注册单个通用捕获 processor（§8.1）：RegisterEventProcessor + 入注册表（供 subscribe 定位）。
         template <typename PacketT>
         void registerCapture(CigiHostSession& session, int packetId, PacketCaptureProc<PacketT>& proc,
-                             std::vector<CaptureProcBase*>& registry)
+                             std::vector<CigiBaseEventProcessor*>& registry)
         {
             session.GetIncomingMsgMgr().RegisterEventProcessor(packetId, &proc);
             registry.push_back(&proc);

@@ -1,5 +1,6 @@
 ﻿#include <aerovista/sync/EventProcess.h>
 
+#include "CigiEntityPositionCtrlV4.h"
 #include "CigiSOFV4.h"
 
 namespace aerovista::sync
@@ -19,8 +20,23 @@ namespace aerovista::sync
         auto* ent = dynamic_cast<CigiEntityPositionCtrlV4*>(packet);
         if (!ent || ent->GetEntityID() != 0)
             return; // 仅捕获 ownship（EntityID==0）眼点；命令实体走业务 processor（§4.1）。
-        got = true;
-        eye = *ent;
+        // 翻译 CCL → HostEyePose（AttachState→frame + 字段提取，§8.1 眼点链路收敛）并经基类订阅投递。
+        if (this->_sink)
+        {
+            HostEyePose pose;
+            pose.eulerYprDeg = {ent->GetYaw(), ent->GetPitch(), ent->GetRoll()};
+            if (ent->GetAttachState() == CigiBaseEntityPositionCtrl::Detach)
+            {
+                pose.frame = HostEyeCoordFrame::LLA;
+                pose.position = {ent->GetLat(), ent->GetLon(), ent->GetAlt()};
+            }
+            else
+            {
+                pose.frame = HostEyeCoordFrame::WORLD_LOCAL;
+                pose.position = {ent->GetXoff(), ent->GetYoff(), ent->GetZoff()};
+            }
+            this->_sink(pose);
+        }
     }
 
     void SofCaptureProc::OnPacketReceived(CigiBasePacket* packet)

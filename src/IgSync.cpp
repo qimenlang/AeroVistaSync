@@ -3,7 +3,6 @@
 #include <aerovista/sync/SyncProtocol.h>
 
 #include "CigiEntityPositionCtrlV4.h"
-#include "CigiIGCtrlV4.h"
 
 #include <chrono>
 #include <cstring>
@@ -23,10 +22,10 @@ namespace aerovista::sync
                     .count());
         }
 
-        /// 注册单个通用捕获 processor（§8.1）：RegisterEventProcessor + 入注册表（供 takeReceived 遍历）。
+        /// 注册单个通用捕获 processor（§8.1）：RegisterEventProcessor + 入注册表（供 subscribe 定位）。
         template <typename PacketT>
         void registerCapture(CigiIGSession& session, int packetId, PacketCaptureProc<PacketT>& proc,
-                             std::vector<CaptureProcBase*>& registry)
+                             std::vector<CigiBaseEventProcessor*>& registry)
         {
             session.GetIncomingMsgMgr().RegisterEventProcessor(packetId, &proc);
             registry.push_back(&proc);
@@ -179,16 +178,6 @@ namespace aerovista::sync
     {
         return _lastFrameCntr;
     }
-
-    std::optional<CigiEntityPositionCtrlV4> IgSync::takeReceivedHostEye()
-    {
-        // 直接取 EyeCaptureProc 的捕获结果（本帧 processIncomingUdp 已 reset+解包）；
-        // got 反映「本帧是否收到 ownship 眼点」，取走即由下次 reset 清空。
-        if (!_eyeProc.got)
-            return std::nullopt;
-        return _eyeProc.eye;
-    }
-
 
     bool IgSync::queueHostTimeStamp(const HostTimeStamp& stamp)
     {
@@ -366,7 +355,6 @@ namespace aerovista::sync
         // 眼点（EntityID==0）也会触发业务 processor，业务侧须按 EntityID==0 过滤（§4.1）。
         ensureUdpSession();
         _igCtrlProc.reset();
-        _eyeProc.reset();
         try
         {
             _udpSession->GetIncomingMsgMgr().ProcessIncomingMsg(const_cast<unsigned char*>(buf), n);
