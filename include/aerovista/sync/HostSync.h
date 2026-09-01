@@ -124,22 +124,19 @@ namespace aerovista::sync
         /// 业务/测试在需要处理 IG 上报时调用（Host 收包为 push 模式，无独立帧循环）。
         void drainIncoming();
 
-        /// 订阅某类 IG→Host 报文的到达通知：报文解包捕获时同步投递回调。
-        /// 回调在主线程解包时调用（Host push 模式，drainIncoming 内），只做轻量翻译/入队/置标志（§8.1）；
-        /// 空回调 = 取消订阅；回调体捕获对象须存活至 sync 会话结束（同业务 processor 约定）。
+        /// 注册某类 IG→Host 报文的到达回调：报文解包捕获时同步多播投递（§8.1）。
+        /// 同一类型可注册多个回调（多播，对齐 CCL EventList 多 processor）；捕获时同步调用，
+        /// 回调只做轻量翻译/入队/置标志（§8.1）；回调体捕获对象须存活至 sync 会话结束。
         /// 可在任何时机调用（先于收包）：内部确保会话已创建。
         template <typename PacketT>
-        void subscribe(std::function<void(const PacketT&)> callback)
+        void addCallback(std::function<void(const PacketT&)> callback)
         {
             ensureTcpSession();
             ensureUdpSession();
             for (auto* proc : _captureProcs)
             {
                 if (auto* typed = dynamic_cast<PacketCaptureProc<PacketT>*>(proc))
-                {
-                    typed->setSink(std::move(callback));
-                    return;
-                }
+                    typed->addCallback(callback);
             }
         }
 
@@ -199,7 +196,7 @@ namespace aerovista::sync
         void registerUdpProcessors(CigiHostSession& session);
         /// 注册 TCP 命令面可达的 IG→Host 报文捕获（响应/通知/上报类 + 碰撞检测响应）。
         void registerTcpProcessors(CigiHostSession& session);
-        /// 注册单个通用捕获 processor（§8.1）：RegisterEventProcessor + 入 _captureProcs（供 subscribe 定位）。
+        /// 注册单个通用捕获 processor（§8.1）：RegisterEventProcessor + 入 _captureProcs（供 addCallback 定位）。
         void registerCapture(CigiHostSession& session, int packetId, CigiBaseEventProcessor* proc);
 
         void markPeerDisconnected(std::uint64_t clientId);
@@ -217,7 +214,7 @@ namespace aerovista::sync
         SofCaptureProc _sofProc;
 
         // IG→Host 一次性/响应/通知类（TCP 命令面，cigi梳理.md §1/§3~§7 链路矩阵）。
-        // CollDetVolResp 订阅经通用捕获 `subscribe<CigiCollDetVolRespV4>()`。
+        // CollDetVolResp 订阅经通用捕获 `addCallback<CigiCollDetVolRespV4>()`。
         PacketCaptureProc<CigiCollDetVolRespV4> _collDetVolRespProc;
         PacketCaptureProc<CigiIGMsgV4> _igMsgProc;
         PacketCaptureProc<CigiEventNotificationV4> _eventNotificationProc;
@@ -235,7 +232,7 @@ namespace aerovista::sync
         PacketCaptureProc<CigiTerrestrialSurfaceRespV4> _terrestrialSurfaceRespProc;
         PacketCaptureProc<CigiCollDetSegRespV4> _collDetSegRespProc;
 
-        /// 全部通用捕获实例的注册表（subscribe<PacketT>() 定位用；注册时填充一次）。
+        /// 全部通用捕获实例的注册表（addCallback<PacketT>() 定位用；注册时填充一次）。
         std::vector<CigiBaseEventProcessor*> _captureProcs;
 
         HostConfig _local{};

@@ -13,8 +13,9 @@ namespace aerovista::sync
     /// 持有 IgSync，收包后做 frame 校验 / offset 合成 / stale policy / 断线兜底，
     /// 经 takePendingCameraPose() 产出本帧应写相机的位姿。见 doc/design/多通道同步模块设计.md。
     ///
-    /// 数据流契约（sync模块化设计.md §3.1）：Host 眼点经 subscribeEyePose 订阅投递（或测试
-    /// queueHostEyePose 注入）入队决策器，场景模式由宿主 setEllipsoidMode() 注入，产出位姿经
+    /// 数据流契约（sync模块化设计.md §3.1）：Host 眼点原始报文经 UDP 链路通用捕获多播投递，
+    /// 业务侧（engine）回调翻译 HostEyePose 后经 queueHostEyePose() 入队决策器（或测试
+    /// queueHostEyePose 注入），场景模式由宿主 setEllipsoidMode() 注入，产出位姿经
     /// takePendingCameraPose() 取走。
     ///
     /// 公开接口零 vsg：所有类型为自有 POD（DVec3）。消费方（engine）
@@ -73,9 +74,10 @@ namespace aerovista::sync
         // ---- 内部组件访问 ----
         IgSync& igSync();
 
-        // ===== 测试注入辅助（当前仅测试消费）=====
+        // ---- 眼点入队（业务回调 / 测试注入）----
 
-        /// 测试 / 注入：入队一个 Host 眼点（如同本帧随 IGCtrl 收到）。
+        /// 入队一个 Host 眼点（如同本帧随 IGCtrl 收到）。业务侧（engine）眼点回调翻译后调用；
+        /// 测试亦可直接注入。frame 校验 / offset 合成 / stale 决策仍在 update() 路径消费。
         void queueHostEyePose(const HostEyePose& pose);
 
     private:

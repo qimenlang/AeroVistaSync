@@ -92,10 +92,10 @@ namespace aerovista::sync
                 return false;
             }
 
-            // 眼点链路收敛（2026-08）：EyeCaptureProc 捕获时翻译为 HostEyePose 并经订阅投递，
-            // 这里直接入队决策器（preFrame 不再拉取 + 翻译）。回调只入队 _pendingHostEye（轻量，§8.1），
+            // 眼点链路收敛（2026-08 / 2026-09）：UDP 链路通用捕获投递 ownship 原始报文，
+            // 由业务侧（engine）回调完成 HostEyePose 翻译后经 queueHostEyePose 入队决策器——
+            // 订阅注册在 Engine::initSync（addCallback<CigiEntityPositionCtrlV4> 眼点分支）。
             // frame 校验 / offset 合成 / stale 决策仍在 update()（帧驱动语义不变）。
-            _ig->subscribeEyePose([this](const HostEyePose& pose) { queueHostEyePose(pose); });
 
             if (!_ig->connect(*igConfig))
             {
@@ -136,8 +136,8 @@ namespace aerovista::sync
             return;
 
         // 收包入口对等化（§8.1）：统一 drain TCP+UDP → 解包 → processor；帧级维护随后。
-        // 眼点翻译（CCL→HostEyePose）已在 EyeCaptureProc 内完成并经订阅投递入队 _pendingHostEye
-        // （2026-08 眼点链路收敛，见 initialize）；此处不再拉取 + 翻译。
+        // 眼点原始报文经 UDP 链路通用捕获多播投递，翻译 + 入队 _pendingHostEye 由业务侧
+        // （engine 回调）完成（2026-09 眼点链路收敛，见 initialize）；此处不再拉取 + 翻译。
         _ig->drainIncoming(/*sendSof=*/true);
         _ig->update();
     }

@@ -1,6 +1,5 @@
 ﻿#include <aerovista/sync/EventProcess.h>
 
-#include "CigiEntityPositionCtrlV4.h"
 #include "CigiSOFV4.h"
 
 namespace aerovista::sync
@@ -15,43 +14,9 @@ namespace aerovista::sync
         igCtrl = *ig;
     }
 
-    void EyeCaptureProc::OnPacketReceived(CigiBasePacket* packet)
-    {
-        auto* ent = dynamic_cast<CigiEntityPositionCtrlV4*>(packet);
-        if (!ent || ent->GetEntityID() != 0)
-            return; // 仅捕获 ownship（EntityID==0）眼点；命令实体走业务 processor（§4.1）。
-        // 翻译 CCL → HostEyePose（AttachState→frame + 字段提取，§8.1 眼点链路收敛）并经基类订阅投递。
-        if (this->_sink)
-        {
-            HostEyePose pose;
-            pose.eulerYprDeg = {ent->GetYaw(), ent->GetPitch(), ent->GetRoll()};
-            if (ent->GetAttachState() == CigiBaseEntityPositionCtrl::Detach)
-            {
-                pose.frame = HostEyeCoordFrame::LLA;
-                pose.position = {ent->GetLat(), ent->GetLon(), ent->GetAlt()};
-            }
-            else
-            {
-                pose.frame = HostEyeCoordFrame::WORLD_LOCAL;
-                pose.position = {ent->GetXoff(), ent->GetYoff(), ent->GetZoff()};
-            }
-            this->_sink(pose);
-        }
-    }
-
     void SofCaptureProc::OnPacketReceived(CigiBasePacket* packet)
     {
         if (dynamic_cast<CigiSOFV4*>(packet))
             count.fetch_add(1);
-    }
-
-    void EntityPoseControlProc::OnPacketReceived(CigiBasePacket* packet)
-    {
-        auto* ent = dynamic_cast<CigiEntityPositionCtrlV4*>(packet);
-        if (!ent || ent->GetEntityID() == 0)
-            return; // ownship 眼点（EntityID==0）由 EyeCaptureProc 处理；这里只投递命令实体（EntityID≠0）。
-
-        if (this->_sink)
-            this->_sink(*ent);
     }
 } // namespace aerovista::sync

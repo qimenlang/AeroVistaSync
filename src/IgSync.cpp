@@ -32,7 +32,9 @@ namespace aerovista::sync
     {
         // 数据面（UDP）：IGCtrl / ownship 眼点 + 持续/每帧控制类（cigi梳理.md 链路矩阵）。
         session.GetIncomingMsgMgr().RegisterEventProcessor(CIGI_IG_CTRL_PACKET_ID_V4, &_igCtrlProc);
-        session.GetIncomingMsgMgr().RegisterEventProcessor(CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4, &_eyeProc);
+        // 眼点与命令实体摆放同 PacketID（CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4）：UDP/TCP 各注册
+        // 一个通用捕获，addCallback<CigiEntityPositionCtrlV4> 多播命中两条链路（§4.1 / §8.1）。
+        registerCapture(session, CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4, &_eyeProc);
 
         registerCapture(session, CIGI_CONF_CLAMP_ENTITY_CTRL_PACKET_ID_V4, &_confClampProc);
         registerCapture(session, CIGI_VELOCITY_CTRL_PACKET_ID_V4, &_velocityProc);
@@ -44,7 +46,7 @@ namespace aerovista::sync
     {
         // 命令面（TCP）：一次性 / 配置 / 请求 / 符号类（cigi梳理.md 链路矩阵）。
         // 命令实体摆放（EntityPositionCtrlV4, EntityID≠0）：命令面一次性摆放，注册于 TCP；
-        // ownship 眼点（EntityID==0）由 UDP 侧 EyeCaptureProc 处理（cigi梳理.md 链路矩阵）。
+        // ownship 眼点（EntityID==0）由 UDP 侧 _eyeProc 处理，业务回调按 EntityID 分流（§4.1）。
         registerCapture(session, CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4, &_entityPoseProc);
         registerCapture(session, CIGI_COLL_DET_VOL_DEF_PACKET_ID_V4, &_collDetVolDefProc);
         registerCapture(session, CIGI_ENTITY_CTRL_PACKET_ID_V4, &_entityCtrlProc);

@@ -6,10 +6,10 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <vector>
 
 #include "CigiBaseEventProcessor.h"
 #include "CigiIGCtrlV4.h"
-#include "CigiEntityPositionCtrlV4.h"
 
 namespace aerovista::sync
 {
@@ -38,26 +38,39 @@ namespace aerovista::sync
         std::atomic<std::uint32_t> count{0};
     };
 
-    /// sink 订阅能力 mixin（2026-08）：类型化投递回调 + setSink。
-    /// 纯 mixin，不继承 CigiBaseEventProcessor（后者由 PacketCaptureProc / 定制 processor 自持）。
-    /// 投递**非原始报文类型**（如翻译后语义结构）时用 `Sinkable<语义类型>` 混入并自行翻译（见 EyeCaptureProc）。
+    /// sink 订阅能力 mixin（2026-08 / 多播 2026-09）：类型化投递回调列表 + addCallback。
+    /// 纯 mixin，不继承 CigiBaseEventProcessor（后者由 PacketCaptureProc 自持）。
+    /// 与 CCL `EventList`（同 PacketID 多 processor）对齐：同一订阅主题支持多个消费者回调
+    /// （多播），`addCallback` 追加；**不提供取消**（订阅在初始化时一次性注册，回调体
+    /// 捕获对象须存活至 sync 会话结束——同业务 processor 约定）。投递**非原始报文类型**
+    /// （如翻译后语义结构）时用 `Sinkable<语义类型>` 混入并自行翻译。
     template <typename PacketT>
     class Sinkable
     {
     public:
-        /// 注入业务投递回调（值持有；空 = 取消订阅）。主线程解包时同步调用，
+        /// 追加业务投递回调（值持有）。主线程解包时同步调用，
         /// 只做轻量翻译/入队/置标志（§8.1），重量业务留帧循环消费。
-        /// 生命周期：回调体捕获对象须存活至 sync 会话结束（同业务 processor 约定）。
-        void setSink(std::function<void(const PacketT&)> sink) { _sink = std::move(sink); }
+        void addCallback(std::function<void(const PacketT&)> callback)
+        {
+            _sinks.push_back(std::move(callback));
+        }
 
     protected:
-        std::function<void(const PacketT&)> _sink;
+        /// 向全部已注册回调投递一份报文（多播，语义对齐 CCL EventList 多 processor）。
+        void notify(const PacketT& value)
+        {
+            for (auto& sink : _sinks)
+                sink(value);
+        }
+
+        std::vector<std::function<void(const PacketT&)>> _sinks;
     };
 
     /// 通用报文捕获（§8.1，纯订阅 2026-08）：按 PacketID 注册到收包端 CCL session，
-    /// OnPacketReceived = dynamic_cast + 经 sink 同步投递。CCL 复用单例必须立即处理/拷贝（§8.1）。
+    /// OnPacketReceived = dynamic_cast + 经回调列表同步多播投递。CCL 复用单例必须立即处理/拷贝（§8.1）。
     /// 注册按发送源（IgSync/HostSync）与链路（UDP 持续 / TCP 一次性）（cigi梳理.md 链路矩阵）。
-    /// 定制：需业务翻译/过滤的报文可派生本类并 override OnPacketReceived（范例 EyeCaptureProc）。
+    /// 业务翻译/过滤统一在订阅回调内完成；同一报文类型跨链路多 processor 时各链路的
+    /// `PacketCaptureProc<PacketT>` 均向同一回调多播（addCallback 按类型定位，§8.1）。
     template <typename PacketT>
     class PacketCaptureProc : public CigiBaseEventProcessor, public Sinkable<PacketT>
     {
@@ -67,28 +80,7 @@ namespace aerovista::sync
             auto* typed = dynamic_cast<PacketT*>(packet);
             if (!typed)
                 return;
-            if (this->_sink)
-                this->_sink(*typed);
+            this->notify(*typed);
         }
-    };
-
-    /// ownship 眼点捕获（IG 侧）：**定制 processor 范例**（2026-08）——投递翻译后语义类型
-    /// `HostEyePose`，故直接继承 `CigiBaseEventProcessor` + `Sinkable<HostEyePose>`（不继承
-    /// `PacketCaptureProc<CigiEntityPositionCtrlV4>`——后者 sink 是原始 CCL 类型）。
-    /// OnPacketReceived：捕获 ownship 眼点 → 翻译 HostEyePose → 基类 `setSink` 投递。
-    class EyeCaptureProc : public CigiBaseEventProcessor, public Sinkable<HostEyePose>
-    {
-    public:
-        void OnPacketReceived(CigiBasePacket* packet) override;
-    };
-
-    /// 命令实体摆放捕获（IG 侧）：投递 `EntityID≠0` 的 EntityPositionCtrlV4（ownship 眼点归
-    /// EyeCaptureProc）。继承 `PacketCaptureProc<CigiEntityPositionCtrlV4>` 以兼容
-    /// `subscribe<CigiEntityPositionCtrlV4>()` 的 dynamic_cast 定位；override OnPacketReceived
-    /// 过滤 ownship（§4.1）后经基类 sink 投递。
-    class EntityPoseControlProc : public PacketCaptureProc<CigiEntityPositionCtrlV4>
-    {
-    public:
-        void OnPacketReceived(CigiBasePacket* packet) override;
     };
 } // namespace aerovista::sync

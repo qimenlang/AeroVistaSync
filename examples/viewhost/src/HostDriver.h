@@ -39,12 +39,12 @@ namespace aerovista::viewhost
 
         /// 接收轮询：drain IG→Host 收包队列并解包，触发订阅回调（Host push 模式，UI 定时器每帧调用）。
         void pollIncoming();
-        /// 订阅某类 IG→Host 报文的到达通知（转发 HostSync::subscribe，§8.1）。
+        /// 注册某类 IG→Host 报文的到达回调（转发 HostSync::addCallback，§8.1）。
         /// 回调在 pollIncoming 内同步调用（UI 线程），只做轻量置位/入队。
         template <typename PacketT>
-        void subscribe(std::function<void(const PacketT&)> callback)
+        void addCallback(std::function<void(const PacketT&)> callback)
         {
-            _host.subscribe<PacketT>(std::move(callback));
+            _host.addCallback<PacketT>(std::move(callback));
         }
 
         bool isRunning() const;

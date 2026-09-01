@@ -24,6 +24,7 @@
 #include "CigiConfClampEntityCtrlV4.h"
 #include "CigiEarthModelDefV4.h"
 #include "CigiEntityCtrlV4.h"
+#include "CigiEntityPositionCtrlV4.h"
 #include "CigiEnvCondReqV4.h"
 #include "CigiEnvRgnCtrlV4.h"
 #include "CigiHatHotReqV4.h"
@@ -103,31 +104,22 @@ namespace aerovista::sync
         /// 帧级维护（不收包）：外推冻结检查 + RUNNING 状态判定。每帧都应调用。
         void update();
 
-        /// 订阅某类 Host→IG 报文的到达通知：报文解包捕获时同步投递回调。
-        /// 回调只做轻量翻译/入队/置标志（§8.1）；空回调 = 取消订阅；
-        /// 回调体捕获对象须存活至 sync 会话结束（同业务 processor 约定）。
+        /// 注册某类 Host→IG 报文的到达回调：报文解包捕获时同步多播投递（§8.1）。
+        /// 同一类型可注册多个回调（多播，对齐 CCL EventList 多 processor）；同一报文类型的
+        /// 所有链路的通用捕获均向该回调投递（如 EntityPositionCtrlV4 的 UDP 眼点 + TCP
+        /// 命令实体），业务回调按 EntityID 分流（§4.1）。
+        /// 回调只做轻量翻译/入队/置标志（§8.1）；回调体捕获对象须存活至 sync 会话结束。
         /// 可在任何时机调用（先于收包）：内部确保会话已创建。
         template <typename PacketT>
-        void subscribe(std::function<void(const PacketT&)> callback)
+        void addCallback(std::function<void(const PacketT&)> callback)
         {
             ensureTcpSession();
             ensureUdpSession();
             for (auto* proc : _captureProcs)
             {
                 if (auto* typed = dynamic_cast<PacketCaptureProc<PacketT>*>(proc))
-                {
-                    typed->setSink(std::move(callback));
-                    return;
-                }
+                    typed->addCallback(callback);
             }
-        }
-
-        /// 订阅 ownship 眼点的到达通知：EyeCaptureProc 捕获时翻译为 HostEyePose 后投递
-        /// （§8.1 眼点链路收敛）。供 SynchronSystem 直接把翻译结果入队决策。空回调 = 取消订阅。
-        void subscribeEyePose(std::function<void(const HostEyePose&)> callback)
-        {
-            ensureUdpSession();
-            _eyeProc.setSink(std::move(callback));
         }
 
         // ---- 状态观测 ----
@@ -268,7 +260,7 @@ namespace aerovista::sync
         void stopCommandThread();
         void commandLoop();
 
-        /// 注册单个通用捕获 processor（§8.1）：RegisterEventProcessor + 入 _captureProcs（供 subscribe 定位）。
+        /// 注册单个通用捕获 processor（§8.1）：RegisterEventProcessor + 入 _captureProcs（供 addCallback 定位）。
         void registerCapture(CigiIGSession& session, int packetId, CigiBaseEventProcessor* proc);
 
         IgConfig _local{};
@@ -310,7 +302,10 @@ namespace aerovista::sync
         // IGCtrl 帧节拍/时间戳、ownship 眼点（Host→IG）。碰撞检测体积定义走通用捕获
         //（PacketCaptureProc<CigiCollDetVolDefV4>，见下方成员 + registerTcpProcessors）。
         IgCtrlCaptureProc _igCtrlProc;
-        EyeCaptureProc _eyeProc;
+        // 数据面（UDP）EntityPositionCtrlV4 通用捕获（§4.1）：ownship 眼点（EntityID==0）
+        // 与命令实体（EntityID≠0）同 PacketID 双链路各注册一个通用捕获，业务回调按
+        // EntityID 分流（Engine::onEntityPositionCtrl）；翻译/过滤统一在订阅回调内完成。
+        PacketCaptureProc<CigiEntityPositionCtrlV4> _eyeProc;
 
         // Host→IG 持续/每帧类（UDP 数据面，cigi梳理.md §1/§2/§3 链路矩阵）。
         PacketCaptureProc<CigiConfClampEntityCtrlV4> _confClampProc;
@@ -319,13 +314,13 @@ namespace aerovista::sync
         PacketCaptureProc<CigiViewCtrlV4> _viewCtrlProc;
 
         // Host→IG 一次性/配置/请求类（TCP 命令面）。
-        // CollDetVolDef 订阅经通用捕获 `subscribe<CigiCollDetVolDefV4>()`。
+        // CollDetVolDef 订阅经通用捕获 `addCallback<CigiCollDetVolDefV4>()`。
         PacketCaptureProc<CigiCollDetVolDefV4> _collDetVolDefProc;
         PacketCaptureProc<CigiEntityCtrlV4> _entityCtrlProc;
-        // 命令实体摆放（EntityPositionCtrlV4，EntityID≠0）：命令面一次性摆放，注册于 TCP（cigi梳理.md
-        // 链路矩阵）。ownship 眼点（EntityID==0）已被 UDP 侧 EyeCaptureProc 占用；同 PacketID 双 processor
-        // 均触发，EntityPoseControlProc 过滤 EntityID==0（§4.1）。
-        EntityPoseControlProc _entityPoseProc;
+        // 命令实体摆放（EntityPositionCtrlV4，EntityID≠0）：命令面一次性摆放，注册于 TCP
+        //（cigi梳理.md 链路矩阵）。ownship 眼点（EntityID==0）走 UDP 侧 _eyeProc；同 PacketID
+        // 双链路通用捕获均向同一回调多播，业务回调按 EntityID 分流（§4.1）。
+        PacketCaptureProc<CigiEntityPositionCtrlV4> _entityPoseProc;
         PacketCaptureProc<CigiArtPartCtrlV4> _artPartCtrlProc;
         PacketCaptureProc<CigiShortArtPartCtrlV4> _shortArtPartCtrlProc;
         PacketCaptureProc<CigiCompCtrlV4> _compCtrlProc;
@@ -358,7 +353,7 @@ namespace aerovista::sync
         PacketCaptureProc<CigiSymbolTexturedPolygonDefV4> _symbolTexturedPolygonDefProc;
         PacketCaptureProc<CigiSymbolCloneV4> _symbolCloneProc;
 
-        /// 全部通用捕获实例的注册表（subscribe<PacketT>() 定位用；注册时填充一次）。
+        /// 全部通用捕获实例的注册表（addCallback<PacketT>() 定位用；注册时填充一次）。
         std::vector<CigiBaseEventProcessor*> _captureProcs;
 
         // 数据面 I/O 线程（§5.1）：UDP recv → 入队；主线程 update() drain 解包。
