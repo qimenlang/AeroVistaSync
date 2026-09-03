@@ -55,12 +55,6 @@ namespace aerovista::sync
             eulerYprDegOut = vsg::dvec3(rad2deg(yawRad), rad2deg(pitchRad), rad2deg(rollRad));
             return true;
         }
-
-        bool eyeFrameMatchesScene(const HostEyePose& eye, bool sceneIsEllipsoid)
-        {
-            const bool wantLla = (eye.frame == HostEyeCoordFrame::LLA);
-            return wantLla == sceneIsEllipsoid;
-        }
     } // namespace
 
     std::unique_ptr<SynchronSystem> SynchronSystem::create()
@@ -127,7 +121,6 @@ namespace aerovista::sync
         _cachedHostEye.reset();
         _lastApplied.reset();
         _hasPendingApplied = false;
-        _frameMismatchErrorLogged = false;
     }
 
     void SynchronSystem::preFrame()
@@ -175,36 +168,6 @@ namespace aerovista::sync
         return out;
     }
 
-    void SynchronSystem::rejectPendingFrameMismatch()
-    {
-        ++_eyePoseRejectedByFrameMismatch;
-        if (!_frameMismatchErrorLogged)
-        {
-            const char* expected = sceneIsEllipsoid() ? "Lla/Detach" : "WorldLocal/Attach";
-            const char* got = (_pendingHostEye->frame == HostEyeCoordFrame::LLA) ? "Lla/Detach" : "WorldLocal/Attach";
-            std::cerr << "[ERROR] eye pose rejected by frame mismatch: expected " << expected << ", got " << got
-                      << " (channelId=" << _channelId << ")\n";
-            _frameMismatchErrorLogged = true;
-        }
-    }
-
-    bool SynchronSystem::tryAcceptPendingEye()
-    {
-        if (!_pendingHostEye)
-            return false;
-
-        if (!eyeFrameMatchesScene(*_pendingHostEye, sceneIsEllipsoid()))
-        {
-            rejectPendingFrameMismatch();
-            _pendingHostEye.reset();
-            return false;
-        }
-
-        _cachedHostEye = *_pendingHostEye;
-        _pendingHostEye.reset();
-        return true;
-    }
-
     void SynchronSystem::applyComposed(const HostEyePose& hostEye)
     {
         const HostEyePose composed = compose(hostEye, _offsetDeg);
@@ -226,22 +189,18 @@ namespace aerovista::sync
             return;
         }
 
-        // 已连接：有新输入 → 帧校验通过则应用（失败不应用）；无新输入 → 走 stale 策略。
+        // 已连接：有新输入 → 直接应用；无新输入 → 走 stale 策略。
         if (_pendingHostEye)
         {
-            if (tryAcceptPendingEye())
-                applyComposed(*_cachedHostEye);
+            _cachedHostEye = *_pendingHostEye;
+            _pendingHostEye.reset();
+            applyComposed(*_cachedHostEye);
             return;
         }
 
         if (_cachedHostEye && _stalePolicy == HostEyeStalePolicy::REUSE_LAST)
             applyComposed(*_cachedHostEye);
         // Freeze：相机保持不动
-    }
-
-    void SynchronSystem::setEllipsoidMode(bool ellipsoid)
-    {
-        _ellipsoidMode = ellipsoid;
     }
 
     std::optional<HostEyePose> SynchronSystem::takePendingCameraPose()

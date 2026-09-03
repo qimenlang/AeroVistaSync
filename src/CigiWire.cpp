@@ -90,20 +90,10 @@ namespace aerovista::sync
                     eye.yawDeg = ent->GetYaw();
                     eye.pitchDeg = ent->GetPitch();
                     eye.rollDeg = ent->GetRoll();
-                    if (ent->GetAttachState() == CigiBaseEntityPositionCtrl::Detach)
-                    {
-                        eye.frame = EyeFrame::LLA;
-                        eye.x = ent->GetLat();
-                        eye.y = ent->GetLon();
-                        eye.z = ent->GetAlt();
-                    }
-                    else
-                    {
-                        eye.frame = EyeFrame::WORLD_LOCAL;
-                        eye.x = ent->GetXoff();
-                        eye.y = ent->GetYoff();
-                        eye.z = ent->GetZoff();
-                    }
+                    // 同步层只支持 LLA：眼点恒为 Detach + LLA（2026-09 收敛）。
+                    eye.x = ent->GetLat();
+                    eye.y = ent->GetLon();
+                    eye.z = ent->GetAlt();
                 }
 
                 void reset()
@@ -197,30 +187,18 @@ namespace aerovista::sync
             ent.SetPitch(static_cast<float>(eye->pitchDeg), false);
             ent.SetRoll(static_cast<float>(eye->rollDeg), false);
 
-            if (eye->frame == EyeFrame::LLA)
+            const double lon = normalizeLonDeg(eye->y);
+            if (!llaEyeInRange(eye->x, lon, eye->pitchDeg))
             {
-                const double lon = normalizeLonDeg(eye->y);
-                if (!llaEyeInRange(eye->x, lon, eye->pitchDeg))
-                {
-                    ++gEyePoseRejectedByRange;
-                    return; // IGCtrl 仍照发（lla设计 §5）
-                }
-                // 椭球：Detach + LLA，ParentID 必须为 0（lla设计 §5）。
-                ent.SetParentID(0);
-                ent.SetAttachState(CigiBaseEntityPositionCtrl::Detach);
-                ent.SetLat(eye->x, false);
-                ent.SetLon(lon, false);
-                ent.SetAlt(eye->z, false);
+                ++gEyePoseRejectedByRange;
+                return; // IGCtrl 仍照发（lla设计 §5）
             }
-            else
-            {
-                // 本地世界 XYZ：相对合成父节点做 Attach 偏移（lla设计 §5）。
-                ent.SetParentID(1);
-                ent.SetAttachState(CigiBaseEntityPositionCtrl::Attach);
-                ent.SetXoff(eye->x);
-                ent.SetYoff(eye->y);
-                ent.SetZoff(eye->z);
-            }
+            // 同步层只支持 LLA：Detach + LLA，ParentID 必须为 0（lla设计 §5）。
+            ent.SetParentID(0);
+            ent.SetAttachState(CigiBaseEntityPositionCtrl::Detach);
+            ent.SetLat(eye->x, false);
+            ent.SetLon(lon, false);
+            ent.SetAlt(eye->z, false);
             omsg << ent;
         }
 
@@ -306,8 +284,8 @@ namespace aerovista::sync
             if (rt.entityPosProc.got)
             {
                 EyePose eye = rt.entityPosProc.eye;
-                // Detach 带非零 ParentID 对我们的眼点槽非法 —— 丢弃眼点（lla设计 §5）。
-                if (eye.frame == EyeFrame::LLA && eye.parentId != 0)
+                // LLA 眼点（Detach）带非零 ParentID 非法 —— 丢弃眼点（lla设计 §5）。
+                if (eye.parentId != 0)
                     ; // leave outFrame.eye empty
                 else
                     outFrame.eye = eye;

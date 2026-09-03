@@ -13,22 +13,14 @@ namespace aerovista::sync
 {
     namespace cigi_wire
     {
-        /// 线上位置语义来自 EntityPosition AttachState（lla设计 §5）。
-        enum class EyeFrame : std::uint8_t
-        {
-            WORLD_LOCAL = 0, ///< Attach + X/Y/Z 偏移
-            LLA = 1          ///< Detach + 纬度/经度/海拔
-        };
-
         struct EyePose
         {
-            double x = 0.0; ///< WORLD_LOCAL: X 偏移 米; LLA: 纬度°
-            double y = 0.0; ///< WORLD_LOCAL: Y 偏移 米; LLA: 经度°
-            double z = 0.0; ///< WORLD_LOCAL: Z 偏移 米; LLA: 海拔 米
+            double x = 0.0; ///< 纬度°
+            double y = 0.0; ///< 经度°
+            double z = 0.0; ///< 海拔 米
             double yawDeg = 0.0;
             double pitchDeg = 0.0;
             double rollDeg = 0.0;
-            EyeFrame frame = EyeFrame::WORLD_LOCAL;
             std::uint16_t entityId = 0;
             std::uint16_t parentId = 0;
         };
@@ -62,7 +54,7 @@ namespace aerovista::sync
         std::uint64_t eyePoseRejectedByRange();
 
         /// 把 ownship 眼点（EntityPositionCtrlV4）组装进 omsg（IGCtrl 已由 outMsgWithIgCtrlUdp() 自动前置）。
-        /// WorldLocal → Attach+XYZ ParentID=1；Lla → Detach+LLA ParentID=0。
+        /// 恒为 Detach + LLA + ParentID=0（同步层只支持 LLA，2026-09 收敛）。
         /// 业务侧（矛盾 A + IGCtrl 自动填充）用 host.outMsgWithIgCtrlUdp() 拿到 omsg 后调本函数追加眼点，再 flushUdp()。
         /// LLA 越界丢弃逻辑在内（eyePoseRejectedByRange 计数）。eye 为空则只发 IGCtrl（无眼点帧）。
         void appendEye(CigiOutgoingMsg& omsg, const EyePose* eye);

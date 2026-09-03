@@ -47,7 +47,6 @@ BOOL CViewHostDlg::OnInitDialog()
 
     // 初始眼点：alt=3m，位于模型群中心南 25m，朝北（yaw=0）水平看模型群。
     // 模型群（viewhost_ig_*.json）：center + 东西南北各 3m（alt=0）。
-    _eye.frame = aerovista::sync::cigi_wire::EyeFrame::LLA;
     _eye.x = 39.908475; // lat：center(39.9087) 南 25m
     _eye.y = 116.397500; // lon：与 center 同经度
     _eye.z = 3.0;        // alt=3m
