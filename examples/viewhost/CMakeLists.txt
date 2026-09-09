@@ -20,6 +20,7 @@ set(CMAKE_MFC_FLAG 2)
 add_executable(aerovistaViewHost WIN32
     src/ViewHostApp.cpp
     src/ViewHostDlg.cpp
+    src/EntityPropDlg.cpp
     src/HostDriver.cpp
     src/ViewHostMath.cpp
     resources/ViewHost.rc
@@ -37,6 +38,10 @@ target_compile_definitions(aerovistaViewHost PRIVATE
 
 target_link_libraries(aerovistaViewHost PRIVATE aerovistaSync)
 
+if(MSVC)
+    target_compile_options(aerovistaViewHost PRIVATE /utf-8)
+endif()
+
 # CMake Ninja 生成器对 MFC Unicode 可执行的入口选择有 bug（CMake gitlab #21202）：
 # 默认按窄字符 WinMainCRTStartup 找 WinMain，而 MFC Unicode 程序实际提供 wWinMain，
 # 导致 LNK2019: unresolved WinMain（仅此一个符号缺失——MFC 库已由 afx 头 #pragma comment 自动链上）。
@@ -50,4 +55,7 @@ add_custom_command(TARGET aerovistaViewHost POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/resources/viewhost.json
         $<TARGET_FILE_DIR:aerovistaViewHost>/viewhost.json
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/engine/resources/config/entities.json
+        $<TARGET_FILE_DIR:aerovistaViewHost>/entities.json
 )

@@ -1,20 +1,24 @@
 ﻿#include "ViewHostDlg.h"
 
+#include "EntityPropDlg.h"
+
 #include <aerovista/sync/SyncConfig.h>
 
 #include <atlconv.h>
 
-#include <sstream>
+#include <cstdint>
 #include <string>
 
 BEGIN_MESSAGE_MAP(CViewHostDlg, CDialog)
     ON_WM_TIMER()
     ON_WM_DESTROY()
     ON_BN_CLICKED(IDC_TOGGLE_CONTROL, &CViewHostDlg::OnToggleControl)
-    ON_BN_CLICKED(IDC_ENTITY_PLACE, &CViewHostDlg::OnPlaceEntity)
     ON_BN_CLICKED(IDC_TEST_TCP, &CViewHostDlg::OnTestTcp)
     ON_BN_CLICKED(IDC_TEST_UDP, &CViewHostDlg::OnTestUdp)
     ON_BN_CLICKED(IDC_EXIT, &CViewHostDlg::OnExit)
+    ON_NOTIFY(NM_DBLCLK, IDC_ENTITY_TREE, &CViewHostDlg::OnEntityTreeDblClk)
+    ON_MESSAGE(WM_APP + 20, &CViewHostDlg::OnRefreshEntityTree)
+    ON_MESSAGE(WM_APP + 21, &CViewHostDlg::OnOpenEntityProperties)
 END_MESSAGE_MAP()
 
 CViewHostDlg::CViewHostDlg(CWnd* pParent) : CDialog(IDD_VIEWHOST_DIALOG, pParent)
@@ -58,12 +62,8 @@ BOOL CViewHostDlg::OnInitDialog()
     _started = true;
     SetTimer(kTimerId, 16, nullptr);
 
-    // 实体摆放默认值（模型群中心，viewhost_ig_*.json 实体所在区域）。
-    SetDlgItemText(IDC_ENTITY_ID, _T("7"));
-    SetDlgItemText(IDC_ENTITY_LAT, _T("39.908700"));
-    SetDlgItemText(IDC_ENTITY_LON, _T("116.397500"));
-    SetDlgItemText(IDC_ENTITY_ALT, _T("0.0"));
-    SetDlgItemText(IDC_ENTITY_YPR, _T("0.0 0.0 0.0"));
+    _entityTree.SubclassDlgItem(IDC_ENTITY_TREE, this);
+    refreshEntityTree();
 
     subscribeIgPackets();
     updateStatusText();
@@ -78,6 +78,8 @@ bool CViewHostDlg::loadConfig()
         return false;
     if (!_driver.initialize(host, &error))
         return false;
+    if (!_driver.loadEntityCatalog("entities.json", &error))
+        AfxMessageBox(_T("加载 entities.json 失败，实体树为空"));
     return true;
 }
 
@@ -146,40 +148,58 @@ void CViewHostDlg::OnToggleControl()
     updateStatusText();
 }
 
-void CViewHostDlg::OnPlaceEntity()
+void CViewHostDlg::refreshEntityTree()
 {
-    CString idText, latText, lonText, altText, yprText;
-    GetDlgItemText(IDC_ENTITY_ID, idText);
-    GetDlgItemText(IDC_ENTITY_LAT, latText);
-    GetDlgItemText(IDC_ENTITY_LON, lonText);
-    GetDlgItemText(IDC_ENTITY_ALT, altText);
-    GetDlgItemText(IDC_ENTITY_YPR, yprText);
-
-    // yaw pitch roll 空格分隔解析；缺省为 0。
-    double yaw = 0.0, pitch = 0.0, roll = 0.0;
-    const std::string yprA = CT2A(yprText.GetString()).m_psz;
-    std::istringstream ypr(yprA);
-    ypr >> yaw;
-    ypr >> pitch;
-    ypr >> roll;
-
-    const int entityId = _ttoi(idText);
-    const double lat = _ttof(latText);
-    const double lon = _ttof(lonText);
-    const double alt = _ttof(altText);
-    if (entityId <= 0)
-    {
-        SetDlgItemText(IDC_STATUS_PLACE, _T("最近摆放: Entity ID 无效"));
+    if (_entityTree.GetSafeHwnd() == nullptr)
         return;
+
+    _entityTree.DeleteAllItems();
+    const HTREEITEM root = _entityTree.InsertItem(_T("entities"));
+    _entityTree.SetItemData(root, 0);
+    for (const aerovista::sync::EntityAuthorityRow& row : _driver.entitySnapshot())
+    {
+        const CString name(CA2T(row.name.c_str(), CP_UTF8));
+        const HTREEITEM item = _entityTree.InsertItem(name, root);
+        _entityTree.SetItemData(item, row.entityId);
     }
+    _entityTree.Expand(root, TVE_EXPAND);
+}
 
-    // 命令面（TCP）一次性摆放：绝对 LLA（Detach）。
-    _driver.sendEntityPose(static_cast<std::uint16_t>(entityId), lat, lon, alt, yaw, pitch, roll);
+void CViewHostDlg::OnEntityTreeDblClk(NMHDR*, LRESULT* result)
+{
+    *result = 0; // 根节点仍走默认展开/折叠
+    CPoint screen;
+    GetCursorPos(&screen);
+    CPoint client = screen;
+    _entityTree.ScreenToClient(&client);
+    UINT flags = 0;
+    const HTREEITEM item = _entityTree.HitTest(client, &flags);
+    if (item == nullptr || item == _entityTree.GetRootItem())
+        return;
 
-    CString status;
-    status.Format(_T("最近摆放: id=%d lat=%.6f lon=%.6f alt=%.1f ypr=%.2f/%.2f/%.2f"), entityId, lat, lon, alt, yaw,
-                  pitch, roll);
-    SetDlgItemText(IDC_STATUS_PLACE, status);
+    *result = TRUE; // 叶子：不要再走默认展开
+    _entityTree.SelectItem(item);
+    // 通知返回后再弹模态框，避免双击的 mouse-up 落到面板按钮上。
+    PostMessage(WM_APP + 21, _entityTree.GetItemData(item));
+}
+
+void CViewHostDlg::openEntityProperties(std::uint16_t entityId)
+{
+    CEntityPropDlg dlg(_driver, entityId, this);
+    dlg.DoModal();
+    refreshEntityTree();
+}
+
+LRESULT CViewHostDlg::OnOpenEntityProperties(WPARAM wparam, LPARAM)
+{
+    openEntityProperties(static_cast<std::uint16_t>(wparam));
+    return 0;
+}
+
+LRESULT CViewHostDlg::OnRefreshEntityTree(WPARAM, LPARAM)
+{
+    refreshEntityTree();
+    return 0;
 }
 
 void CViewHostDlg::OnTestTcp()

@@ -31,6 +31,7 @@ set(AEROVISTA_SYNC_PUBLIC_HEADERS
     include/aerovista/sync/CigiIncludes.h
     include/aerovista/sync/CigiWire.h
     include/aerovista/sync/EventProcess.h
+    include/aerovista/sync/HostDataManager.h
     include/aerovista/sync/HostSync.h
     include/aerovista/sync/IgSync.h
     include/aerovista/sync/SyncConfig.h
@@ -46,6 +47,7 @@ add_library(aerovistaSync STATIC
     ${AEROVISTA_SYNC_PUBLIC_HEADERS}
     src/CigiWire.cpp
     src/EventProcess.cpp
+    src/HostDataManager.cpp
     src/HostSync.cpp
     src/IgSync.cpp
     src/SocketCommon.cpp
@@ -69,6 +71,10 @@ target_link_libraries(aerovistaSync
 )
 
 target_compile_features(aerovistaSync PUBLIC cxx_std_17)
+
+if(MSVC)
+    target_compile_options(aerovistaSync PRIVATE /utf-8)
+endif()
 
 # --- 可安装 / 导出（独立 repo find_package 用；本工程内默认关闭） ---
 # 依赖 cigicl-static 不在本工程 export set，工程内开启会报错。独立 repo 时

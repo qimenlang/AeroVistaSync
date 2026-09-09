@@ -1,15 +1,18 @@
 ﻿#pragma once
 
+#include <aerovista/sync/HostDataManager.h>
 #include <aerovista/sync/HostSync.h>
 #include <aerovista/sync/SyncConfig.h>
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace aerovista::viewhost
 {
-    /// HostSync 薄封装：生命周期 + 帧驱动 + 状态读取（viewhost设计.md §4）。
+    /// 持有 HostSync + HostDataManager：生命周期 + 帧驱动 + 意图 API（viewhost设计.md §4.0）。
     class HostDriver
     {
     public:
@@ -26,10 +29,25 @@ namespace aerovista::viewhost
         /// 扇出一帧（IGCtrl 由 outMsgWithIgCtrlUdp() 自动前置，帧号/自计时时间戳 §7.1）+ 可选眼点 → flushUdp。
         void update(const aerovista::sync::cigi_wire::EyePose* eye);
 
-        /// 命令面（TCP）一次性摆放实体位姿（Detach+LLA，EntityID≠0）→ flushTcp。
-        /// Host 控制 IG 侧实体位姿（engine `updateEntityPose` 订阅消费，状态同步设计初版.md §12）。
-        void sendEntityPose(std::uint16_t entityId, double lat, double lon, double alt, double yawDeg,
-                            double pitchDeg, double rollDeg);
+        /// 从 entities.json 子集建表（不发送）。
+        bool loadEntityCatalog(const std::string& path, std::string* error = nullptr);
+        std::vector<aerovista::sync::EntityAuthorityRow> entitySnapshot() const;
+        std::optional<aerovista::sync::EntityAuthorityRow> entityRow(std::uint16_t entityId) const;
+
+        /// 只写表：EntityCtrl 上的字段一次写齐（不组包、不 flush）。未知 id 失败。
+        bool setEntityCtrl(std::uint16_t entityId, aerovista::sync::EntityAuthorityState state, std::uint8_t alpha,
+                           std::string* error = nullptr);
+        /// 只写表：EntityPositionCtrl 上的 last pose（不组包、不 flush）。未知 id 失败。
+        bool setEntityPose(std::uint16_t entityId, const aerovista::sync::EntityAuthorityPose& pose,
+                           std::string* error = nullptr);
+
+        /// 按当前表组请求的报文族，一次 flushTcp。未请求的报文族不发。未知 id 失败且不 flush。
+        struct EntitySend
+        {
+            bool entityCtrl = false;
+            bool entityPosition = false;
+        };
+        bool sendEntity(std::uint16_t entityId, EntitySend send, std::string* error = nullptr);
 
         /// 报文自检：随机构造一个命令面（TCP）测试报文并发送，返回报文类名。
         /// 配合 engine HUD「recv: <类名>」对照验证各报文链路支持（cigi梳理.md 链路矩阵）。
@@ -54,6 +72,7 @@ namespace aerovista::viewhost
 
     private:
         aerovista::sync::HostSync _host;
+        aerovista::sync::HostDataManager _data;
         bool _initialized = false;
     };
 } // namespace aerovista::viewhost

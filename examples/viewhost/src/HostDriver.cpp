@@ -1,6 +1,5 @@
 ﻿#include "HostDriver.h"
 
-#include "CigiBaseEntityPositionCtrl.h"
 #include "CigiEntityPositionCtrlV4.h"
 
 // 命令面/数据面测试报文（cigi梳理.md 链路矩阵；HostDriver 随机构造并发送）。
@@ -43,6 +42,7 @@
 #include "CigiWeatherCtrlV4.h"
 
 #include <cstddef>
+#include <optional>
 #include <random>
 #include <string>
 
@@ -123,6 +123,33 @@ namespace aerovista::viewhost
             std::uniform_int_distribution<std::size_t> dist(0, probeCount - 1);
             return probes[dist(rng)];
         }
+
+        bool failUnknownEntity(std::string* error)
+        {
+            if (error)
+                *error = "unknown entity id";
+            return false;
+        }
+
+        bool appendEntityCtrl(CigiOutgoingMsg& tcp, const aerovista::sync::HostDataManager& data,
+                              std::uint16_t entityId, std::string* error)
+        {
+            std::optional<CigiEntityCtrlV4> packet = data.entityCtrlPacket(entityId);
+            if (!packet)
+                return failUnknownEntity(error);
+            tcp << *packet;
+            return true;
+        }
+
+        bool appendEntityPosition(CigiOutgoingMsg& tcp, const aerovista::sync::HostDataManager& data,
+                                  std::uint16_t entityId, std::string* error)
+        {
+            std::optional<CigiEntityPositionCtrlV4> packet = data.entityPositionPacket(entityId);
+            if (!packet)
+                return failUnknownEntity(error);
+            tcp << *packet;
+            return true;
+        }
     } // namespace
 
     HostDriver::~HostDriver()
@@ -159,22 +186,47 @@ namespace aerovista::viewhost
         _host.flushUdp();
     }
 
-    void HostDriver::sendEntityPose(std::uint16_t entityId, double lat, double lon, double alt, double yawDeg,
-                                    double pitchDeg, double rollDeg)
+    bool HostDriver::loadEntityCatalog(const std::string& path, std::string* error)
     {
-        // 命令面（TCP）一次性摆放：CCL 要求 Host 消息以 IGCtrl 开头（outMsgWithIgCtrlTcp 自动前置）。
+        return _data.loadEntityCatalog(path, error);
+    }
+
+    std::vector<aerovista::sync::EntityAuthorityRow> HostDriver::entitySnapshot() const
+    {
+        return _data.entitySnapshot();
+    }
+
+    std::optional<aerovista::sync::EntityAuthorityRow> HostDriver::entityRow(std::uint16_t entityId) const
+    {
+        return _data.entityRow(entityId);
+    }
+
+    bool HostDriver::setEntityCtrl(std::uint16_t entityId, aerovista::sync::EntityAuthorityState state,
+                                   std::uint8_t alpha, std::string* error)
+    {
+        if (!_data.setEntityState(entityId, state, error))
+            return false;
+        return _data.setEntityAlpha(entityId, alpha, error);
+    }
+
+    bool HostDriver::setEntityPose(std::uint16_t entityId, const aerovista::sync::EntityAuthorityPose& pose,
+                                   std::string* error)
+    {
+        return _data.setEntityPose(entityId, pose, error);
+    }
+
+    bool HostDriver::sendEntity(std::uint16_t entityId, EntitySend send, std::string* error)
+    {
+        if (!send.entityCtrl && !send.entityPosition)
+            return true;
+
         auto& tcp = _host.outMsgWithIgCtrlTcp();
-        CigiEntityPositionCtrlV4 pose;
-        pose.SetEntityID(entityId);
-        pose.SetAttachState(CigiBaseEntityPositionCtrl::Detach); // 绝对 LLA
-        pose.SetLat(lat, false);
-        pose.SetLon(lon, false);
-        pose.SetAlt(alt, false);
-        pose.SetYaw(static_cast<float>(yawDeg), false);
-        pose.SetPitch(static_cast<float>(pitchDeg), false);
-        pose.SetRoll(static_cast<float>(rollDeg), false);
-        tcp << pose;
+        if (send.entityCtrl && !appendEntityCtrl(tcp, _data, entityId, error))
+            return false;
+        if (send.entityPosition && !appendEntityPosition(tcp, _data, entityId, error))
+            return false;
         _host.flushTcp();
+        return true;
     }
 
     std::string HostDriver::sendRandomTcpPacket()
