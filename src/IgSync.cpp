@@ -312,12 +312,9 @@ namespace aerovista::sync
         //  Host 侧是 push 模式——调用方（业务/测试）自己决定何时 drain，包未到就不处理；
         //  IG 侧是帧循环主动 drain——`drainIncoming` 由 SynchronSystem::preFrame 每帧调用一次。
         //  而 UDP I/O 线程是 1ms 轮询（udpLoop），Host 刚发来的数据报可能仍在 0~1ms 窗口内没被
-        //  收进队列。若空队列直接返回，本帧就漏掉该包：对数据面帧节拍漏一帧可接受（UDP 周期覆盖），
-        //  但时钟同步的 `lastReceivedAtUs` 晚一帧更新会引入 ~帧周期 的累积误差（时钟同步方案.md §4.0）。
-        //  因此按 1ms 步进等待（最多 kMaxUdpDrainWaitMs），保证刚发到的包当帧可见。
-        //  生产路径（preFrame）下 Host 每帧发数据、队列几乎总是非空，等待只在「Host 未发帧」的空闲期
-        //  发生，不引入持续延迟。
-        constexpr int kMaxUdpDrainWaitMs = 5;
+        //  收进队列。空队列最多再等两个 I/O 轮询周期（2ms），覆盖该缝与调度抖动；有包则立即返回。
+        //  不再等 5ms：空闲/仅 TCP 时每帧白睡会占满约 30% 帧预算。漏一帧数据面可由 UDP 周期覆盖。
+        constexpr int kMaxUdpDrainWaitMs = 2;
         for (int waited = 0; ; waited += 1)
         {
             {

@@ -214,8 +214,8 @@ namespace aerovista::sync
         bool connectOnce(const IgConfig& config);
         void sendSofPacket(std::uint32_t frameCntr);
         void markDisconnected();
-        /// UDP 生产-消费等待：I/O 线程 1ms 轮询，drain 空队列时按 1ms 步进等待（最多 kMaxUdpDrainWaitMs），
-        /// 保证刚发到的数据报当帧可见。仅 IG 侧需要（帧循环主动 drain，区别于 Host push 模式）。
+        /// UDP 生产-消费等待：I/O 线程 1ms 轮询，drain 空队列时最多再等 2ms（两个 poll 周期），
+        /// 覆盖刚到内核、尚未入队的数据报及调度抖动。仅 IG 侧需要（帧循环主动 drain，区别于 Host push 模式）。
         void waitForUdpFrames(std::vector<IncomingFrame>& out);
         /// 解包一条 TCP 报文（主线程）：`_tcpSession->ProcessIncomingMsg` → 触发基础设施 + 业务 processor。
         /// 不 reset 基础设施捕获（由调用方决定）；畸形报文吞掉不中断。
