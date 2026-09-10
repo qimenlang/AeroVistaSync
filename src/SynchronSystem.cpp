@@ -1,5 +1,7 @@
 ﻿#include <aerovista/sync/SynchronSystem.h>
 
+#include <aerovista/sync/IgSync.h>
+
 #include <iostream>
 
 namespace aerovista::sync
@@ -72,5 +74,25 @@ namespace aerovista::sync
     bool SynchronSystem::igLinked() const
     {
         return _ig && _ig->tcpConnected() && _ig->udpSynced();
+    }
+
+    std::uint32_t SynchronSystem::igCtrlReceivedCount() const
+    {
+        return _ig ? _ig->igCtrlReceivedCount() : 0;
+    }
+
+    std::uint32_t SynchronSystem::lastIgCtrlFrameCntr() const
+    {
+        return _ig ? _ig->lastIgCtrlFrameCntr() : 0;
+    }
+
+    std::uint64_t SynchronSystem::simTimeUs() const
+    {
+        return _ig ? _ig->simTimeUs() : 0;
+    }
+
+    const IgConfig& SynchronSystem::addressConfig() const
+    {
+        return _ig->addressConfig();
     }
 } // namespace aerovista::sync

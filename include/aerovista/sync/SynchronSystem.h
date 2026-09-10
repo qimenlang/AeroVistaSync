@@ -1,6 +1,5 @@
 ﻿#pragma once
 
-#include <aerovista/sync/IgSync.h>
 #include <aerovista/sync/SyncConfig.h>
 
 #include <cstdint>
@@ -9,6 +8,8 @@
 
 namespace aerovista::sync
 {
+    class IgSync;
+
     /// IG 侧同步收发端点：持有 IgSync，负责收包解包 + 帧级维护 + 连接状态查询。
     /// 不承担眼点业务。本仓库里：offset 合成在 Engine `CameraDriver`
     /// （`Engine::registerIgCallbacks` → `CameraDriver::onOwnshipEyePose`）；写相机在
@@ -35,12 +36,17 @@ namespace aerovista::sync
         /// 解包时业务回调同步翻译/合成眼点；返回后由 `Engine::applyLastHostEye` 写相机。
         void preFrame();
 
-        // ---- 状态观测 / 运维 ----
+        // ---- 状态观测 / 运维（生产路径走本门面，不必直穿 IgSync）----
         bool hasIg() const { return static_cast<bool>(_ig); }
         /// IG TCP+UDP 均就绪（连接观测；CameraDriver 不读此项）。
         bool igLinked() const;
+        std::uint32_t igCtrlReceivedCount() const;
+        std::uint32_t lastIgCtrlFrameCntr() const;
+        std::uint64_t simTimeUs() const;
+        /// 本地 IgConfig；调用方须先 `hasIg()`。
+        const IgConfig& addressConfig() const;
 
-        // ---- 内部组件访问 ----
+        // ---- 内部组件访问（测试与上行探测 PacketProbeHandler）----
         IgSync& igSync();
 
     private:

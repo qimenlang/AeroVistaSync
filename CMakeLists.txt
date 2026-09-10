@@ -9,12 +9,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(aerovistaSync VERSION 0.1.0 LANGUAGES CXX)
 
-# --- 依赖声明 ---
-# vsg：本工程由 thirdparty/vsg submodule 提供 vsg::vsg；独立 repo 用 find_package(vsg)。
-if(NOT TARGET vsg::vsg)
-    find_package(vsg REQUIRED)
-endif()
-
 # cigicl：本工程由 thirdparty/cigi 提供 cigicl-static；独立 repo 用 find_package(cigicl)。
 if(NOT TARGET cigicl-static AND NOT TARGET cigicl::cigicl)
     find_package(cigicl REQUIRED)
@@ -65,8 +59,6 @@ target_link_libraries(aerovistaSync
     PUBLIC
         ${AEROVISTA_SYNC_CIGI_TARGET}
         ws2_32
-    PRIVATE
-        vsg::vsg
 )
 
 target_compile_features(aerovistaSync PUBLIC cxx_std_17)
