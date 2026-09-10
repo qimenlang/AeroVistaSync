@@ -32,9 +32,8 @@ namespace aerovista::sync
             }
 
             // 眼点链路收敛（2026-08 / 2026-09）：UDP 链路通用捕获投递 ownship 原始报文，
-            // 由业务侧回调完成 HostEyePose 翻译 + offset 合成（2026-09 决策上移 Engine 后抽出 CameraDriver）——
-            // 订阅注册在 Engine::initSync（addCallback<CigiEntityPositionCtrlV4> 眼点分支，转发到 CameraDriver）。
-            // stale 决策 / 断线兜底在 CameraDriver::update（帧驱动语义不变）。
+            // 由业务侧回调完成眼点翻译 + offset 合成（Engine CameraDriver）——
+            // 订阅注册在 Engine::registerIgCallbacks（转发到 CameraDriver::onOwnshipEyePose）。
 
             if (!_ig->connect(*igConfig))
             {

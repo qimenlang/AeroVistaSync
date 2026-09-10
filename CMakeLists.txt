@@ -36,7 +36,6 @@ set(AEROVISTA_SYNC_PUBLIC_HEADERS
     include/aerovista/sync/IgSync.h
     include/aerovista/sync/SyncConfig.h
     include/aerovista/sync/SyncJson.h
-    include/aerovista/sync/SyncMath.h
     include/aerovista/sync/SyncProtocol.h
     include/aerovista/sync/SynchronSystem.h
     include/aerovista/sync/TcpSocket.h

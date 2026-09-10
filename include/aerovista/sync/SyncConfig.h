@@ -1,33 +1,18 @@
 ﻿#pragma once
 
 #include <aerovista/sync/SyncJson.h>
-#include <aerovista/sync/SyncMath.h>
 
 #include <cstdint>
 #include <string>
 
 namespace aerovista::sync
 {
-    /// Host 眼点（LLA 位置 + 当地 ENU YPR 度）。同步层只支持 LLA（2026-09 收敛，见 lla位姿传输设计.md §3）。
-    struct HostEyePose
-    {
-        DVec3 position{};   ///< 纬度°、经度°、海拔 米
-        DVec3 eulerYprDeg{}; ///< 当地 ENU YPR（度）
-    };
-
     /// 通道偏移：叠加在 Host 眼点之上（刚性阵列旋转，lla设计 §3.4）。
     struct OffsetDeg
     {
         double yaw = 0.0;
         double pitch = 0.0;
         double roll = 0.0;
-    };
-
-    /// 已连接但本帧无新 Host 眼点时的行为（多通道同步模块设计.md §4.4）。
-    enum class HostEyeStalePolicy
-    {
-        REUSE_LAST,
-        FREEZE
     };
 
     /// IG 侧配置 = 本地收发端口 + 远端 Host 目标。
@@ -61,12 +46,11 @@ namespace aerovista::sync
     };
 
     /// SynchronSystem 装配属性（sync模块化设计.md §4.2）。
-    /// IG 侧消费为主（offset/stale/requireConnectedIg），channelId 两端标识。
+    /// `channelId` / `requireConnectedIg` 由 SynchronSystem 消费；`offsetDeg` 由 Engine CameraDriver 消费。
     struct SyncSystemConfig
     {
         int channelId = 0;
         OffsetDeg offsetDeg{};
-        HostEyeStalePolicy hostEyeStalePolicy = HostEyeStalePolicy::REUSE_LAST;
         bool requireConnectedIg = false;
     };
 
