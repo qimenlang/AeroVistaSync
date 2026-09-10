@@ -31,10 +31,6 @@ namespace aerovista::sync
                 return false;
             }
 
-            // 眼点链路收敛（2026-08 / 2026-09）：UDP 链路通用捕获投递 ownship 原始报文，
-            // 由业务侧回调完成眼点翻译 + offset 合成（Engine CameraDriver）——
-            // 订阅注册在 Engine::registerIgCallbacks（转发到 CameraDriver::onOwnshipEyePose）。
-
             if (!_ig->connect(*igConfig))
             {
                 if (syncSystem.requireConnectedIg)
@@ -63,9 +59,7 @@ namespace aerovista::sync
         if (!_ig)
             return;
 
-        // 收包入口对等化（§8.1）：统一 drain TCP+UDP → 解包 → processor；帧级维护随后。
-        // 眼点原始报文经 UDP 链路通用捕获多播投递，翻译 + offset 合成由业务侧
-        // （engine 回调）完成（2026-09 眼点决策上移）；此处只收包 + IgSync 帧维护。
+        // drain TCP+UDP → 解包 → 订阅回调（眼点合成在 Engine CameraDriver 回调内）；随后帧级维护。
         _ig->drainIncoming(/*sendSof=*/true);
         _ig->update();
     }

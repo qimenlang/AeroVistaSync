@@ -307,7 +307,7 @@ namespace aerovista::sync
         /// 拒绝某键的 JSON null 值（严格字段存在性）。
         void rejectNull(const JsonValue& v, const char* key);
 
-        /// 拒绝任何不在 `allowed` 列表中的键（未知键策略，§3.1）。
+        /// 拒绝任何不在 `allowed` 列表中的键（未知键策略，多通道同步模块设计.md §3.1）。
         void rejectUnknownKeys(const JsonObject& obj, std::initializer_list<const char*> allowed);
 
         /// 要求键存在且非 null。

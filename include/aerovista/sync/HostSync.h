@@ -124,9 +124,9 @@ namespace aerovista::sync
         /// 业务/测试在需要处理 IG 上报时调用（Host 收包为 push 模式，无独立帧循环）。
         void drainIncoming();
 
-        /// 注册某类 IG→Host 报文的到达回调：报文解包捕获时同步多播投递（§8.1）。
+        /// 注册某类 IG→Host 报文的到达回调：报文解包捕获时同步多播投递（状态同步设计初版.md §8.1）。
         /// 同一类型可注册多个回调（多播，对齐 CCL EventList 多 processor）；捕获时同步调用，
-        /// 回调只做轻量翻译/入队/置标志（§8.1）；回调体捕获对象须存活至 sync 会话结束。
+        /// 回调可同步做翻译/合成；回调体捕获对象须存活至 sync 会话结束。
         /// 可在任何时机调用（先于收包）：内部确保会话已创建。
         template <typename PacketT>
         void addCallback(std::function<void(const PacketT&)> callback)

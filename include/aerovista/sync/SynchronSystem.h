@@ -10,12 +10,9 @@
 namespace aerovista::sync
 {
     /// IG 侧同步收发端点：持有 IgSync，负责收包解包 + 帧级维护 + 连接状态查询。
-    ///
-    /// 职责边界（2026-09 重构）：本类只做「数据收发 + 同步状态」，不承担眼点业务。
-    /// Host 眼点的 offset 合成在 Engine `CameraDriver`（`engine/source/function/driver/`）。
-    /// 本类经 preFrame 收包后，业务回调（Engine::registerIgCallbacks 转发到
-    /// CameraDriver::onOwnshipEyePose）完成眼点翻译。公开接口零 vsg。Host 采样/扇出不在本类，
-    /// 由独立 viewhost 进程（HostDriver）完成。
+    /// 不承担眼点业务。本仓库里：offset 合成在 Engine `CameraDriver`
+    /// （`Engine::registerIgCallbacks` → `CameraDriver::onOwnshipEyePose`）；写相机在
+    /// `Engine::applyLastHostEye`。公开接口零 vsg。Host 采样/扇出由 viewhost `HostDriver` 完成。
     class SynchronSystem
     {
     public:
@@ -27,17 +24,15 @@ namespace aerovista::sync
         static std::unique_ptr<SynchronSystem> create();
 
         // ---- 生命周期 ----
-        /// 初始化 IG 收发端点：`igConfig` 非空则按它启动 IgSync 并连接，空则不启 IG（关闭同步）；
-        /// `syncSystem` 提供 channelId / requireConnectedIg（offsetDeg 已上移 Engine CameraDriver，
-        /// 本类不再消费）。igConfig 非空才启 IG。
+        /// 初始化 IG 收发端点：`igConfig` 非空则启动 IgSync 并连接，空则不启 IG。
+        /// `requireConnectedIg` 控制 connect 失败是否拒绝；`channelId` 仅存储（当前无运行期消费）；
+        /// `offsetDeg` 由 Engine `CameraDriver` 消费，本类不读。眼点订阅由 Engine 在本函数返回后注册。
         bool initialize(const std::optional<IgConfig>& igConfig, const SyncSystemConfig& syncSystem);
         void shutdown();
 
         // ---- 帧循环（engine tickOnFrame 每帧驱动）----
-        /// 帧前收包：IgSync::drainIncoming 收包解包 + IgSync::update 帧级维护。
-        /// 眼点原始报文经 UDP 通用捕获多播投递，由业务回调（Engine::registerIgCallbacks 转发到
-        /// CameraDriver::onOwnshipEyePose）翻译；本类不再做眼点决策。每帧调用一次，随后由
-        /// Engine::applyLastHostEye 写相机。
+        /// 帧前：`IgSync::drainIncoming` 收包解包 + `IgSync::update` 帧级维护。
+        /// 解包时业务回调同步翻译/合成眼点；返回后由 `Engine::applyLastHostEye` 写相机。
         void preFrame();
 
         // ---- 状态观测 / 运维 ----

@@ -30,8 +30,8 @@ namespace aerovista::sync
         UdpSocket& operator=(const UdpSocket&) = delete;
 
         /// 创建发送 + 接收 socket，并把接收 socket 绑定到 `rcvPort`（非阻塞）。
-        /// `sndPort` 保留「默认发送端点」语义，供未来默认对端发送使用。
-        /// 失败时关闭全部并返回 false。
+        /// 发送 socket 不绑定：`sndPort` 写入 `_sendPort` 但当前不用于 bind/send；
+        /// 发送一律走 `sendTo` 显式目标（源端口由 OS 分配）。失败时关闭全部并返回 false。
         bool initialize(int sndPort, int rcvPort, std::string* outError = nullptr);
         void close();
         bool valid() const { return _valid; }

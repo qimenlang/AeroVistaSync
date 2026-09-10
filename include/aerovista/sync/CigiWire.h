@@ -54,8 +54,8 @@ namespace aerovista::sync
         std::uint64_t eyePoseRejectedByRange();
 
         /// 把 ownship 眼点（EntityPositionCtrlV4）组装进 omsg（IGCtrl 已由 outMsgWithIgCtrlUdp() 自动前置）。
-        /// 恒为 Detach + LLA + ParentID=0（同步层只支持 LLA，2026-09 收敛）。
-        /// 业务侧（矛盾 A + IGCtrl 自动填充）用 host.outMsgWithIgCtrlUdp() 拿到 omsg 后调本函数追加眼点，再 flushUdp()。
+        /// 恒为 Detach + LLA + ParentID=0（同步层只支持 LLA）。
+        /// 调用顺序：`host.outMsgWithIgCtrlUdp()` 拿到已前置 IGCtrl 的 omsg → 本函数追加眼点 → `flushUdp()`。
         /// LLA 越界丢弃逻辑在内（eyePoseRejectedByRange 计数）。eye 为空则只发 IGCtrl（无眼点帧）。
         void appendEye(CigiOutgoingMsg& omsg, const EyePose* eye);
 

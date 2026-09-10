@@ -131,7 +131,7 @@ void CViewHostDlg::OnTimer(UINT_PTR nIDEvent)
     }
 
     _driver.update(&_eye);
-    _driver.pollIncoming(); // Host push 收包：drain 并解包 IG→Host 报文，触发订阅回调（§8.1）。
+    _driver.pollIncoming(); // Host push 收包：drain 并解包 IG→Host 报文，触发订阅回调（状态同步设计初版.md §8.1）。
     updateStatusText();
 }
 

@@ -1,7 +1,7 @@
 ﻿# aerovistaSync
 
 多通道同步模块独立库（Host/IG 双端，CIGI V4 数据面 + TCP/UDP 双链路）。
-设计基线见 `doc/design/sync模块化设计.md`；协议与行为见 `doc/design/多通道同步模块设计.md`。
+设计基线见 `doc/design/多通道同步/sync模块化设计.md`；协议与行为见 `doc/design/多通道同步/多通道同步模块设计.md`。
 
 ## 接入方式
 

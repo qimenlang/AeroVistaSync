@@ -30,10 +30,10 @@ namespace aerovista::sync
 
     void IgSync::registerUdpProcessors(CigiIGSession& session)
     {
-        // 数据面（UDP）：IGCtrl / ownship 眼点 + 持续/每帧控制类（cigi梳理.md 链路矩阵）。
+        // 数据面（UDP）：IGCtrl + EntityPositionCtrl（ownship）+ 持续/每帧控制类（cigi梳理.md 链路矩阵）。
         session.GetIncomingMsgMgr().RegisterEventProcessor(CIGI_IG_CTRL_PACKET_ID_V4, &_igCtrlProc);
-        // 眼点与命令实体摆放同 PacketID（CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4）：UDP/TCP 各注册
-        // 一个通用捕获，addCallback<CigiEntityPositionCtrlV4> 多播命中两条链路（§4.1 / §8.1）。
+        // 与 TCP `_entityPoseProc` 同 PacketID：UDP/TCP 各一个通用捕获，
+        // addCallback<CigiEntityPositionCtrlV4> 多播命中两条链路（状态同步设计初版.md §4.1 / §8.1）。
         registerCapture(session, CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4, &_eyeProc);
 
         registerCapture(session, CIGI_CONF_CLAMP_ENTITY_CTRL_PACKET_ID_V4, &_confClampProc);
@@ -45,8 +45,7 @@ namespace aerovista::sync
     void IgSync::registerTcpProcessors(CigiIGSession& session)
     {
         // 命令面（TCP）：一次性 / 配置 / 请求 / 符号类（cigi梳理.md 链路矩阵）。
-        // 命令实体摆放（EntityPositionCtrlV4, EntityID≠0）：命令面一次性摆放，注册于 TCP；
-        // ownship 眼点（EntityID==0）由 UDP 侧 _eyeProc 处理，业务回调按 EntityID 分流（§4.1）。
+        // EntityPositionCtrlV4（EntityID≠0）注册于此；ownship（EntityID==0）走 UDP `_eyeProc`。
         registerCapture(session, CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4, &_entityPoseProc);
         registerCapture(session, CIGI_COLL_DET_VOL_DEF_PACKET_ID_V4, &_collDetVolDefProc);
         registerCapture(session, CIGI_ENTITY_CTRL_PACKET_ID_V4, &_entityCtrlProc);
@@ -333,7 +332,7 @@ namespace aerovista::sync
 
     void IgSync::processIncomingFrame(const unsigned char* buf, int n)
     {
-        // TCP 命令面报文经 _tcpSession 解包（§5.1 双 session）：碰撞检测定义 + 业务 processor。
+        // TCP 命令面报文经 _tcpSession 解包（状态同步设计初版.md §5.1 双 session）：通用捕获 + 业务 processor。
         ensureTcpSession();
         try
         {
@@ -348,10 +347,9 @@ namespace aerovista::sync
     void IgSync::processIncomingUdp(const unsigned char* buf, int n, std::uint64_t receivedAtUs,
                                     bool sendSof)
     {
-        // 数据面 + 命令面 UDP 报文统一经 _udpSession 解包（矛盾 A + 双 session，§5.1/§8.2）：
-        //   基础设施 processor —— IGCtrl（帧号/时间戳）、ownship 眼点（EntityID==0）
-        //   业务 processor（engine 注册）—— 命令实体（EntityID!=0）、SymbolTextDefV4
-        // 眼点（EntityID==0）也会触发业务 processor，业务侧须按 EntityID==0 过滤（§4.1）。
+        // UDP 报文经 _udpSession 解包（状态同步设计初版.md §5.1 双 session）：
+        //   IgCtrlCaptureProc —— 帧号/时间戳（本函数随后消费并回 SOF）
+        //   PacketCaptureProc —— 含 EntityPositionCtrlV4；订阅回调同步翻译/合成（Engine 按 EntityID 分流）
         ensureUdpSession();
         _igCtrlProc.reset();
         try
@@ -569,7 +567,7 @@ namespace aerovista::sync
                 _tcpPayloadQueue.push_back(std::move(f));
             });
         }
-        // recv PEER_CLOSED/错误退出 = Host 断开（TCP 存活检测并入命令读循环线程，状态同步设计.md §3.3）。
+        // recv PEER_CLOSED/错误退出 = Host 断开（TCP 存活检测并入命令读循环，状态同步设计初版.md §5.1）。
         // 主动 shutdown（_cmdThreadRunning 被置 false）时跳过——shutdown 已处理连接状态。
         if (_cmdThreadRunning.load())
             markDisconnected();
@@ -577,7 +575,7 @@ namespace aerovista::sync
 
     void IgSync::registerEventProcessor(int packetId, CigiBaseEventProcessor* processor)
     {
-        // 业务 processor 两个链路都注册（§8.1）：Host 可能经 TCP 或 UDP 下发命令。
+        // 业务 processor 两个链路都注册（状态同步设计初版.md §8.1）：Host 可能经 TCP 或 UDP 下发命令。
         ensureTcpSession();
         ensureUdpSession();
         _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);

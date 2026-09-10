@@ -25,7 +25,8 @@ namespace aerovista::sync
     {
         namespace
         {
-        // CCL 非线程安全；Host udpLoop 与引擎线程都会触碰它。
+        // CCL 非线程安全；packHostFrame / unpack* / packSof 共用内部 CigiSession，用这把锁串行化。
+        // appendEye 追加到调用方已有的 omsg，不经过本锁。
         std::mutex gCigiMutex;
         std::uint64_t gEyePoseRejectedByRange = 0;
 
