@@ -303,8 +303,8 @@ namespace aerovista::sync
         //（PacketCaptureProc<CigiCollDetVolDefV4>，见下方成员 + registerTcpProcessors）。
         IgCtrlCaptureProc _igCtrlProc;
         // 数据面（UDP）EntityPositionCtrlV4 通用捕获（§4.1）：ownship 眼点（EntityID==0）
-        // 与命令实体（EntityID≠0）同 PacketID 双链路各注册一个通用捕获，业务回调按
-        // EntityID 分流（Engine::onEntityPositionCtrl）；翻译/过滤统一在订阅回调内完成。
+        // 与命令实体（EntityID≠0）同 PacketID 双链路各注册一个通用捕获，业务侧两个订阅回调
+        // 各按 EntityID 卫语句过滤（CameraDriver::onOwnshipEyePose / Engine::onEntityPose）；翻译/过滤统一在订阅回调内完成。
         PacketCaptureProc<CigiEntityPositionCtrlV4> _eyeProc;
 
         // Host→IG 持续/每帧类（UDP 数据面，cigi梳理.md §1/§2/§3 链路矩阵）。
