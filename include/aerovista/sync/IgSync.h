@@ -74,7 +74,7 @@ namespace aerovista::sync
     class IgSync
     {
     public:
-        // ===== 对外业务面（消费方：SynchronSystem / engine）=====
+        // ===== 门面 =====
 
         IgSync() = default;
         ~IgSync();
@@ -176,7 +176,7 @@ namespace aerovista::sync
         }
         void flushUdp();
 
-        // ===== 测试注入 / 观测辅助（当前仅测试消费）=====
+        // ===== 测试接口 =====
 
         // ---- 时钟同步注入（SyncClockTests 直调）----
         /// 测试 / 注入：入队一个 Host 时间戳（如同本帧收到）。

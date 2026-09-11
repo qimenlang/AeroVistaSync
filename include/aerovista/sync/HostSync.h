@@ -47,7 +47,7 @@ namespace aerovista::sync
     class HostSync
     {
     public:
-        // ===== 对外业务面（消费方：viewhost / 测试）=====
+        // ===== 门面 =====
 
         HostSync() = default;
         ~HostSync();
@@ -140,7 +140,7 @@ namespace aerovista::sync
             }
         }
 
-        // ===== 测试注入 / 观测辅助（当前仅测试消费）=====
+        // ===== 测试接口 =====
 
         const HostConfig& addressConfig() const { return _local; }
 

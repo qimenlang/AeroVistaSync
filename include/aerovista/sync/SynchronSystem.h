@@ -17,7 +17,7 @@ namespace aerovista::sync
     class SynchronSystem
     {
     public:
-        // ===== 对外业务面（消费方：engine）=====
+        // ===== 门面 =====
 
         SynchronSystem();
         ~SynchronSystem();
@@ -46,7 +46,7 @@ namespace aerovista::sync
         /// 本地 IgConfig；调用方须先 `hasIg()`。
         const IgConfig& addressConfig() const;
 
-        // ---- 内部组件访问（测试与上行探测 PacketProbeHandler）----
+        // ===== 测试接口 =====
         IgSync& igSync();
 
     private:
