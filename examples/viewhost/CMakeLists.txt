@@ -56,6 +56,6 @@ add_custom_command(TARGET aerovistaViewHost POST_BUILD
         ${CMAKE_CURRENT_SOURCE_DIR}/resources/viewhost.json
         $<TARGET_FILE_DIR:aerovistaViewHost>/viewhost.json
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/engine/resources/config/entities.json
+        ${CMAKE_CURRENT_SOURCE_DIR}/resources/entities.json
         $<TARGET_FILE_DIR:aerovistaViewHost>/entities.json
 )
