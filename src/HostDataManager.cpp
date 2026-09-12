@@ -1,4 +1,4 @@
-#include <aerovista/sync/HostDataManager.h>
+﻿#include <aerovista/sync/HostDataManager.h>
 #include <aerovista/sync/SyncJson.h>
 
 #include <array>
@@ -15,12 +15,13 @@ namespace aerovista::sync
         using sync_json::find;
         using sync_json::JsonArray;
         using sync_json::JsonObject;
-        using sync_json::JsonParser;
         using sync_json::JsonValue;
+        using sync_json::parseJsonText;
         using sync_json::rejectNull;
         using sync_json::rejectUnknownKeys;
         using sync_json::requireInt;
         using sync_json::requireNumber;
+        using sync_json::requireObject;
         using sync_json::requireObjectValue;
         using sync_json::requireString;
         using sync_json::requireValue;
@@ -39,30 +40,24 @@ namespace aerovista::sync
 
             std::ostringstream oss;
             oss << in.rdbuf();
-            std::string text = oss.str();
-            if (text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xEF &&
-                static_cast<unsigned char>(text[1]) == 0xBB && static_cast<unsigned char>(text[2]) == 0xBF)
-            {
-                text.erase(0, 3);
-            }
-            return text;
+            return oss.str();
         }
 
         std::array<double, 3> requireNumberTriple(const JsonObject& obj, const char* key)
         {
             const JsonValue& v = requireValue(obj, key);
-            if (!v.isArray())
+            if (!v.is_array())
                 throw std::runtime_error(std::string("missing/invalid array: ") + key);
-            const JsonArray& arr = v.asArray();
+            const JsonArray& arr = v;
             if (arr.size() != 3)
                 throw std::runtime_error(std::string("array length must be 3: ") + key);
 
             std::array<double, 3> out{};
             for (std::size_t i = 0; i < 3; ++i)
             {
-                if (!arr[i].isNumber())
+                if (!arr[i].is_number())
                     throw std::runtime_error(std::string("array elements must be numbers: ") + key);
-                out[i] = arr[i].asNumber();
+                out[i] = arr[i].get<double>();
             }
             return out;
         }
@@ -90,12 +85,12 @@ namespace aerovista::sync
             if (!poseValue)
                 return;
 
-            const JsonObject& poseObj = requireObjectValue(*poseValue, "pose");
+            const JsonObject& poseObj = requireObject(*poseValue, "pose");
             rejectUnknownKeys(poseObj, {"local", "ellipsoid"});
             if (const JsonValue* local = find(poseObj, "local"))
-                requireObjectValue(*local, "local");
+                requireObject(*local, "local");
             if (const JsonValue* ellipsoid = find(poseObj, "ellipsoid"))
-                row.pose = parseEllipsoidPose(requireObjectValue(*ellipsoid, "ellipsoid"));
+                row.pose = parseEllipsoidPose(requireObject(*ellipsoid, "ellipsoid"));
         }
 
         EntityAuthorityState parseInitialState(const JsonObject& obj)
@@ -104,9 +99,9 @@ namespace aerovista::sync
             if (!v)
                 return EntityAuthorityState::ACTIVE;
             rejectNull(*v, "initialEntityState");
-            if (!v->isString())
+            if (!v->is_string())
                 throw std::runtime_error("missing/invalid string: initialEntityState");
-            const std::string s = v->asString();
+            const std::string s = v->get<std::string>();
             if (s == "Active")
                 return EntityAuthorityState::ACTIVE;
             if (s == "Standby")
@@ -120,9 +115,9 @@ namespace aerovista::sync
             if (!v)
                 return fallback;
             rejectNull(*v, "name");
-            if (!v->isString())
+            if (!v->is_string())
                 throw std::runtime_error("missing/invalid string: name");
-            return v->asString();
+            return v->get<std::string>();
         }
 
         EntityAuthorityRow parseEntityRow(const JsonObject& obj)
@@ -148,9 +143,9 @@ namespace aerovista::sync
         std::vector<EntityAuthorityRow> parseEntitiesArray(const JsonValue& value)
         {
             rejectNull(value, "entities");
-            if (!value.isArray())
+            if (!value.is_array())
                 throw std::runtime_error("entities must be an array");
-            const JsonArray& arr = value.asArray();
+            const JsonArray& arr = value;
             if (arr.empty())
                 throw std::runtime_error("entities must not be empty");
 
@@ -159,7 +154,7 @@ namespace aerovista::sync
             std::unordered_set<int> seenIds;
             for (const JsonValue& item : arr)
             {
-                const EntityAuthorityRow row = parseEntityRow(requireObjectValue(item, "entities[]"));
+                const EntityAuthorityRow row = parseEntityRow(requireObject(item, "entities[]"));
                 if (!seenIds.insert(row.entityId).second)
                     throw std::runtime_error("duplicate entity id");
                 rows.push_back(row);
@@ -169,12 +164,11 @@ namespace aerovista::sync
 
         std::vector<EntityAuthorityRow> parseCatalogFile(const std::string& path)
         {
-            JsonParser parser(readTextFile(path));
-            const JsonValue rootValue = parser.parse();
-            if (!rootValue.isObject())
+            const JsonValue rootValue = parseJsonText(readTextFile(path));
+            if (!rootValue.is_object())
                 throw std::runtime_error("entities file root must be a JSON object");
 
-            const JsonObject& root = rootValue.asObject();
+            const JsonObject& root = rootValue;
             rejectUnknownKeys(root, {"entities"});
             const JsonValue* entitiesValue = find(root, "entities");
             if (!entitiesValue)
