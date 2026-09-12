@@ -1,5 +1,5 @@
-﻿#include <aerovista/sync/HostDataManager.h>
-#include <aerovista/sync/SyncJson.h>
+﻿#include <aerovista/config/ConfigJson.h>
+#include <aerovista/sync/HostDataManager.h>
 
 #include <array>
 #include <fstream>
@@ -12,19 +12,17 @@ namespace aerovista::sync
 {
     namespace
     {
-        using sync_json::find;
-        using sync_json::JsonArray;
-        using sync_json::JsonObject;
-        using sync_json::JsonValue;
-        using sync_json::parseJsonText;
-        using sync_json::rejectNull;
-        using sync_json::rejectUnknownKeys;
-        using sync_json::requireInt;
-        using sync_json::requireNumber;
-        using sync_json::requireObject;
-        using sync_json::requireObjectValue;
-        using sync_json::requireString;
-        using sync_json::requireValue;
+        using Json = nlohmann::json;
+        using aerovista::config::find;
+        using aerovista::config::parseJsonText;
+        using aerovista::config::rejectNull;
+        using aerovista::config::rejectUnknownKeys;
+        using aerovista::config::requireInt;
+        using aerovista::config::requireNumber;
+        using aerovista::config::requireObject;
+        using aerovista::config::requireObjectValue;
+        using aerovista::config::requireString;
+        using aerovista::config::requireValue;
 
         std::string basenameOfModel(const std::string& modelPath)
         {
@@ -43,12 +41,12 @@ namespace aerovista::sync
             return oss.str();
         }
 
-        std::array<double, 3> requireNumberTriple(const JsonObject& obj, const char* key)
+        std::array<double, 3> requireNumberTriple(const Json& obj, const char* key)
         {
-            const JsonValue& v = requireValue(obj, key);
+            const Json& v = requireValue(obj, key);
             if (!v.is_array())
                 throw std::runtime_error(std::string("missing/invalid array: ") + key);
-            const JsonArray& arr = v;
+            const Json& arr = v;
             if (arr.size() != 3)
                 throw std::runtime_error(std::string("array length must be 3: ") + key);
 
@@ -62,10 +60,10 @@ namespace aerovista::sync
             return out;
         }
 
-        EntityAuthorityPose parseEllipsoidPose(const JsonObject& obj)
+        EntityAuthorityPose parseEllipsoidPose(const Json& obj)
         {
             rejectUnknownKeys(obj, {"lla", "eulerYprDeg"});
-            const JsonObject& lla = requireObjectValue(obj, "lla");
+            const Json& lla = requireObjectValue(obj, "lla");
             rejectUnknownKeys(lla, {"lat", "lon", "alt"});
 
             EntityAuthorityPose pose;
@@ -79,23 +77,23 @@ namespace aerovista::sync
             return pose;
         }
 
-        void applyCatalogPose(const JsonObject& entityObj, EntityAuthorityRow& row)
+        void applyCatalogPose(const Json& entityObj, EntityAuthorityRow& row)
         {
-            const JsonValue* poseValue = find(entityObj, "pose");
+            const Json* poseValue = find(entityObj, "pose");
             if (!poseValue)
                 return;
 
-            const JsonObject& poseObj = requireObject(*poseValue, "pose");
+            const Json& poseObj = requireObject(*poseValue, "pose");
             rejectUnknownKeys(poseObj, {"local", "ellipsoid"});
-            if (const JsonValue* local = find(poseObj, "local"))
+            if (const Json* local = find(poseObj, "local"))
                 requireObject(*local, "local");
-            if (const JsonValue* ellipsoid = find(poseObj, "ellipsoid"))
+            if (const Json* ellipsoid = find(poseObj, "ellipsoid"))
                 row.pose = parseEllipsoidPose(requireObject(*ellipsoid, "ellipsoid"));
         }
 
-        EntityAuthorityState parseInitialState(const JsonObject& obj)
+        EntityAuthorityState parseInitialState(const Json& obj)
         {
-            const JsonValue* v = find(obj, "initialEntityState");
+            const Json* v = find(obj, "initialEntityState");
             if (!v)
                 return EntityAuthorityState::ACTIVE;
             rejectNull(*v, "initialEntityState");
@@ -109,9 +107,9 @@ namespace aerovista::sync
             throw std::runtime_error("invalid initialEntityState (only \"Active\" or \"Standby\"): " + s);
         }
 
-        std::string parseOptionalName(const JsonObject& obj, const std::string& fallback)
+        std::string parseOptionalName(const Json& obj, const std::string& fallback)
         {
-            const JsonValue* v = find(obj, "name");
+            const Json* v = find(obj, "name");
             if (!v)
                 return fallback;
             rejectNull(*v, "name");
@@ -120,7 +118,7 @@ namespace aerovista::sync
             return v->get<std::string>();
         }
 
-        EntityAuthorityRow parseEntityRow(const JsonObject& obj)
+        EntityAuthorityRow parseEntityRow(const Json& obj)
         {
             rejectUnknownKeys(obj, {"id", "name", "model", "initialEntityState", "pose"});
 
@@ -140,19 +138,19 @@ namespace aerovista::sync
             return row;
         }
 
-        std::vector<EntityAuthorityRow> parseEntitiesArray(const JsonValue& value)
+        std::vector<EntityAuthorityRow> parseEntitiesArray(const Json& value)
         {
             rejectNull(value, "entities");
             if (!value.is_array())
                 throw std::runtime_error("entities must be an array");
-            const JsonArray& arr = value;
+            const Json& arr = value;
             if (arr.empty())
                 throw std::runtime_error("entities must not be empty");
 
             std::vector<EntityAuthorityRow> rows;
             rows.reserve(arr.size());
             std::unordered_set<int> seenIds;
-            for (const JsonValue& item : arr)
+            for (const Json& item : arr)
             {
                 const EntityAuthorityRow row = parseEntityRow(requireObject(item, "entities[]"));
                 if (!seenIds.insert(row.entityId).second)
@@ -164,13 +162,13 @@ namespace aerovista::sync
 
         std::vector<EntityAuthorityRow> parseCatalogFile(const std::string& path)
         {
-            const JsonValue rootValue = parseJsonText(readTextFile(path));
+            const Json rootValue = parseJsonText(readTextFile(path));
             if (!rootValue.is_object())
                 throw std::runtime_error("entities file root must be a JSON object");
 
-            const JsonObject& root = rootValue;
+            const Json& root = rootValue;
             rejectUnknownKeys(root, {"entities"});
-            const JsonValue* entitiesValue = find(root, "entities");
+            const Json* entitiesValue = find(root, "entities");
             if (!entitiesValue)
                 throw std::runtime_error("missing key: entities");
             return parseEntitiesArray(*entitiesValue);

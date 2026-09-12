@@ -10,8 +10,9 @@
 ### 1. add_subdirectory（submodule / 工程内）
 
 ```cmake
-# 依赖 target 需先提供：nlohmann_json、cigicl-static（或 cigicl::cigicl）、ws2_32
+# 依赖 target 需先提供：AeroVistaConfig、cigicl-static（或 cigicl::cigicl）、ws2_32
 add_subdirectory(thirdparty/nlohmannJson)
+add_subdirectory(thirdparty/config)
 add_subdirectory(thirdparty/sync)
 target_link_libraries(your_target PRIVATE aerovistaSync)
 ```
@@ -23,7 +24,7 @@ find_package(aerovistaSync REQUIRED)
 target_link_libraries(your_target PRIVATE aerovista::aerovistaSync)
 ```
 
-> 依赖：cigi CCL（`cigicl-static` 或 `cigicl::cigicl`）、nlohmann/json、Windows `ws2_32`。不依赖 vsg。
+> 依赖：cigi CCL（`cigicl-static` 或 `cigicl::cigicl`）、`AeroVistaConfig`（其再依赖 nlohmann/json）、Windows `ws2_32`。不依赖 vsg。
 
 ## 命名空间
 

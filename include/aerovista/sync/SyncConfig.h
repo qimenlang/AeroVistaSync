@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include <aerovista/sync/SyncJson.h>
+#include <nlohmann/json_fwd.hpp>
 
 #include <cstdint>
 #include <string>
@@ -63,8 +63,8 @@ namespace aerovista::sync
     bool loadIgConfig(const std::string& path, IgConfig& out, std::string* error = nullptr);
 
     /// 从已解析的 JSON 对象解析 `hostConfig` 块（与引擎侧共用）。
-    HostConfig parseHostConfig(const sync_json::JsonObject& obj);
+    HostConfig parseHostConfig(const nlohmann::json& obj);
 
     /// 从已解析的 JSON 对象解析 `igConfig` 块（与引擎侧共用）。
-    IgConfig parseIgConfig(const sync_json::JsonObject& obj);
+    IgConfig parseIgConfig(const nlohmann::json& obj);
 } // namespace aerovista::sync

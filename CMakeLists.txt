@@ -20,15 +20,15 @@ elseif(TARGET cigicl::cigicl)
     set(AEROVISTA_SYNC_CIGI_TARGET cigicl::cigicl)
 endif()
 
-# nlohmann_json：本工程由 thirdparty/nlohmannJson 提供；独立 repo 用 find_package。
-if(NOT TARGET nlohmann_json AND NOT TARGET nlohmann_json::nlohmann_json)
-    find_package(nlohmann_json REQUIRED)
+# AeroVistaConfig：本工程由 thirdparty/config 提供；独立 repo 用 find_package。
+if(NOT TARGET AeroVistaConfig AND NOT TARGET aerovista::config)
+    find_package(AeroVistaConfig REQUIRED)
 endif()
 
-if(TARGET nlohmann_json::nlohmann_json)
-    set(AEROVISTA_SYNC_JSON_TARGET nlohmann_json::nlohmann_json)
-elseif(TARGET nlohmann_json)
-    set(AEROVISTA_SYNC_JSON_TARGET nlohmann_json)
+if(TARGET aerovista::config)
+    set(AEROVISTA_SYNC_CONFIG_TARGET aerovista::config)
+elseif(TARGET AeroVistaConfig)
+    set(AEROVISTA_SYNC_CONFIG_TARGET AeroVistaConfig)
 endif()
 
 # 头文件源（供 IDE / install 引用）
@@ -40,7 +40,6 @@ set(AEROVISTA_SYNC_PUBLIC_HEADERS
     include/aerovista/sync/HostSync.h
     include/aerovista/sync/IgSync.h
     include/aerovista/sync/SyncConfig.h
-    include/aerovista/sync/SyncJson.h
     include/aerovista/sync/SyncProtocol.h
     include/aerovista/sync/SynchronSystem.h
     include/aerovista/sync/TcpSocket.h
@@ -56,7 +55,6 @@ add_library(aerovistaSync STATIC
     src/IgSync.cpp
     src/SocketCommon.cpp
     src/SyncConfig.cpp
-    src/SyncJson.cpp
     src/SynchronSystem.cpp
     src/TcpSocket.cpp
     src/UdpSocket.cpp
@@ -70,7 +68,7 @@ target_include_directories(aerovistaSync PUBLIC
 target_link_libraries(aerovistaSync
     PUBLIC
         ${AEROVISTA_SYNC_CIGI_TARGET}
-        ${AEROVISTA_SYNC_JSON_TARGET}
+        ${AEROVISTA_SYNC_CONFIG_TARGET}
         ws2_32
 )
 

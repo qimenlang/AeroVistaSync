@@ -1,5 +1,5 @@
-﻿#include <aerovista/sync/SyncConfig.h>
-#include <aerovista/sync/SyncJson.h>
+﻿#include <aerovista/config/ConfigJson.h>
+#include <aerovista/sync/SyncConfig.h>
 
 #include <fstream>
 #include <sstream>
@@ -7,33 +7,33 @@
 
 namespace aerovista::sync
 {
-    HostConfig parseHostConfig(const sync_json::JsonObject& obj)
+    HostConfig parseHostConfig(const nlohmann::json& obj)
     {
-        sync_json::rejectUnknownKeys(obj, {"udpPortSend", "udpPortRecv", "tcpPort"});
+        config::rejectUnknownKeys(obj, {"udpPortSend", "udpPortRecv", "tcpPort"});
         HostConfig cfg;
-        cfg.udpPortSend = sync_json::requireInt(obj, "udpPortSend");
-        cfg.udpPortRecv = sync_json::requireInt(obj, "udpPortRecv");
-        cfg.tcpPort = sync_json::requireInt(obj, "tcpPort");
+        cfg.udpPortSend = config::requireInt(obj, "udpPortSend");
+        cfg.udpPortRecv = config::requireInt(obj, "udpPortRecv");
+        cfg.tcpPort = config::requireInt(obj, "tcpPort");
         return cfg;
     }
 
-    IgConfig parseIgConfig(const sync_json::JsonObject& obj)
+    IgConfig parseIgConfig(const nlohmann::json& obj)
     {
-        sync_json::rejectUnknownKeys(obj, {"udpPortSend", "udpPortRecv", "targetAddr", "targetTcpPort",
-                                           "targetUdpPortRecv"});
+        config::rejectUnknownKeys(obj, {"udpPortSend", "udpPortRecv", "targetAddr", "targetTcpPort",
+                                        "targetUdpPortRecv"});
         IgConfig cfg;
-        cfg.udpPortSend = sync_json::requireInt(obj, "udpPortSend");
-        cfg.udpPortRecv = sync_json::requireInt(obj, "udpPortRecv");
-        cfg.targetAddr = sync_json::requireString(obj, "targetAddr");
-        cfg.targetTcpPort = sync_json::requireInt(obj, "targetTcpPort");
-        cfg.targetUdpPortRecv = sync_json::requireInt(obj, "targetUdpPortRecv");
+        cfg.udpPortSend = config::requireInt(obj, "udpPortSend");
+        cfg.udpPortRecv = config::requireInt(obj, "udpPortRecv");
+        cfg.targetAddr = config::requireString(obj, "targetAddr");
+        cfg.targetTcpPort = config::requireInt(obj, "targetTcpPort");
+        cfg.targetUdpPortRecv = config::requireInt(obj, "targetUdpPortRecv");
         return cfg;
     }
 
     namespace
     {
         /// 读文件 + 解析根对象；失败返回 false 并写 error。
-        bool parseRootObject(const std::string& path, sync_json::JsonObject& root, std::string* error)
+        bool parseRootObject(const std::string& path, nlohmann::json& root, std::string* error)
         {
             try
             {
@@ -47,7 +47,7 @@ namespace aerovista::sync
 
                 std::ostringstream oss;
                 oss << in.rdbuf();
-                root = sync_json::parseJsonText(oss.str());
+                root = config::parseJsonText(oss.str());
                 if (!root.is_object())
                     throw std::runtime_error("root must be a JSON object");
                 return true;
@@ -63,13 +63,13 @@ namespace aerovista::sync
 
     bool loadHostConfig(const std::string& path, HostConfig& out, std::string* error)
     {
-        sync_json::JsonObject root;
+        nlohmann::json root;
         if (!parseRootObject(path, root, error))
             return false;
         try
         {
-            sync_json::rejectUnknownKeys(root, {"hostConfig"});
-            out = parseHostConfig(sync_json::requireObjectValue(root, "hostConfig"));
+            config::rejectUnknownKeys(root, {"hostConfig"});
+            out = parseHostConfig(config::requireObjectValue(root, "hostConfig"));
             return true;
         }
         catch (const std::exception& e)
@@ -82,13 +82,13 @@ namespace aerovista::sync
 
     bool loadIgConfig(const std::string& path, IgConfig& out, std::string* error)
     {
-        sync_json::JsonObject root;
+        nlohmann::json root;
         if (!parseRootObject(path, root, error))
             return false;
         try
         {
-            sync_json::rejectUnknownKeys(root, {"igConfig"});
-            out = parseIgConfig(sync_json::requireObjectValue(root, "igConfig"));
+            config::rejectUnknownKeys(root, {"igConfig"});
+            out = parseIgConfig(config::requireObjectValue(root, "igConfig"));
             return true;
         }
         catch (const std::exception& e)
