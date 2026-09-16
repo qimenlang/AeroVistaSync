@@ -106,7 +106,6 @@ namespace aerovista::sync
 
     std::uint32_t HostSync::sofReceivedCount() const
     {
-        const_cast<HostSync*>(this)->drainIncoming();
         return _sofProc.count.load();
     }
 

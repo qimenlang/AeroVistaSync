@@ -2,13 +2,13 @@
 
 #include <cstdint>
 #include <functional>
-#include <optional>
 #include <vector>
 
 class CigiOutgoingMsg;
 
-/// CIGI V4 数据面 Host↔IG 同步的 pack/unpack。
+/// CIGI V4 数据面 Host↔IG 同步的组包辅助。
 /// 握手（HELLO / UDP_SYNC）仍在 sync_proto::WireMsg 上——见 SyncProtocol.h。
+/// Host/IG 收发走 session（outMsgWithIgCtrl* / drainIncoming）；本头不提供旁路 pack/unpack。
 namespace aerovista::sync
 {
     namespace cigi_wire
@@ -23,14 +23,6 @@ namespace aerovista::sync
             double rollDeg = 0.0;
             std::uint16_t entityId = 0;
             std::uint16_t parentId = 0;
-        };
-
-        struct HostFrame
-        {
-            std::uint32_t frameCntr = 0;
-            std::uint32_t timeStamp = 0;
-            bool timeStampValid = false;
-            std::optional<EyePose> eye;
         };
 
         /// 通用 CIGI 分帧器：按 PacketSize 切出完整报文字节并回调（不解析、不解包）。
@@ -59,18 +51,8 @@ namespace aerovista::sync
         /// LLA 越界丢弃逻辑在内（eyePoseRejectedByRange 计数）。eye 为空则只发 IGCtrl（无眼点帧）。
         void appendEye(CigiOutgoingMsg& omsg, const EyePose* eye);
 
-        /// 打包 Host→IG：IGCtrlV4 [+ 眼点非空时 EntityPositionCtrlV4]（线格式测试锚定用）。
-        bool packHostFrame(std::uint32_t frameCntr, double simTimeMs, const EyePose* eye,
-                           std::vector<unsigned char>& out);
-
-        /// 打包 IG→Host：SOFV4 回显 FrameCntr。
+        /// 打包 IG→Host：SOFV4 回显 FrameCntr（生产：`IgSync::sendSofPacket`）。
         bool packSof(std::uint32_t frameCntr, std::vector<unsigned char>& out);
-
-        /// 解包 Host→IG 数据报。要求有 IGCtrl；眼点可选。
-        bool unpackHostFrame(const unsigned char* data, int n, HostFrame& out);
-
-        /// 解包 IG→Host SOF 数据报。
-        bool unpackSof(const unsigned char* data, int n, std::uint32_t& frameCntrOut);
 
         /// simTimeMs → CIGI TimeStamp（10 µs 步进）。
         /// 自然回绕：超出 uint32 上限后取模（时钟同步方案.md §3 决策——第一版直接跨 12h 自然回绕，

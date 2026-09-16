@@ -66,6 +66,7 @@ namespace aerovista::sync
         int readyIgCount() const;
         /// 本会话已发送的数据面帧数（outMsgWithIgCtrlUdp 每次自动前置 IGCtrl 递增一次）。
         std::uint32_t igCtrlSentCount() const;
+        /// 本会话已解包的 SOF 数（观测无副作用；调用方须先 drainIncoming）。
         std::uint32_t sofReceivedCount() const;
 
         // ---- 命令面 / 数据面发送（状态同步设计初版.md §7）：引用式发送接口 ----

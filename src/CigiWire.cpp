@@ -4,20 +4,15 @@
 #include <aerovista/sync/SyncProtocol.h>
 
 #include "CigiBaseEntityPositionCtrl.h"
-#include "CigiBaseEventProcessor.h"
-#include "CigiBaseIGCtrl.h"
-#include "CigiBaseSOF.h"
 #include "CigiEntityPositionCtrlV4.h"
-#include "CigiHostSession.h"
-#include "CigiIGCtrlV4.h"
 #include "CigiIGSession.h"
-#include "CigiIncomingMsg.h"
 #include "CigiOutgoingMsg.h"
 #include "CigiSOFV4.h"
 
 #include <cmath>
 #include <cstring>
 #include <mutex>
+#include <optional>
 
 namespace aerovista::sync
 {
@@ -25,13 +20,13 @@ namespace aerovista::sync
     {
         namespace
         {
-        // CCL 非线程安全；packHostFrame / unpack* / packSof 共用内部 CigiSession，用这把锁串行化。
-        // appendEye 追加到调用方已有的 omsg，不经过本锁。
-        std::mutex gCigiMutex;
-        std::uint64_t gEyePoseRejectedByRange = 0;
+            // CCL 非线程安全；packSof 共用内部 CigiSession，用这把锁串行化。
+            // appendEye 追加到调用方已有的 omsg，不经过本锁。
+            std::mutex gCigiMutex;
+            std::uint64_t gEyePoseRejectedByRange = 0;
 
-        /// 归一化经度到 (-180, 180]（lla设计 §5）。
-        double normalizeLonDeg(double lon)
+            /// 归一化经度到 (-180, 180]（lla设计 §5）。
+            double normalizeLonDeg(double lon)
             {
                 double x = std::fmod(lon, 360.0);
                 if (x <= -180.0)
@@ -49,110 +44,16 @@ namespace aerovista::sync
             constexpr int kCigiBufCount = 1;
             constexpr int kCigiBufLen = 4096;
 
-            class CaptureIgCtrlProc : public CigiBaseEventProcessor
+            /// packSof 用的一次性 CCL 会话（生产 `IgSync::sendSofPacket`）。
+            struct CigiRuntime
             {
-            public:
-                void OnPacketReceived(CigiBasePacket* packet) override
+                CigiRuntime() : ig(kCigiBufCount, kCigiBufLen, kCigiBufCount, kCigiBufLen)
                 {
-                    auto* ig = dynamic_cast<CigiIGCtrlV4*>(packet);
-                    if (!ig)
-                        return;
-                    got = true;
-                    frameCntr = ig->GetFrameCntr();
-                    timeStamp = ig->GetTimeStamp();
-                    timeStampValid = ig->GetTimeStampValid();
-                }
-
-                void reset()
-                {
-                    got = false;
-                    frameCntr = 0;
-                    timeStamp = 0;
-                    timeStampValid = false;
-                }
-
-                bool got = false;
-                std::uint32_t frameCntr = 0;
-                std::uint32_t timeStamp = 0;
-                bool timeStampValid = false;
-            };
-
-            class CaptureEntityPosProc : public CigiBaseEventProcessor
-            {
-            public:
-                void OnPacketReceived(CigiBasePacket* packet) override
-                {
-                    auto* ent = dynamic_cast<CigiEntityPositionCtrlV4*>(packet);
-                    if (!ent)
-                        return;
-                    got = true;
-                    eye.entityId = ent->GetEntityID();
-                    eye.parentId = ent->GetParentID();
-                    eye.yawDeg = ent->GetYaw();
-                    eye.pitchDeg = ent->GetPitch();
-                    eye.rollDeg = ent->GetRoll();
-                    // 同步层只支持 LLA：眼点恒为 Detach + LLA（2026-09 收敛）。
-                    eye.x = ent->GetLat();
-                    eye.y = ent->GetLon();
-                    eye.z = ent->GetAlt();
-                }
-
-                void reset()
-                {
-                    got = false;
-                    eye = {};
-                }
-
-                bool got = false;
-                EyePose eye{};
-            };
-
-            class CaptureSofProc : public CigiBaseEventProcessor
-            {
-            public:
-                void OnPacketReceived(CigiBasePacket* packet) override
-                {
-                    auto* sof = dynamic_cast<CigiSOFV4*>(packet);
-                    if (!sof)
-                        return;
-                    got = true;
-                    frameCntr = sof->GetFrameCntr();
-                }
-
-                void reset()
-                {
-                    got = false;
-                    frameCntr = 0;
-                }
-
-                bool got = false;
-                std::uint32_t frameCntr = 0;
-            };
-
-        /// 一次性 CCL 初始化。每次调用创建 Cigi*Session 会重建完整的
-        /// 出/入包处理器表并主导测试运行时间。
-        struct CigiRuntime
-            {
-                CigiRuntime() :
-                    host(kCigiBufCount, kCigiBufLen, kCigiBufCount, kCigiBufLen), ig(kCigiBufCount, kCigiBufLen, kCigiBufCount, kCigiBufLen)
-                {
-                    host.SetCigiVersion(4, 0);
-                    host.SetSynchronous(false);
                     ig.SetCigiVersion(4, 0);
                     ig.SetSynchronous(false);
-
-                    // 处理器比会话存活更久；注册一次（push_back）。
-                    ig.GetIncomingMsgMgr().RegisterEventProcessor(CIGI_IG_CTRL_PACKET_ID_V4, &igCtrlProc);
-                    ig.GetIncomingMsgMgr().RegisterEventProcessor(CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4,
-                                                                  &entityPosProc);
-                    host.GetIncomingMsgMgr().RegisterEventProcessor(CIGI_SOF_PACKET_ID_V4, &sofProc);
                 }
 
-                CigiHostSession host;
                 CigiIGSession ig;
-                CaptureIgCtrlProc igCtrlProc;
-                CaptureEntityPosProc entityPosProc;
-                CaptureSofProc sofProc;
             };
 
             CigiRuntime& runtime()
@@ -203,34 +104,6 @@ namespace aerovista::sync
             omsg << ent;
         }
 
-        bool packHostFrame(std::uint32_t frameCntr, double simTimeMs, const EyePose* eye,
-                           std::vector<unsigned char>& out)
-        {
-            out.clear();
-            std::lock_guard lock(gCigiMutex);
-            CigiRuntime& rt = runtime();
-
-            CigiOutgoingMsg& omsg = rt.host.GetOutgoingMsgMgr();
-            omsg.BeginMsg();
-            CigiIGCtrlV4 igCtrl;
-            igCtrl.SetFrameCntr(frameCntr);
-            igCtrl.SetTimeStamp(simTimeMsToTimeStamp(simTimeMs));
-            igCtrl.SetTimeStampValid(true);
-            omsg << igCtrl;
-            appendEye(omsg, eye);
-
-            Cigi_uint8* buf = nullptr;
-            int len = 0;
-            if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
-            {
-                omsg.FreeMsg();
-                return false;
-            }
-            out.assign(buf, buf + len);
-            omsg.FreeMsg();
-            return !out.empty();
-        }
-
         bool packSof(std::uint32_t frameCntr, std::vector<unsigned char>& out)
         {
             out.clear();
@@ -254,69 +127,6 @@ namespace aerovista::sync
             out.assign(buf, buf + len);
             omsg.FreeMsg();
             return !out.empty();
-        }
-
-        bool unpackHostFrame(const unsigned char* data, int n, HostFrame& outFrame)
-        {
-            outFrame = {};
-            if (data == nullptr || n <= 0 || isAvsyMagic(data, n))
-                return false;
-
-            std::lock_guard lock(gCigiMutex);
-            CigiRuntime& rt = runtime();
-            rt.igCtrlProc.reset();
-            rt.entityPosProc.reset();
-
-            try
-            {
-                rt.ig.GetIncomingMsgMgr().ProcessIncomingMsg(const_cast<unsigned char*>(data), n);
-            }
-            catch (...)
-            {
-                return false;
-            }
-
-            if (!rt.igCtrlProc.got)
-                return false;
-
-            outFrame.frameCntr = rt.igCtrlProc.frameCntr;
-            outFrame.timeStamp = rt.igCtrlProc.timeStamp;
-            outFrame.timeStampValid = rt.igCtrlProc.timeStampValid;
-            if (rt.entityPosProc.got)
-            {
-                EyePose eye = rt.entityPosProc.eye;
-                // LLA 眼点（Detach）带非零 ParentID 非法 —— 丢弃眼点（lla设计 §5）。
-                if (eye.parentId != 0)
-                    ; // leave outFrame.eye empty
-                else
-                    outFrame.eye = eye;
-            }
-            return true;
-        }
-
-        bool unpackSof(const unsigned char* data, int n, std::uint32_t& frameCntrOut)
-        {
-            frameCntrOut = 0;
-            if (data == nullptr || n <= 0 || isAvsyMagic(data, n))
-                return false;
-
-            std::lock_guard lock(gCigiMutex);
-            CigiRuntime& rt = runtime();
-            rt.sofProc.reset();
-
-            try
-            {
-                rt.host.GetIncomingMsgMgr().ProcessIncomingMsg(const_cast<unsigned char*>(data), n);
-            }
-            catch (...)
-            {
-                return false;
-            }
-
-            if (!rt.sofProc.got)
-                return false;
-            frameCntrOut = rt.sofProc.frameCntr;
-            return true;
         }
 
         namespace

@@ -62,14 +62,6 @@
 
 namespace aerovista::sync
 {
-    /// 收包帧（UDP/TCP 统一 payload 结构）：原始字节 + I/O 线程记录的本机收到时刻
-    /// （us，时钟同步方案.md §3——仅 UDP 数据面填充；TCP 命令面忽略）。
-    struct IncomingFrame
-    {
-        std::vector<unsigned char> bytes;
-        std::uint64_t receivedAtUs = 0;
-    };
-
     /// IG 侧同步端点：连接 Host，UDP 同步 + TCP 命令客户端。
     class IgSync
     {
@@ -199,6 +191,14 @@ namespace aerovista::sync
         const IgConfig& addressConfig() const { return _local; }
 
     private:
+        /// 收包帧（UDP/TCP 统一 payload）：原始字节 + I/O 线程记录的本机收到时刻
+        /// （us，时钟同步方案.md §3——仅 UDP 数据面填充；TCP 命令面忽略）。
+        struct IncomingFrame
+        {
+            std::vector<unsigned char> bytes;
+            std::uint64_t receivedAtUs = 0;
+        };
+
         static constexpr int tcpConnectTimeoutMs = 200;
         static constexpr int handshakeTimeoutMs = 1000;
         static constexpr int tcpRetryAttempts = 16;
