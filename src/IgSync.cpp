@@ -31,7 +31,7 @@ namespace aerovista::sync
     void IgSync::registerUdpProcessors(CigiIGSession& session)
     {
         // 数据面（UDP）：IGCtrl + EntityPositionCtrl（ownship）+ 持续/每帧控制类（cigi梳理.md 链路矩阵）。
-        session.GetIncomingMsgMgr().RegisterEventProcessor(CIGI_IG_CTRL_PACKET_ID_V4, &_igCtrlProc);
+        registerCapture(session, CIGI_IG_CTRL_PACKET_ID_V4, &_igCtrlProc);
         // 与 TCP `_entityPoseProc` 同 PacketID：UDP/TCP 各一个通用捕获，
         // addCallback<CigiEntityPositionCtrlV4> 多播命中两条链路（状态同步设计初版.md §4.1 / §8.1）。
         registerCapture(session, CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4, &_eyeProc);
@@ -46,6 +46,8 @@ namespace aerovista::sync
     {
         // 命令面（TCP）：一次性 / 配置 / 请求 / 符号类（cigi梳理.md 链路矩阵）。
         // EntityPositionCtrlV4（EntityID≠0）注册于此；ownship（EntityID==0）走 UDP `_eyeProc`。
+        // 命令面 IGCtrl 与 UDP `_igCtrlProc` 同 PacketID：addCallback<CigiIGCtrlV4> 多播命中两条链路。
+        registerCapture(session, CIGI_IG_CTRL_PACKET_ID_V4, &_tcpIgCtrlProc);
         registerCapture(session, CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4, &_entityPoseProc);
         registerCapture(session, CIGI_COLL_DET_VOL_DEF_PACKET_ID_V4, &_collDetVolDefProc);
         registerCapture(session, CIGI_ENTITY_CTRL_PACKET_ID_V4, &_entityCtrlProc);
@@ -129,7 +131,7 @@ namespace aerovista::sync
         resetHostSession();
 
         std::string udpError;
-        if (!_udp.initialize(_local.udpPortSend, _local.udpPortRecv, &udpError))
+        if (!_udp.initialize(_local.udpPortRecv, &udpError))
         {
             std::cerr << "IgSync: UDP open failed: " << udpError << "\n";
             return false;
@@ -568,15 +570,6 @@ namespace aerovista::sync
         // 主动 shutdown（_cmdThreadRunning 被置 false）时跳过——shutdown 已处理连接状态。
         if (_cmdThreadRunning.load())
             markDisconnected();
-    }
-
-    void IgSync::registerEventProcessor(int packetId, CigiBaseEventProcessor* processor)
-    {
-        // 业务 processor 两个链路都注册（状态同步设计初版.md §8.1）：Host 可能经 TCP 或 UDP 下发命令。
-        ensureTcpSession();
-        ensureUdpSession();
-        _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);
-        _udpSession->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);
     }
 
     void IgSync::flushTcp()

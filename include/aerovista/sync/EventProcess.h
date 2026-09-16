@@ -16,30 +16,8 @@ namespace aerovista::sync
     /// CIGI 报文处理单元集合（状态同步设计初版.md §8.1）。
     /// 所有报文 processor 统一定义于此：捕获后经订阅回调投递；翻译/合成在回调内同步完成。
 
-    /// IGCtrl 帧节拍/时间戳捕获（IG 侧）：缓存 CigiIGCtrlV4 值。
-    class IgCtrlCaptureProc : public CigiBaseEventProcessor
-    {
-    public:
-        void OnPacketReceived(CigiBasePacket* packet) override;
-        void reset()
-        {
-            got = false;
-            igCtrl = {};
-        }
-        bool got = false;
-        CigiIGCtrlV4 igCtrl{}; ///< CCL 报文值拷贝（状态同步设计初版.md §8.1）
-    };
-
-    /// SOF 回显计数（Host 侧）。
-    class SofCaptureProc : public CigiBaseEventProcessor
-    {
-    public:
-        void OnPacketReceived(CigiBasePacket* packet) override;
-        std::atomic<std::uint32_t> count{0};
-    };
-
     /// 类型化投递回调列表 + addCallback。纯 mixin，不继承 CigiBaseEventProcessor
-    /// （后者由 PacketCaptureProc 自持）。与 CCL `EventList` 对齐：同一主题多回调（多播），
+    /// （后者由 PacketCaptureProc / IgCtrlCaptureProc 自持）。与 CCL `EventList` 对齐：同一主题多回调（多播），
     /// `addCallback` 追加；**不提供取消**（初始化时一次性注册，回调体捕获对象须存活至
     /// sync 会话结束）。现行通用捕获投递 CCL 原类型；若需投递翻译后的语义类型，可对
     /// `Sinkable<语义类型>` 自行 `notify`。
@@ -64,6 +42,28 @@ namespace aerovista::sync
         }
 
         std::vector<std::function<void(const PacketT&)>> _sinks;
+    };
+
+    /// IGCtrl 帧节拍/时间戳捕获（IG 侧）：缓存 CigiIGCtrlV4 值，并经 Sinkable 投递订阅。
+    class IgCtrlCaptureProc : public CigiBaseEventProcessor, public Sinkable<CigiIGCtrlV4>
+    {
+    public:
+        void OnPacketReceived(CigiBasePacket* packet) override;
+        void reset()
+        {
+            got = false;
+            igCtrl = {};
+        }
+        bool got = false;
+        CigiIGCtrlV4 igCtrl{}; ///< CCL 报文值拷贝（状态同步设计初版.md §8.1）
+    };
+
+    /// SOF 回显计数（Host 侧）。
+    class SofCaptureProc : public CigiBaseEventProcessor
+    {
+    public:
+        void OnPacketReceived(CigiBasePacket* packet) override;
+        std::atomic<std::uint32_t> count{0};
     };
 
     /// 通用报文捕获（状态同步设计初版.md §8.1）：按 PacketID 注册到收包端 CCL session，

@@ -10,16 +10,38 @@
 namespace aerovista::sync
 {
 
-    void HostSync::registerCapture(CigiHostSession& session, int packetId, CigiBaseEventProcessor* proc)
+    void HostSync::attachCommandCaptures(CigiHostSession& session, std::vector<CigiBaseEventProcessor*>* outRecord)
     {
-        session.GetIncomingMsgMgr().RegisterEventProcessor(packetId, proc);
-        _captureProcs.push_back(proc);
+        auto bind = [&](int packetId, CigiBaseEventProcessor* proc) {
+            session.GetIncomingMsgMgr().RegisterEventProcessor(packetId, proc);
+            if (outRecord)
+                outRecord->push_back(proc);
+        };
+        bind(CIGI_COLL_DET_VOL_RESP_PACKET_ID_V4, &_collDetVolRespProc);
+        bind(CIGI_IG_MSG_PACKET_ID_V4, &_igMsgProc);
+        bind(CIGI_EVENT_NOTIFICATION_PACKET_ID_V4, &_eventNotificationProc);
+        bind(CIGI_ANIMATION_STOP_PACKET_ID_V4, &_animationStopProc);
+        bind(CIGI_HAT_HOT_RESP_PACKET_ID_V4, &_hatHotRespProc);
+        bind(CIGI_HAT_HOT_XRESP_PACKET_ID_V4, &_hatHotXRespProc);
+        bind(CIGI_LOS_RESP_PACKET_ID_V4, &_losRespProc);
+        bind(CIGI_LOS_XRESP_PACKET_ID_V4, &_losXRespProc);
+        bind(CIGI_SENSOR_RESP_PACKET_ID_V4, &_sensorRespProc);
+        bind(CIGI_SENSOR_XRESP_PACKET_ID_V4, &_sensorXRespProc);
+        bind(CIGI_POSITION_RESP_PACKET_ID_V4, &_positionRespProc);
+        bind(CIGI_WEATHER_COND_RESP_PACKET_ID_V4, &_weatherCondRespProc);
+        bind(CIGI_AEROSOL_RESP_PACKET_ID_V4, &_aerosolRespProc);
+        bind(CIGI_MARITIME_SURFACE_RESP_PACKET_ID_V4, &_maritimeSurfaceRespProc);
+        bind(CIGI_TERRESTRIAL_SURFACE_RESP_PACKET_ID_V4, &_terrestrialSurfaceRespProc);
+        bind(CIGI_COLL_DET_SEG_RESP_PACKET_ID_V4, &_collDetSegRespProc);
     }
 
     void HostSync::registerUdpProcessors(CigiHostSession& session)
     {
         // 数据面（UDP）：SOF 回显计数（IG 每帧回 SOF，cigi梳理.md §1）。
+        // 命令面上报与 TCP 共用同一捕获实例，使 addCallback 对 UDP flush 同样可见（§8.1 对等）；
+        // 不写入 _captureProcs，避免同一 Sinkable 被挂两次回调。
         session.GetIncomingMsgMgr().RegisterEventProcessor(CIGI_SOF_PACKET_ID_V4, &_sofProc);
+        attachCommandCaptures(session, nullptr);
     }
 
     void HostSync::registerTcpProcessors(CigiHostSession& session)
@@ -27,22 +49,7 @@ namespace aerovista::sync
         // 命令面（TCP）：SOF 计数（IG TCP 上报消息头也是 SOF）+ 响应/通知/上报类
         //（cigi梳理.md 链路矩阵；VolResp 为既有基础设施）。
         session.GetIncomingMsgMgr().RegisterEventProcessor(CIGI_SOF_PACKET_ID_V4, &_sofProc);
-        registerCapture(session, CIGI_COLL_DET_VOL_RESP_PACKET_ID_V4, &_collDetVolRespProc);
-        registerCapture(session, CIGI_IG_MSG_PACKET_ID_V4, &_igMsgProc);
-        registerCapture(session, CIGI_EVENT_NOTIFICATION_PACKET_ID_V4, &_eventNotificationProc);
-        registerCapture(session, CIGI_ANIMATION_STOP_PACKET_ID_V4, &_animationStopProc);
-        registerCapture(session, CIGI_HAT_HOT_RESP_PACKET_ID_V4, &_hatHotRespProc);
-        registerCapture(session, CIGI_HAT_HOT_XRESP_PACKET_ID_V4, &_hatHotXRespProc);
-        registerCapture(session, CIGI_LOS_RESP_PACKET_ID_V4, &_losRespProc);
-        registerCapture(session, CIGI_LOS_XRESP_PACKET_ID_V4, &_losXRespProc);
-        registerCapture(session, CIGI_SENSOR_RESP_PACKET_ID_V4, &_sensorRespProc);
-        registerCapture(session, CIGI_SENSOR_XRESP_PACKET_ID_V4, &_sensorXRespProc);
-        registerCapture(session, CIGI_POSITION_RESP_PACKET_ID_V4, &_positionRespProc);
-        registerCapture(session, CIGI_WEATHER_COND_RESP_PACKET_ID_V4, &_weatherCondRespProc);
-        registerCapture(session, CIGI_AEROSOL_RESP_PACKET_ID_V4, &_aerosolRespProc);
-        registerCapture(session, CIGI_MARITIME_SURFACE_RESP_PACKET_ID_V4, &_maritimeSurfaceRespProc);
-        registerCapture(session, CIGI_TERRESTRIAL_SURFACE_RESP_PACKET_ID_V4, &_terrestrialSurfaceRespProc);
-        registerCapture(session, CIGI_COLL_DET_SEG_RESP_PACKET_ID_V4, &_collDetSegRespProc);
+        attachCommandCaptures(session, &_captureProcs);
     }
 
     HostSync::~HostSync()
@@ -151,7 +158,7 @@ namespace aerovista::sync
         _startTime = std::chrono::steady_clock::now();
 
         std::string udpError;
-        if (!_udp.initialize(_local.udpPortSend, _local.udpPortRecv, &udpError))
+        if (!_udp.initialize(_local.udpPortRecv, &udpError))
         {
             std::cerr << "HostSync: UDP open failed: " << udpError << "\n";
             return false;
@@ -419,15 +426,6 @@ namespace aerovista::sync
         }
         for (const auto& f : tcpFrames)
             processIncomingTcpFrame(f.data(), static_cast<int>(f.size()));
-    }
-
-    void HostSync::registerEventProcessor(int packetId, CigiBaseEventProcessor* processor)
-    {
-        // 业务 processor 两个链路都注册（§8.1）：IG 可能经 TCP 或 UDP 发来上报。
-        ensureTcpSession();
-        ensureUdpSession();
-        _tcpSession->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);
-        _udpSession->GetIncomingMsgMgr().RegisterEventProcessor(packetId, processor);
     }
 
     void HostSync::flushTcp()

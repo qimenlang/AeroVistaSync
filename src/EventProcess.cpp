@@ -12,6 +12,7 @@ namespace aerovista::sync
         // CCL 报文对象是复用单例，必须值拷贝缓存（§8.1 通用模式）。
         got = true;
         igCtrl = *ig;
+        notify(igCtrl);
     }
 
     void SofCaptureProc::OnPacketReceived(CigiBasePacket* packet)

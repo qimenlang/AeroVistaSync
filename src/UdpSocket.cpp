@@ -13,10 +13,9 @@ namespace aerovista::sync
         close();
     }
 
-    bool UdpSocket::initialize(int sndPort, int rcvPort, std::string* outError)
+    bool UdpSocket::initialize(int rcvPort, std::string* outError)
     {
         close();
-        _sendPort = sndPort;
 
         socket_common::acquireWsa();
         _wsaAcquired = true;

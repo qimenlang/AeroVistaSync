@@ -9,9 +9,8 @@ namespace aerovista::sync
 {
     HostConfig parseHostConfig(const nlohmann::json& obj)
     {
-        config::rejectUnknownKeys(obj, {"udpPortSend", "udpPortRecv", "tcpPort"});
+        config::rejectUnknownKeys(obj, {"udpPortRecv", "tcpPort"});
         HostConfig cfg;
-        cfg.udpPortSend = config::requireInt(obj, "udpPortSend");
         cfg.udpPortRecv = config::requireInt(obj, "udpPortRecv");
         cfg.tcpPort = config::requireInt(obj, "tcpPort");
         return cfg;
@@ -19,10 +18,8 @@ namespace aerovista::sync
 
     IgConfig parseIgConfig(const nlohmann::json& obj)
     {
-        config::rejectUnknownKeys(obj, {"udpPortSend", "udpPortRecv", "targetAddr", "targetTcpPort",
-                                        "targetUdpPortRecv"});
+        config::rejectUnknownKeys(obj, {"udpPortRecv", "targetAddr", "targetTcpPort", "targetUdpPortRecv"});
         IgConfig cfg;
-        cfg.udpPortSend = config::requireInt(obj, "udpPortSend");
         cfg.udpPortRecv = config::requireInt(obj, "udpPortRecv");
         cfg.targetAddr = config::requireString(obj, "targetAddr");
         cfg.targetTcpPort = config::requireInt(obj, "targetTcpPort");

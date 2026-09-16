@@ -113,14 +113,9 @@ namespace aerovista::sync
         void flushTcp();
         void flushUdp();
 
-        // ---- 收包（对等 IG 侧 §8.1）：注册 processor 处理 IG→Host 报文 ----
+        // ---- 收包（对等 IG 侧 §8.1）：订阅回调处理 IG→Host 报文 ----
 
-        /// 注册某个 CIGI 报文的业务 EventProcessor（透传到 CCL session 的 RegisterEventProcessor）。
-        /// 处理 IG 经 TCP/UDP 发来的报文（如 IG 发 CigiIGMsgV4 / CigiPositionRespV4，见 registerTcpProcessors）。
-        /// processor 由业务层定义；生命周期需覆盖 HostSync 会话。
-        void registerEventProcessor(int packetId, CigiBaseEventProcessor* processor);
-
-        /// 主线程解包入口：drain UDP/TCP 收包队列 → CCL 解包 → 触发 processor。
+        /// 主线程解包入口：drain UDP/TCP 收包队列 → CCL 解包 → 触发订阅回调。
         /// 业务/测试在需要处理 IG 上报时调用（Host 收包为 push 模式，无独立帧循环）。
         void drainIncoming();
 
@@ -135,7 +130,7 @@ namespace aerovista::sync
             ensureUdpSession();
             for (auto* proc : _captureProcs)
             {
-                if (auto* typed = dynamic_cast<PacketCaptureProc<PacketT>*>(proc))
+                if (auto* typed = dynamic_cast<Sinkable<PacketT>*>(proc))
                     typed->addCallback(callback);
             }
         }
@@ -192,12 +187,12 @@ namespace aerovista::sync
                 registerUdpProcessors(*_udpSession);
             }
         }
-        /// 注册 UDP 数据面可达的 IG→Host 报文捕获（数据面 SOF 计数）。
+        /// 注册 UDP 数据面可达的 IG→Host 报文捕获（SOF + 与 TCP 共用的命令面捕获镜像）。
         void registerUdpProcessors(CigiHostSession& session);
         /// 注册 TCP 命令面可达的 IG→Host 报文捕获（响应/通知/上报类 + 碰撞检测响应）。
         void registerTcpProcessors(CigiHostSession& session);
-        /// 注册单个通用捕获 processor（§8.1）：RegisterEventProcessor + 入 _captureProcs（供 addCallback 定位）。
-        void registerCapture(CigiHostSession& session, int packetId, CigiBaseEventProcessor* proc);
+        /// 把命令面捕获绑到指定 session。`outRecord` 非空时同时写入 `_captureProcs`（只在 TCP 注册时记一次）。
+        void attachCommandCaptures(CigiHostSession& session, std::vector<CigiBaseEventProcessor*>* outRecord);
 
         void markPeerDisconnected(std::uint64_t clientId);
 

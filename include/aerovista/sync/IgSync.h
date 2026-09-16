@@ -117,7 +117,7 @@ namespace aerovista::sync
             ensureUdpSession();
             for (auto* proc : _captureProcs)
             {
-                if (auto* typed = dynamic_cast<PacketCaptureProc<PacketT>*>(proc))
+                if (auto* typed = dynamic_cast<Sinkable<PacketT>*>(proc))
                     typed->addCallback(callback);
             }
         }
@@ -132,10 +132,6 @@ namespace aerovista::sync
         std::uint64_t simTimeUs() const;
 
         // ---- 命令面 / 发送（状态同步设计初版.md §8.1）----
-        /// 注册某个 CIGI 报文的业务 EventProcessor（透传到 CCL session 的 RegisterEventProcessor）。
-        /// processor 由 engine 层定义；生命周期需覆盖 sync 会话（状态同步设计初版.md §8.1）。
-        void registerEventProcessor(int packetId, CigiBaseEventProcessor* processor);
-
         /// TCP 出站 OutgoingMsg：业务侧 << 报文后调 flushTcp 发送（IG→Host 上报/回传）。
         /// 以 CigiSOFV4 帧头开消息（CCL 要求 IG 消息以 SOF 开头），帧号回显最近 IGCtrl。
         /// 绑定 _tcpSession（状态同步设计初版.md §5.1 双 session）。单次 flush 周期内可多次调用填充报文——
@@ -299,8 +295,10 @@ namespace aerovista::sync
         std::unique_ptr<CigiIGSession> _tcpSession;
         std::unique_ptr<CigiIGSession> _udpSession;
 
-        // 基础设施：IGCtrl 帧节拍/时间戳（IgCtrlCaptureProc）。其余报文走 PacketCaptureProc。
+        // 基础设施：IGCtrl 帧节拍/时间戳（IgCtrlCaptureProc，UDP；经 Sinkable 可 addCallback）。
         IgCtrlCaptureProc _igCtrlProc;
+        // 命令面 IGCtrl（TCP 消息头）：与 UDP `_igCtrlProc` 同 PacketID 双链路，addCallback 多播。
+        PacketCaptureProc<CigiIGCtrlV4> _tcpIgCtrlProc;
         // UDP 侧 EntityPositionCtrlV4（ownship EntityID==0）。与 TCP `_entityPoseProc` 同 PacketID
         // 双链路；Engine 两个回调按 EntityID 分流（CameraDriver::onOwnshipEyePose / onEntityPose）。
         PacketCaptureProc<CigiEntityPositionCtrlV4> _eyeProc;
