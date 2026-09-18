@@ -1,7 +1,10 @@
 ﻿// viewhost 对话框资源（MFC）。
 #include "resource.h"
+// afxres.h → winres.h → commctrl.rh 已提供 TVS_*。不要 #include <commctrl.h>：
+// 那是 C++ 头，VS 资源视图解析 winnt.h 等会长符号，报 RC2247。
+#define APSTUDIO_HIDDEN_SYMBOLS
 #include "afxres.h"
-#include <commctrl.h>
+#undef APSTUDIO_HIDDEN_SYMBOLS
 
 LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
 

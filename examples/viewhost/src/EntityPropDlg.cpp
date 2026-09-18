@@ -1,7 +1,9 @@
 ﻿#include "EntityPropDlg.h"
+#include "ViewHostDlg.h"
 
 #include <atlconv.h>
 
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -24,10 +26,26 @@ namespace
         return _ttof(text);
     }
 
+    constexpr double kPoseEpsilon = 1e-9;
+    constexpr int kStateComboStandby = 0;
+    constexpr int kStateComboActive = 1;
+    constexpr UINT kAlphaMax = 255;
+
     bool nearlyEqual(double a, double b)
     {
         const double d = a - b;
-        return d < 1e-9 && d > -1e-9;
+        return d < kPoseEpsilon && d > -kPoseEpsilon;
+    }
+
+    int stateComboIndex(aerovista::sync::EntityAuthorityState state)
+    {
+        return state == aerovista::sync::EntityAuthorityState::ACTIVE ? kStateComboActive : kStateComboStandby;
+    }
+
+    aerovista::sync::EntityAuthorityState stateFromComboIndex(int sel)
+    {
+        return sel == kStateComboActive ? aerovista::sync::EntityAuthorityState::ACTIVE
+                                        : aerovista::sync::EntityAuthorityState::STANDBY;
     }
 } // namespace
 
@@ -66,7 +84,7 @@ bool CEntityPropDlg::loadRow()
         stateCombo->AddString(_T("Active"));
     }
     if (stateCombo)
-        stateCombo->SetCurSel(row->entityState == aerovista::sync::EntityAuthorityState::ACTIVE ? 1 : 0);
+        stateCombo->SetCurSel(stateComboIndex(row->entityState));
 
     SetDlgItemInt(IDC_PROP_ALPHA, row->alpha, FALSE);
 
@@ -101,12 +119,11 @@ void CEntityPropDlg::captureBaseline()
 bool CEntityPropDlg::applyDirtyFields(std::string& error)
 {
     auto* stateCombo = static_cast<CComboBox*>(GetDlgItem(IDC_PROP_STATE));
-    const int sel = stateCombo ? stateCombo->GetCurSel() : 0;
-    const auto state = (sel == 1) ? aerovista::sync::EntityAuthorityState::ACTIVE
-                                  : aerovista::sync::EntityAuthorityState::STANDBY;
+    const int sel = stateCombo ? stateCombo->GetCurSel() : kStateComboStandby;
+    const auto state = stateFromComboIndex(sel);
     BOOL alphaOk = FALSE;
     const UINT alphaVal = GetDlgItemInt(IDC_PROP_ALPHA, &alphaOk, FALSE);
-    if (!alphaOk || alphaVal > 255)
+    if (!alphaOk || alphaVal > kAlphaMax)
     {
         error = "alpha must be 0..255";
         return false;
@@ -164,7 +181,7 @@ void CEntityPropDlg::OnApply()
         return;
     }
     if (CWnd* parent = GetParent())
-        parent->SendMessage(WM_APP + 20);
+        parent->SendMessage(wmRefreshEntityTree);
 }
 
 void CEntityPropDlg::OnReset()

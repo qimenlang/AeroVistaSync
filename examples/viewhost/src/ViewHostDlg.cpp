@@ -17,9 +17,17 @@ BEGIN_MESSAGE_MAP(CViewHostDlg, CDialog)
     ON_BN_CLICKED(IDC_TEST_UDP, &CViewHostDlg::OnTestUdp)
     ON_BN_CLICKED(IDC_EXIT, &CViewHostDlg::OnExit)
     ON_NOTIFY(NM_DBLCLK, IDC_ENTITY_TREE, &CViewHostDlg::OnEntityTreeDblClk)
-    ON_MESSAGE(WM_APP + 20, &CViewHostDlg::OnRefreshEntityTree)
-    ON_MESSAGE(WM_APP + 21, &CViewHostDlg::OnOpenEntityProperties)
+    ON_MESSAGE(wmRefreshEntityTree, &CViewHostDlg::OnRefreshEntityTree)
+    ON_MESSAGE(wmOpenEntityProperties, &CViewHostDlg::OnOpenEntityProperties)
 END_MESSAGE_MAP()
+
+namespace
+{
+    bool asyncKeyDown(int virtualKey)
+    {
+        return (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+    }
+} // namespace
 
 CViewHostDlg::CViewHostDlg(CWnd* pParent) : CDialog(IDD_VIEWHOST_DIALOG, pParent)
 {
@@ -60,7 +68,7 @@ BOOL CViewHostDlg::OnInitDialog()
 
     _startTime = std::chrono::steady_clock::now();
     _started = true;
-    SetTimer(kTimerId, 16, nullptr);
+    SetTimer(kTimerId, kTimerPeriodMs, nullptr);
 
     _entityTree.SubclassDlgItem(IDC_ENTITY_TREE, this);
     refreshEntityTree();
@@ -105,26 +113,26 @@ void CViewHostDlg::OnTimer(UINT_PTR nIDEvent)
         double dFwd = 0.0, dRight = 0.0, dUp = 0.0;
         double dyaw = 0.0, dpitch = 0.0;
 
-        if (GetAsyncKeyState('W') & 0x8000)
+        if (asyncKeyDown('W'))
             dFwd += moveStep;
-        if (GetAsyncKeyState('S') & 0x8000)
+        if (asyncKeyDown('S'))
             dFwd -= moveStep;
-        if (GetAsyncKeyState('A') & 0x8000)
+        if (asyncKeyDown('A'))
             dRight -= moveStep;
-        if (GetAsyncKeyState('D') & 0x8000)
+        if (asyncKeyDown('D'))
             dRight += moveStep;
-        if (GetAsyncKeyState('E') & 0x8000)
+        if (asyncKeyDown('E'))
             dUp += moveStep;
-        if (GetAsyncKeyState('C') & 0x8000)
+        if (asyncKeyDown('C'))
             dUp -= moveStep;
 
-        if (GetAsyncKeyState(VK_LEFT) & 0x8000)
+        if (asyncKeyDown(VK_LEFT))
             dyaw += turnStepDeg;
-        if (GetAsyncKeyState(VK_RIGHT) & 0x8000)
+        if (asyncKeyDown(VK_RIGHT))
             dyaw -= turnStepDeg;
-        if (GetAsyncKeyState(VK_UP) & 0x8000)
+        if (asyncKeyDown(VK_UP))
             dpitch += turnStepDeg;
-        if (GetAsyncKeyState(VK_DOWN) & 0x8000)
+        if (asyncKeyDown(VK_DOWN))
             dpitch -= turnStepDeg;
 
         aerovista::viewhost::applyManualStep(_eye, dFwd, dRight, dUp, dyaw, dpitch);
@@ -180,7 +188,7 @@ void CViewHostDlg::OnEntityTreeDblClk(NMHDR*, LRESULT* result)
     *result = TRUE; // 叶子：不要再走默认展开
     _entityTree.SelectItem(item);
     // 通知返回后再弹模态框，避免双击的 mouse-up 落到面板按钮上。
-    PostMessage(WM_APP + 21, _entityTree.GetItemData(item));
+    PostMessage(wmOpenEntityProperties, _entityTree.GetItemData(item));
 }
 
 void CViewHostDlg::openEntityProperties(std::uint16_t entityId)
