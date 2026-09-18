@@ -2,8 +2,8 @@
 
 #define IDD_VIEWHOST_DIALOG 101
 #define IDD_ENTITY_PROP     102
+#define IDR_MAINFRAME       128
 
-#define IDC_EXIT           1001
 #define IDC_STATUS_READY   1003
 #define IDC_STATUS_IGCTRL  1004
 #define IDC_STATUS_SOF     1005

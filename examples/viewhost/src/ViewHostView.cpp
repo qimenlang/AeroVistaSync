@@ -1,4 +1,4 @@
-﻿#include "ViewHostDlg.h"
+﻿#include "ViewHostView.h"
 
 #include "EntityPropDlg.h"
 
@@ -9,16 +9,17 @@
 #include <cstdint>
 #include <string>
 
-BEGIN_MESSAGE_MAP(CViewHostDlg, CDialog)
+BEGIN_MESSAGE_MAP(CViewHostView, CFormView)
     ON_WM_TIMER()
     ON_WM_DESTROY()
-    ON_BN_CLICKED(IDC_TEST_TCP, &CViewHostDlg::OnTestTcp)
-    ON_BN_CLICKED(IDC_TEST_UDP, &CViewHostDlg::OnTestUdp)
-    ON_BN_CLICKED(IDC_EXIT, &CViewHostDlg::OnExit)
-    ON_NOTIFY(NM_DBLCLK, IDC_ENTITY_TREE, &CViewHostDlg::OnEntityTreeDblClk)
-    ON_MESSAGE(wmRefreshEntityTree, &CViewHostDlg::OnRefreshEntityTree)
-    ON_MESSAGE(wmOpenEntityProperties, &CViewHostDlg::OnOpenEntityProperties)
+    ON_BN_CLICKED(IDC_TEST_TCP, &CViewHostView::OnTestTcp)
+    ON_BN_CLICKED(IDC_TEST_UDP, &CViewHostView::OnTestUdp)
+    ON_NOTIFY(NM_DBLCLK, IDC_ENTITY_TREE, &CViewHostView::OnEntityTreeDblClk)
+    ON_MESSAGE(wmRefreshEntityTree, &CViewHostView::OnRefreshEntityTree)
+    ON_MESSAGE(wmOpenEntityProperties, &CViewHostView::OnOpenEntityProperties)
 END_MESSAGE_MAP()
+
+IMPLEMENT_DYNCREATE(CViewHostView, CFormView)
 
 namespace
 {
@@ -52,11 +53,11 @@ namespace
     constexpr UINT kFocusSinkId = 4096;
 } // namespace
 
-CViewHostDlg::CViewHostDlg(CWnd* pParent) : CDialog(IDD_VIEWHOST_DIALOG, pParent)
+CViewHostView::CViewHostView() : CFormView(IDD_VIEWHOST_DIALOG)
 {
 }
 
-BOOL CViewHostDlg::PreTranslateMessage(MSG* pMsg)
+BOOL CViewHostView::PreTranslateMessage(MSG* pMsg)
 {
     // 控眼点时吞掉方向键/WASD，避免焦点仍在树上时 TreeView 也响应方向键。
     if (_controlling && pMsg->message == WM_KEYDOWN && isCameraControlKey(pMsg->wParam))
@@ -64,18 +65,20 @@ BOOL CViewHostDlg::PreTranslateMessage(MSG* pMsg)
     // NM_CLICK 点在树空白处常常不来；在按下时按 HitTest 决定进入/退出。
     if (pMsg->message == WM_LBUTTONDOWN && applyEyeControlFromCursor(pMsg->hwnd))
         return TRUE; // 树/对话框空白、静态文本、分组框：吞掉点击，避免焦点弹回树
-    return CDialog::PreTranslateMessage(pMsg);
+    return CFormView::PreTranslateMessage(pMsg);
 }
 
-BOOL CViewHostDlg::OnInitDialog()
+void CViewHostView::OnInitialUpdate()
 {
-    CDialog::OnInitDialog();
+    CFormView::OnInitialUpdate();
+    if (CFrameWnd* frame = GetParentFrame())
+        frame->RecalcLayout();
 
     if (!loadConfig())
     {
         AfxMessageBox(_T("加载 viewhost.json 失败，程序退出"));
-        EndDialog(IDCANCEL);
-        return TRUE;
+        closeFrame();
+        return;
     }
 
     // 初始眼点：alt=3m，位于模型群中心南 25m，朝北（yaw=0）水平看模型群。
@@ -96,10 +99,9 @@ BOOL CViewHostDlg::OnInitDialog()
 
     subscribeIgPackets();
     updateStatusText();
-    return TRUE;
 }
 
-bool CViewHostDlg::loadConfig()
+bool CViewHostView::loadConfig()
 {
     aerovista::sync::HostConfig host;
     std::string error;
@@ -112,11 +114,11 @@ bool CViewHostDlg::loadConfig()
     return true;
 }
 
-void CViewHostDlg::OnTimer(UINT_PTR nIDEvent)
+void CViewHostView::OnTimer(UINT_PTR nIDEvent)
 {
     if (nIDEvent != kTimerId)
     {
-        CDialog::OnTimer(nIDEvent);
+        CFormView::OnTimer(nIDEvent);
         return;
     }
 
@@ -164,14 +166,14 @@ void CViewHostDlg::OnTimer(UINT_PTR nIDEvent)
     updateStatusText();
 }
 
-void CViewHostDlg::OnDestroy()
+void CViewHostView::OnDestroy()
 {
     KillTimer(kTimerId);
     _driver.shutdown();
-    CDialog::OnDestroy();
+    CFormView::OnDestroy();
 }
 
-CViewHostDlg::EntityTreeHit CViewHostDlg::hitTestEntityTree()
+CViewHostView::EntityTreeHit CViewHostView::hitTestEntityTree()
 {
     EntityTreeHit hit;
     CPoint screen;
@@ -182,43 +184,43 @@ CViewHostDlg::EntityTreeHit CViewHostDlg::hitTestEntityTree()
     return hit;
 }
 
-bool CViewHostDlg::isEntityLeaf(HTREEITEM item)
+bool CViewHostView::isEntityLeaf(HTREEITEM item)
 {
     return item != nullptr && _entitiesFolder != nullptr &&
            _entityTree.GetParentItem(item) == _entitiesFolder;
 }
 
-void CViewHostDlg::updateEyePointLabel()
+void CViewHostView::updateEyePointLabel()
 {
     if (_eyePointItem == nullptr)
         return;
     _entityTree.SetItemText(_eyePointItem, _controlling ? _T("eyePoint [控制中]") : _T("eyePoint"));
 }
 
-bool CViewHostDlg::isEyePointHit(HTREEITEM item, UINT flags) const
+bool CViewHostView::isEyePointHit(HTREEITEM item, UINT flags) const
 {
     return item == _eyePointItem && (flags & kOnItemHit) != 0;
 }
 
-bool CViewHostDlg::isEmptyTreeHit(HTREEITEM item, UINT flags) const
+bool CViewHostView::isEmptyTreeHit(HTREEITEM item, UINT flags) const
 {
     return item == nullptr || (flags & kEmptyTreeHit) != 0;
 }
 
-void CViewHostDlg::createFocusSink()
+void CViewHostView::createFocusSink()
 {
     // 必须 WS_VISIBLE：隐藏窗不能持焦点。放到客户区外，避免看见插入符。
     _focusSink.Create(WS_CHILD | WS_VISIBLE | ES_READONLY, CRect(-4, -4, -2, -2), this, kFocusSinkId);
 }
 
-void CViewHostDlg::defocusEntityTree()
+void CViewHostView::defocusEntityTree()
 {
     _entityTree.SelectItem(nullptr);
     if (_focusSink.GetSafeHwnd() != nullptr)
         _focusSink.SetFocus();
 }
 
-bool CViewHostDlg::isDialogChrome(HWND clickHwnd) const
+bool CViewHostView::isDialogChrome(HWND clickHwnd) const
 {
     if (clickHwnd == GetSafeHwnd())
         return true;
@@ -233,7 +235,7 @@ bool CViewHostDlg::isDialogChrome(HWND clickHwnd) const
     return (::GetWindowLong(clickHwnd, GWL_STYLE) & BS_TYPEMASK) == BS_GROUPBOX;
 }
 
-bool CViewHostDlg::applyEyeControlFromCursor(HWND clickHwnd)
+bool CViewHostView::applyEyeControlFromCursor(HWND clickHwnd)
 {
     if (_entityTree.GetSafeHwnd() == nullptr)
         return false;
@@ -274,7 +276,7 @@ bool CViewHostDlg::applyEyeControlFromCursor(HWND clickHwnd)
     return true;
 }
 
-void CViewHostDlg::setEyeControlling(bool controlling)
+void CViewHostView::setEyeControlling(bool controlling)
 {
     _controlling = controlling;
     updateEyePointLabel();
@@ -282,7 +284,7 @@ void CViewHostDlg::setEyeControlling(bool controlling)
         _entityTree.SelectItem(_eyePointItem);
 }
 
-void CViewHostDlg::refreshEntityTree()
+void CViewHostView::refreshEntityTree()
 {
     if (_entityTree.GetSafeHwnd() == nullptr)
         return;
@@ -306,7 +308,7 @@ void CViewHostDlg::refreshEntityTree()
     setEyeControlling(controlling);
 }
 
-void CViewHostDlg::OnEntityTreeDblClk(NMHDR*, LRESULT* result)
+void CViewHostView::OnEntityTreeDblClk(NMHDR*, LRESULT* result)
 {
     *result = 0; // root / entities / eyePoint 仍走默认展开/折叠
     const HTREEITEM item = hitTestEntityTree().item;
@@ -319,26 +321,26 @@ void CViewHostDlg::OnEntityTreeDblClk(NMHDR*, LRESULT* result)
     PostMessage(wmOpenEntityProperties, _entityTree.GetItemData(item));
 }
 
-void CViewHostDlg::openEntityProperties(std::uint16_t entityId)
+void CViewHostView::openEntityProperties(std::uint16_t entityId)
 {
     CEntityPropDlg dlg(_driver, entityId, this);
     dlg.DoModal();
     refreshEntityTree();
 }
 
-LRESULT CViewHostDlg::OnOpenEntityProperties(WPARAM wparam, LPARAM)
+LRESULT CViewHostView::OnOpenEntityProperties(WPARAM wparam, LPARAM)
 {
     openEntityProperties(static_cast<std::uint16_t>(wparam));
     return 0;
 }
 
-LRESULT CViewHostDlg::OnRefreshEntityTree(WPARAM, LPARAM)
+LRESULT CViewHostView::OnRefreshEntityTree(WPARAM, LPARAM)
 {
     refreshEntityTree();
     return 0;
 }
 
-void CViewHostDlg::OnTestTcp()
+void CViewHostView::OnTestTcp()
 {
     const std::string name = _driver.sendRandomTcpPacket();
     CString status;
@@ -346,7 +348,7 @@ void CViewHostDlg::OnTestTcp()
     SetDlgItemText(IDC_STATUS_TEST, status);
 }
 
-void CViewHostDlg::OnTestUdp()
+void CViewHostView::OnTestUdp()
 {
     const std::string name = _driver.sendRandomUdpPacket();
     CString status;
@@ -354,12 +356,13 @@ void CViewHostDlg::OnTestUdp()
     SetDlgItemText(IDC_STATUS_TEST, status);
 }
 
-void CViewHostDlg::OnExit()
+void CViewHostView::closeFrame()
 {
-    EndDialog(IDCANCEL);
+    if (CFrameWnd* frame = GetParentFrame())
+        frame->PostMessage(WM_CLOSE);
 }
 
-void CViewHostDlg::updateStatusText()
+void CViewHostView::updateStatusText()
 {
     auto setText = [this](int id, const CString& text)
     {
@@ -397,7 +400,7 @@ void CViewHostDlg::updateStatusText()
     }
 }
 
-void CViewHostDlg::subscribeIgPackets()
+void CViewHostView::subscribeIgPackets()
 {
     // IG→Host TCP 上行报文自检（§4.7）：F9 随机发送，Host 侧 subscribe 收到即刷新「最近接收」。
     // 与 engine PacketProbeHandler 的 kTcpProbes 16 类一一对应（HostSync registerTcpProcessors 已注册）。

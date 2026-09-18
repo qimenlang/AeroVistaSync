@@ -1,8 +1,8 @@
 ﻿#pragma once
 
-#include <afxwin.h>
+#include <afxwinappex.h>
 
-class CViewHostApp : public CWinApp
+class CViewHostApp : public CWinAppEx
 {
 public:
     BOOL InitInstance() override;

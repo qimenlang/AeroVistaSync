@@ -1,5 +1,5 @@
 ﻿#include "EntityPropDlg.h"
-#include "ViewHostDlg.h"
+#include "ViewHostView.h"
 
 #include <atlconv.h>
 

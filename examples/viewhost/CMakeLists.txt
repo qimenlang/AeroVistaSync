@@ -19,7 +19,8 @@ set(CMAKE_MFC_FLAG 2)
 
 add_executable(aerovistaViewHost WIN32
     src/ViewHostApp.cpp
-    src/ViewHostDlg.cpp
+    src/ViewHostFrame.cpp
+    src/ViewHostView.cpp
     src/EntityPropDlg.cpp
     src/HostDriver.cpp
     src/ViewHostMath.cpp
