@@ -262,6 +262,11 @@ namespace aerovista::viewhost
         return _host.readyIgCount();
     }
 
+    std::vector<aerovista::sync::IgConnection> HostDriver::igSnapshot() const
+    {
+        return _host.igSnapshot();
+    }
+
     std::uint32_t HostDriver::igCtrlSentCount() const
     {
         return _host.igCtrlSentCount();

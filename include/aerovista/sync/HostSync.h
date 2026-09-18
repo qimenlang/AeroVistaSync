@@ -43,6 +43,19 @@
 
 namespace aerovista::sync
 {
+    /// Host 侧一条 IG 连接的观测快照（id = Host 分配的 clientId，不是 IG channelId）。
+    struct IgConnection
+    {
+        std::uint64_t id = 0;
+        bool tcpReady = false;
+        bool udpReady = false;
+    };
+
+    inline bool operator==(const IgConnection& a, const IgConnection& b)
+    {
+        return a.id == b.id && a.tcpReady == b.tcpReady && a.udpReady == b.udpReady;
+    }
+
     /// Host 侧同步端点：UDP 同步面 + TCP 命令监听。
     class HostSync
     {
@@ -64,6 +77,8 @@ namespace aerovista::sync
         HostStatus status() const;
         bool hasReadyIg() const;
         int readyIgCount() const;
+        /// 当前 peer 表拷贝（含尚未两端 ready 的连接；已摘除的不出现）。
+        std::vector<IgConnection> igSnapshot() const;
         /// 本会话已发送的数据面帧数（outMsgWithIgCtrlUdp 每次自动前置 IGCtrl 递增一次）。
         std::uint32_t igCtrlSentCount() const;
         /// 本会话已解包的 SOF 数（观测无副作用；调用方须先 drainIncoming）。

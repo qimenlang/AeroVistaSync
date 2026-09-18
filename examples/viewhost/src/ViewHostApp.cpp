@@ -12,7 +12,7 @@ BOOL CViewHostApp::InitInstance()
 {
     INITCOMMONCONTROLSEX icc{};
     icc.dwSize = sizeof(icc);
-    icc.dwICC = ICC_WIN95_CLASSES | ICC_TREEVIEW_CLASSES;
+    icc.dwICC = ICC_WIN95_CLASSES | ICC_TREEVIEW_CLASSES | ICC_LISTVIEW_CLASSES;
     InitCommonControlsEx(&icc);
 
     if (!CWinAppEx::InitInstance())
@@ -27,6 +27,7 @@ BOOL CViewHostApp::InitInstance()
     EnableTaskbarInteraction(FALSE);
 
     SetRegistryKey(_T("AeroVista"));
+    EnableLoadWindowPlacement(FALSE);
     InitContextMenuManager();
     InitKeyboardManager();
     InitTooltipManager();
@@ -43,6 +44,7 @@ BOOL CViewHostApp::InitInstance()
     }
 
     frame->ShowWindow(SW_SHOW);
+    frame->fitToFormView();
     frame->UpdateWindow();
     return TRUE;
 }

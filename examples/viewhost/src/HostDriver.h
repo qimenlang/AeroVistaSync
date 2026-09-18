@@ -68,6 +68,7 @@ namespace aerovista::viewhost
 
         bool isRunning() const;
         int readyIgCount() const;
+        std::vector<aerovista::sync::IgConnection> igSnapshot() const;
         std::uint32_t igCtrlSentCount() const;
         std::uint32_t sofReceivedCount() const;
 

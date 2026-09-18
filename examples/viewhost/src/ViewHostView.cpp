@@ -51,6 +51,25 @@ namespace
     constexpr UINT kOnItemHit = TVHT_ONITEM | TVHT_ONITEMINDENT | TVHT_ONITEMRIGHT;
     constexpr UINT kEmptyTreeHit = TVHT_NOWHERE | TVHT_ABOVE | TVHT_BELOW | TVHT_TOLEFT | TVHT_TORIGHT;
     constexpr UINT kFocusSinkId = 4096;
+
+    const TCHAR* igLinkStatus(const aerovista::sync::IgConnection& row)
+    {
+        if (row.tcpReady && row.udpReady)
+            return _T("ready");
+        if (row.tcpReady)
+            return _T("tcp");
+        if (row.udpReady)
+            return _T("udp");
+        return _T("connecting");
+    }
+
+    void writeIgListRow(CListCtrl& list, int index, const aerovista::sync::IgConnection& row)
+    {
+        CString id;
+        id.Format(_T("%llu"), static_cast<unsigned long long>(row.id));
+        list.SetItemText(index, 0, id);
+        list.SetItemText(index, 1, igLinkStatus(row));
+    }
 } // namespace
 
 CViewHostView::CViewHostView() : CFormView(IDD_VIEWHOST_DIALOG)
@@ -94,6 +113,7 @@ void CViewHostView::OnInitialUpdate()
     SetTimer(kTimerId, kTimerPeriodMs, nullptr);
 
     _entityTree.SubclassDlgItem(IDC_ENTITY_TREE, this);
+    setupIgList();
     createFocusSink();
     refreshEntityTree();
 
@@ -342,24 +362,49 @@ LRESULT CViewHostView::OnRefreshEntityTree(WPARAM, LPARAM)
 
 void CViewHostView::OnTestTcp()
 {
-    const std::string name = _driver.sendRandomTcpPacket();
-    CString status;
-    status.Format(_T("最近测试: TCP %hs"), name.c_str());
-    SetDlgItemText(IDC_STATUS_TEST, status);
+    _lastTestName = std::string("TCP ") + _driver.sendRandomTcpPacket();
+    updateStatusText();
 }
 
 void CViewHostView::OnTestUdp()
 {
-    const std::string name = _driver.sendRandomUdpPacket();
-    CString status;
-    status.Format(_T("最近测试: UDP %hs"), name.c_str());
-    SetDlgItemText(IDC_STATUS_TEST, status);
+    _lastTestName = std::string("UDP ") + _driver.sendRandomUdpPacket();
+    updateStatusText();
 }
 
 void CViewHostView::closeFrame()
 {
     if (CFrameWnd* frame = GetParentFrame())
         frame->PostMessage(WM_CLOSE);
+}
+
+void CViewHostView::setupIgList()
+{
+    _igList.SubclassDlgItem(IDC_IG_LIST, this);
+    _igList.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+    CRect client;
+    _igList.GetClientRect(&client);
+    const int idWidth = client.Width() / 3;
+    _igList.InsertColumn(0, _T("id"), LVCFMT_LEFT, idWidth);
+    _igList.InsertColumn(1, _T("状态"), LVCFMT_LEFT, client.Width() - idWidth - 4);
+}
+
+void CViewHostView::refreshIgList()
+{
+    const auto rows = _driver.igSnapshot();
+    if (rows == _igSnapshot)
+        return;
+    _igSnapshot = rows;
+
+    const int n = static_cast<int>(rows.size());
+    if (_igList.GetItemCount() != n)
+    {
+        _igList.DeleteAllItems();
+        for (int i = 0; i < n; ++i)
+            _igList.InsertItem(i, _T(""));
+    }
+    for (int i = 0; i < n; ++i)
+        writeIgListRow(_igList, i, rows[static_cast<size_t>(i)]);
 }
 
 void CViewHostView::updateStatusText()
@@ -370,39 +415,27 @@ void CViewHostView::updateStatusText()
             wnd->SetWindowText(text);
     };
 
-    CString ready;
-    ready.Format(_T("Ready IG: %d"), _driver.readyIgCount());
-    setText(IDC_STATUS_READY, ready);
+    CString conn;
+    conn.Format(_T("Ready IG: %d    IGCtrl 发送: %u    SOF 接收: %u"), _driver.readyIgCount(),
+                _driver.igCtrlSentCount(), _driver.sofReceivedCount());
+    setText(IDC_STATUS_READY, conn);
 
-    CString ctrl;
-    ctrl.Format(_T("IGCtrl 发送: %u"), _driver.igCtrlSentCount());
-    setText(IDC_STATUS_IGCTRL, ctrl);
+    CString eye;
+    eye.Format(_T("lat: %.6f    lon: %.6f    alt: %.1f    yaw: %.2f    pitch: %.2f    roll: %.2f"),
+               _eye.x, _eye.y, _eye.z, _eye.yawDeg, _eye.pitchDeg, _eye.rollDeg);
+    setText(IDC_EYE_LAT, eye);
 
-    CString sof;
-    sof.Format(_T("SOF 接收: %u"), _driver.sofReceivedCount());
-    setText(IDC_STATUS_SOF, sof);
+    CString probe;
+    probe.Format(_T("测试: %hs    接收: %hs"), _lastTestName.empty() ? "-" : _lastTestName.c_str(),
+                 _lastRecvName.empty() ? "-" : _lastRecvName.c_str());
+    setText(IDC_STATUS_TEST, probe);
 
-    CString lat, lon, alt, ypr;
-    lat.Format(_T("lat: %.6f"), _eye.x);
-    lon.Format(_T("lon: %.6f"), _eye.y);
-    alt.Format(_T("alt: %.1f"), _eye.z);
-    ypr.Format(_T("yaw: %.2f  pitch: %.2f  roll: %.2f"), _eye.yawDeg, _eye.pitchDeg, _eye.rollDeg);
-    setText(IDC_EYE_LAT, lat);
-    setText(IDC_EYE_LON, lon);
-    setText(IDC_EYE_ALT, alt);
-    setText(IDC_EYE_YPR, ypr);
-
-    if (!_lastRecvName.empty())
-    {
-        CString recv;
-        recv.Format(_T("最近接收: %hs"), _lastRecvName.c_str());
-        setText(IDC_STATUS_RECV, recv);
-    }
+    refreshIgList();
 }
 
 void CViewHostView::subscribeIgPackets()
 {
-    // IG→Host TCP 上行报文自检（§4.7）：F9 随机发送，Host 侧 subscribe 收到即刷新「最近接收」。
+    // IG→Host TCP 上行报文自检（§4.7）：F9 随机发送，Host 侧 subscribe 收到即刷新「接收」。
     // 与 engine PacketProbeHandler 的 kTcpProbes 16 类一一对应（HostSync registerTcpProcessors 已注册）。
     _driver.addCallback<CigiIGMsgV4>([this](const CigiIGMsgV4&) { _lastRecvName = "CigiIGMsgV4"; });
     _driver.addCallback<CigiEventNotificationV4>([this](const CigiEventNotificationV4&) { _lastRecvName = "CigiEventNotificationV4"; });

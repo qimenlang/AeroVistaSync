@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <string>
+#include <vector>
 
 #include "HostDriver.h"
 #include "ViewHostMath.h"
@@ -44,6 +45,8 @@ protected:
 private:
     bool loadConfig();
     void updateStatusText();
+    void setupIgList();
+    void refreshIgList();
     /// 订阅 IG→Host TCP 上行报文（16 类响应/通知），收到即记录类名到 _lastRecvName（报文自检，§4.7）。
     void subscribeIgPackets();
     void openEntityProperties(std::uint16_t entityId);
@@ -68,6 +71,7 @@ private:
     aerovista::viewhost::HostDriver _driver;
     aerovista::sync::cigi_wire::EyePose _eye;
     CTreeCtrl _entityTree;
+    CListCtrl _igList;
     CEdit _focusSink;
     HTREEITEM _rootItem = nullptr;
     HTREEITEM _eyePointItem = nullptr;
@@ -79,8 +83,11 @@ private:
     double _speed = 30.0;    // m/s
     double _turnRate = 60.0; // deg/s
 
-    /// 最近收到的 IG→Host 报文类名（F9/F10 上行报文自检，IDC_STATUS_RECV 显示）。
+    /// 最近收到的 IG→Host 报文类名（F9/F10 上行报文自检，IDC_STATUS_TEST 同行显示）。
     std::string _lastRecvName;
+    /// 最近一次 testtcp/testudp 的链路 + 类名。
+    std::string _lastTestName;
+    std::vector<aerovista::sync::IgConnection> _igSnapshot;
 
     static constexpr UINT_PTR kTimerId = 1;
     static constexpr UINT kTimerPeriodMs = 16; // ~60 fps，viewhost设计.md §4.3

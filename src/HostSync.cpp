@@ -94,6 +94,22 @@ namespace aerovista::sync
         return countReadyUnlocked();
     }
 
+    std::vector<IgConnection> HostSync::igSnapshot() const
+    {
+        std::lock_guard lock(_peersMutex);
+        std::vector<IgConnection> rows;
+        rows.reserve(_peers.size());
+        for (const auto& peer : _peers)
+        {
+            IgConnection row;
+            row.id = peer.clientId;
+            row.tcpReady = peer.tcpReady;
+            row.udpReady = peer.udpReady;
+            rows.push_back(row);
+        }
+        return rows;
+    }
+
     HostStatus HostSync::status() const
     {
         return _status.load();

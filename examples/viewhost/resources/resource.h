@@ -5,20 +5,15 @@
 #define IDR_MAINFRAME       128
 
 #define IDC_STATUS_READY   1003
-#define IDC_STATUS_IGCTRL  1004
-#define IDC_STATUS_SOF     1005
 #define IDC_EYE_LAT        1006
-#define IDC_EYE_LON        1007
-#define IDC_EYE_ALT        1008
-#define IDC_EYE_YPR        1009
 
 #define IDC_ENTITY_TREE    1021
 #define IDC_STATUS_ENTITY  1022
+#define IDC_IG_LIST        1023
 
 #define IDC_TEST_TCP       1017
 #define IDC_TEST_UDP       1018
 #define IDC_STATUS_TEST    1019
-#define IDC_STATUS_RECV    1020
 
 #define IDC_PROP_ID     1100
 #define IDC_PROP_NAME   1101
