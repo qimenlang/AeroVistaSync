@@ -12,7 +12,6 @@
 BEGIN_MESSAGE_MAP(CViewHostDlg, CDialog)
     ON_WM_TIMER()
     ON_WM_DESTROY()
-    ON_BN_CLICKED(IDC_TOGGLE_CONTROL, &CViewHostDlg::OnToggleControl)
     ON_BN_CLICKED(IDC_TEST_TCP, &CViewHostDlg::OnTestTcp)
     ON_BN_CLICKED(IDC_TEST_UDP, &CViewHostDlg::OnTestUdp)
     ON_BN_CLICKED(IDC_EXIT, &CViewHostDlg::OnExit)
@@ -27,6 +26,30 @@ namespace
     {
         return (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
     }
+
+    bool isCameraControlKey(WPARAM virtualKey)
+    {
+        switch (virtualKey)
+        {
+        case 'W':
+        case 'A':
+        case 'S':
+        case 'D':
+        case 'E':
+        case 'C':
+        case VK_LEFT:
+        case VK_RIGHT:
+        case VK_UP:
+        case VK_DOWN:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    constexpr UINT kOnItemHit = TVHT_ONITEM | TVHT_ONITEMINDENT | TVHT_ONITEMRIGHT;
+    constexpr UINT kEmptyTreeHit = TVHT_NOWHERE | TVHT_ABOVE | TVHT_BELOW | TVHT_TOLEFT | TVHT_TORIGHT;
+    constexpr UINT kFocusSinkId = 4096;
 } // namespace
 
 CViewHostDlg::CViewHostDlg(CWnd* pParent) : CDialog(IDD_VIEWHOST_DIALOG, pParent)
@@ -35,14 +58,12 @@ CViewHostDlg::CViewHostDlg(CWnd* pParent) : CDialog(IDD_VIEWHOST_DIALOG, pParent
 
 BOOL CViewHostDlg::PreTranslateMessage(MSG* pMsg)
 {
-    // 空格键切换「开始控制 / 停止控制」。
-    // 不用 WM_KEYDOWN 消息映射是因为焦点在子控件上时按键不路由到对话框；
-    // PreTranslateMessage 在派发前拦截，对话框内全局生效（viewhost设计.md §4.5 三个坑之一）。
-    if (pMsg->message == WM_KEYDOWN && pMsg->wParam == VK_SPACE)
-    {
-        OnToggleControl();
-        return TRUE; // 吞掉该消息，避免空格还被其它机制消费
-    }
+    // 控眼点时吞掉方向键/WASD，避免焦点仍在树上时 TreeView 也响应方向键。
+    if (_controlling && pMsg->message == WM_KEYDOWN && isCameraControlKey(pMsg->wParam))
+        return TRUE;
+    // NM_CLICK 点在树空白处常常不来；在按下时按 HitTest 决定进入/退出。
+    if (pMsg->message == WM_LBUTTONDOWN && applyEyeControlFromCursor(pMsg->hwnd))
+        return TRUE; // 树/对话框空白、静态文本、分组框：吞掉点击，避免焦点弹回树
     return CDialog::PreTranslateMessage(pMsg);
 }
 
@@ -67,10 +88,10 @@ BOOL CViewHostDlg::OnInitDialog()
     _eye.rollDeg = 0.0;
 
     _startTime = std::chrono::steady_clock::now();
-    _started = true;
     SetTimer(kTimerId, kTimerPeriodMs, nullptr);
 
     _entityTree.SubclassDlgItem(IDC_ENTITY_TREE, this);
+    createFocusSink();
     refreshEntityTree();
 
     subscribeIgPackets();
@@ -150,10 +171,115 @@ void CViewHostDlg::OnDestroy()
     CDialog::OnDestroy();
 }
 
-void CViewHostDlg::OnToggleControl()
+CViewHostDlg::EntityTreeHit CViewHostDlg::hitTestEntityTree()
 {
-    _controlling = !_controlling;
-    updateStatusText();
+    EntityTreeHit hit;
+    CPoint screen;
+    GetCursorPos(&screen);
+    hit.client = screen;
+    _entityTree.ScreenToClient(&hit.client);
+    hit.item = _entityTree.HitTest(hit.client, &hit.flags);
+    return hit;
+}
+
+bool CViewHostDlg::isEntityLeaf(HTREEITEM item)
+{
+    return item != nullptr && _entitiesFolder != nullptr &&
+           _entityTree.GetParentItem(item) == _entitiesFolder;
+}
+
+void CViewHostDlg::updateEyePointLabel()
+{
+    if (_eyePointItem == nullptr)
+        return;
+    _entityTree.SetItemText(_eyePointItem, _controlling ? _T("eyePoint [控制中]") : _T("eyePoint"));
+}
+
+bool CViewHostDlg::isEyePointHit(HTREEITEM item, UINT flags) const
+{
+    return item == _eyePointItem && (flags & kOnItemHit) != 0;
+}
+
+bool CViewHostDlg::isEmptyTreeHit(HTREEITEM item, UINT flags) const
+{
+    return item == nullptr || (flags & kEmptyTreeHit) != 0;
+}
+
+void CViewHostDlg::createFocusSink()
+{
+    // 必须 WS_VISIBLE：隐藏窗不能持焦点。放到客户区外，避免看见插入符。
+    _focusSink.Create(WS_CHILD | WS_VISIBLE | ES_READONLY, CRect(-4, -4, -2, -2), this, kFocusSinkId);
+}
+
+void CViewHostDlg::defocusEntityTree()
+{
+    _entityTree.SelectItem(nullptr);
+    if (_focusSink.GetSafeHwnd() != nullptr)
+        _focusSink.SetFocus();
+}
+
+bool CViewHostDlg::isDialogChrome(HWND clickHwnd) const
+{
+    if (clickHwnd == GetSafeHwnd())
+        return true;
+
+    TCHAR className[32]{};
+    if (::GetClassName(clickHwnd, className, 32) == 0)
+        return false;
+    if (lstrcmpi(className, _T("Static")) == 0)
+        return true;
+    if (lstrcmpi(className, _T("Button")) != 0)
+        return false;
+    return (::GetWindowLong(clickHwnd, GWL_STYLE) & BS_TYPEMASK) == BS_GROUPBOX;
+}
+
+bool CViewHostDlg::applyEyeControlFromCursor(HWND clickHwnd)
+{
+    if (_entityTree.GetSafeHwnd() == nullptr)
+        return false;
+
+    const HWND treeHwnd = _entityTree.GetSafeHwnd();
+    if (clickHwnd != treeHwnd)
+    {
+        setEyeControlling(false);
+        if (!isDialogChrome(clickHwnd))
+        {
+            _entityTree.SelectItem(nullptr);
+            return false; // 按钮等可持焦控件自己抢走键盘
+        }
+        defocusEntityTree();
+        return true; // 分组框内部是对话框客户区；吞掉点击，避免焦点弹回树
+    }
+
+    const EntityTreeHit hit = hitTestEntityTree();
+    CRect clientRect;
+    _entityTree.GetClientRect(&clientRect);
+    if (!clientRect.PtInRect(hit.client))
+    {
+        setEyeControlling(false);
+        return false; // 滚动条等非客户区：交给树，保持焦点
+    }
+
+    if (isEyePointHit(hit.item, hit.flags))
+    {
+        setEyeControlling(true);
+        return false;
+    }
+
+    setEyeControlling(false);
+    if (!isEmptyTreeHit(hit.item, hit.flags))
+        return false;
+
+    defocusEntityTree();
+    return true;
+}
+
+void CViewHostDlg::setEyeControlling(bool controlling)
+{
+    _controlling = controlling;
+    updateEyePointLabel();
+    if (controlling && _eyePointItem != nullptr)
+        _entityTree.SelectItem(_eyePointItem);
 }
 
 void CViewHostDlg::refreshEntityTree()
@@ -161,31 +287,33 @@ void CViewHostDlg::refreshEntityTree()
     if (_entityTree.GetSafeHwnd() == nullptr)
         return;
 
+    const bool controlling = _controlling;
     _entityTree.DeleteAllItems();
-    const HTREEITEM root = _entityTree.InsertItem(_T("entities"));
-    _entityTree.SetItemData(root, 0);
+    _rootItem = _entityTree.InsertItem(_T("root"));
+    _eyePointItem = _entityTree.InsertItem(_T("eyePoint"), _rootItem);
+    _entitiesFolder = _entityTree.InsertItem(_T("entities"), _rootItem);
+    _entityTree.SetItemData(_rootItem, 0);
+    _entityTree.SetItemData(_eyePointItem, 0);
+    _entityTree.SetItemData(_entitiesFolder, 0);
     for (const aerovista::sync::EntityAuthorityRow& row : _driver.entitySnapshot())
     {
         const CString name(CA2T(row.name.c_str(), CP_UTF8));
-        const HTREEITEM item = _entityTree.InsertItem(name, root);
+        const HTREEITEM item = _entityTree.InsertItem(name, _entitiesFolder);
         _entityTree.SetItemData(item, row.entityId);
     }
-    _entityTree.Expand(root, TVE_EXPAND);
+    _entityTree.Expand(_rootItem, TVE_EXPAND);
+    _entityTree.Expand(_entitiesFolder, TVE_EXPAND);
+    setEyeControlling(controlling);
 }
 
 void CViewHostDlg::OnEntityTreeDblClk(NMHDR*, LRESULT* result)
 {
-    *result = 0; // 根节点仍走默认展开/折叠
-    CPoint screen;
-    GetCursorPos(&screen);
-    CPoint client = screen;
-    _entityTree.ScreenToClient(&client);
-    UINT flags = 0;
-    const HTREEITEM item = _entityTree.HitTest(client, &flags);
-    if (item == nullptr || item == _entityTree.GetRootItem())
+    *result = 0; // root / entities / eyePoint 仍走默认展开/折叠
+    const HTREEITEM item = hitTestEntityTree().item;
+    if (!isEntityLeaf(item))
         return;
 
-    *result = TRUE; // 叶子：不要再走默认展开
+    *result = TRUE; // 实体叶子：不要再走默认展开
     _entityTree.SelectItem(item);
     // 通知返回后再弹模态框，避免双击的 mouse-up 落到面板按钮上。
     PostMessage(wmOpenEntityProperties, _entityTree.GetItemData(item));
@@ -267,8 +395,6 @@ void CViewHostDlg::updateStatusText()
         recv.Format(_T("最近接收: %hs"), _lastRecvName.c_str());
         setText(IDC_STATUS_RECV, recv);
     }
-
-    setText(IDC_TOGGLE_CONTROL, _controlling ? _T("停止控制") : _T("开始控制"));
 }
 
 void CViewHostDlg::subscribeIgPackets()

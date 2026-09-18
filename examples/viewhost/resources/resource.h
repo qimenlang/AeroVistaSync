@@ -4,7 +4,6 @@
 #define IDD_ENTITY_PROP     102
 
 #define IDC_EXIT           1001
-#define IDC_TOGGLE_CONTROL 1002
 #define IDC_STATUS_READY   1003
 #define IDC_STATUS_IGCTRL  1004
 #define IDC_STATUS_SOF     1005

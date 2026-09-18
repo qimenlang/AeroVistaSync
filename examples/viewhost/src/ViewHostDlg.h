@@ -32,7 +32,6 @@ protected:
 
     afx_msg void OnTimer(UINT_PTR nIDEvent);
     afx_msg void OnDestroy();
-    afx_msg void OnToggleControl();
     afx_msg void OnTestTcp();
     afx_msg void OnTestUdp();
     afx_msg void OnExit();
@@ -48,13 +47,32 @@ private:
     /// 订阅 IG→Host TCP 上行报文（16 类响应/通知），收到即记录类名到 _lastRecvName（报文自检，§4.7）。
     void subscribeIgPackets();
     void openEntityProperties(std::uint16_t entityId);
+    struct EntityTreeHit
+    {
+        HTREEITEM item = nullptr;
+        UINT flags = 0;
+        CPoint client{};
+    };
+    EntityTreeHit hitTestEntityTree();
+    bool isEntityLeaf(HTREEITEM item);
+    bool isEyePointHit(HTREEITEM item, UINT flags) const;
+    bool isEmptyTreeHit(HTREEITEM item, UINT flags) const;
+    bool applyEyeControlFromCursor(HWND clickHwnd);
+    bool isDialogChrome(HWND clickHwnd) const;
+    void createFocusSink();
+    void defocusEntityTree();
+    void setEyeControlling(bool controlling);
+    void updateEyePointLabel();
 
     aerovista::viewhost::HostDriver _driver;
     aerovista::sync::cigi_wire::EyePose _eye;
     CTreeCtrl _entityTree;
+    CEdit _focusSink;
+    HTREEITEM _rootItem = nullptr;
+    HTREEITEM _eyePointItem = nullptr;
+    HTREEITEM _entitiesFolder = nullptr;
 
     bool _controlling = false;
-    bool _started = false;
     std::chrono::steady_clock::time_point _startTime{};
     double _lastSimTimeMs = 0.0;
     double _speed = 30.0;    // m/s
