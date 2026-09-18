@@ -47,6 +47,8 @@ private:
     void updateStatusText();
     void setupIgList();
     void refreshIgList();
+    bool commandEditHasFocus() const;
+    void submitCommand();
     /// 订阅 IG→Host TCP 上行报文（16 类响应/通知），收到即记录类名到 _lastRecvName（报文自检，§4.7）。
     void subscribeIgPackets();
     void openEntityProperties(std::uint16_t entityId);

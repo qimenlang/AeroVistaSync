@@ -247,6 +247,27 @@ namespace aerovista::viewhost
         return probe.name;
     }
 
+    bool HostDriver::sendSymbolText(const std::string& text, std::string* error)
+    {
+        if (!_initialized)
+        {
+            if (error)
+                *error = "Host 未初始化";
+            return false;
+        }
+        if (text.empty())
+        {
+            if (error)
+                *error = "空指令";
+            return false;
+        }
+
+        CigiSymbolTextDefV4 packet(text.c_str());
+        _host.outMsgWithIgCtrlTcp() << packet;
+        _host.flushTcp();
+        return true;
+    }
+
     void HostDriver::pollIncoming()
     {
         _host.drainIncoming();

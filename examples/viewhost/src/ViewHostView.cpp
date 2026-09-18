@@ -70,6 +70,16 @@ namespace
         list.SetItemText(index, 0, id);
         list.SetItemText(index, 1, igLinkStatus(row));
     }
+
+    bool isReturnKey(const MSG* pMsg)
+    {
+        return (pMsg->message == WM_KEYDOWN || pMsg->message == WM_CHAR) && pMsg->wParam == VK_RETURN;
+    }
+
+    std::string cstringToUtf8(const CString& text)
+    {
+        return std::string(CT2A(text, CP_UTF8));
+    }
 } // namespace
 
 CViewHostView::CViewHostView() : CFormView(IDD_VIEWHOST_DIALOG)
@@ -78,8 +88,14 @@ CViewHostView::CViewHostView() : CFormView(IDD_VIEWHOST_DIALOG)
 
 BOOL CViewHostView::PreTranslateMessage(MSG* pMsg)
 {
+    if (isReturnKey(pMsg) && commandEditHasFocus())
+    {
+        submitCommand();
+        return TRUE;
+    }
     // 控眼点时吞掉方向键/WASD，避免焦点仍在树上时 TreeView 也响应方向键。
-    if (_controlling && pMsg->message == WM_KEYDOWN && isCameraControlKey(pMsg->wParam))
+    if (_controlling && !commandEditHasFocus() && pMsg->message == WM_KEYDOWN &&
+        isCameraControlKey(pMsg->wParam))
         return TRUE;
     // NM_CLICK 点在树空白处常常不来；在按下时按 HitTest 决定进入/退出。
     if (pMsg->message == WM_LBUTTONDOWN && applyEyeControlFromCursor(pMsg->hwnd))
@@ -151,7 +167,7 @@ void CViewHostView::OnTimer(UINT_PTR nIDEvent)
     const double moveStep = _speed * dtSec;
     const double turnStepDeg = _turnRate * dtSec;
 
-    if (_controlling)
+    if (_controlling && !commandEditHasFocus())
     {
         double dFwd = 0.0, dRight = 0.0, dUp = 0.0;
         double dyaw = 0.0, dpitch = 0.0;
@@ -405,6 +421,29 @@ void CViewHostView::refreshIgList()
     }
     for (int i = 0; i < n; ++i)
         writeIgListRow(_igList, i, rows[static_cast<size_t>(i)]);
+}
+
+bool CViewHostView::commandEditHasFocus() const
+{
+    const CWnd* edit = GetDlgItem(IDC_COMMAND);
+    return edit != nullptr && GetFocus() == edit;
+}
+
+void CViewHostView::submitCommand()
+{
+    CString text;
+    GetDlgItemText(IDC_COMMAND, text);
+    text.Trim();
+    if (text.IsEmpty())
+        return;
+
+    std::string error;
+    if (!_driver.sendSymbolText(cstringToUtf8(text), &error))
+        return;
+
+    SetDlgItemText(IDC_COMMAND, _T(""));
+    _lastTestName = "TCP CigiSymbolTextDefV4";
+    updateStatusText();
 }
 
 void CViewHostView::updateStatusText()

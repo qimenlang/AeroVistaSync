@@ -55,6 +55,9 @@ namespace aerovista::viewhost
         /// 报文自检：随机构造一个数据面（UDP）测试报文并发送，返回报文类名。
         std::string sendRandomUdpPacket();
 
+        /// 命令面文本指令：组 `CigiSymbolTextDefV4`（Text = 整串）经 TCP flush。空串失败。
+        bool sendSymbolText(const std::string& text, std::string* error = nullptr);
+
         /// 接收轮询：drain IG→Host 收包队列并解包，触发订阅回调（Host push 模式，UI 定时器每帧调用）。
         void pollIncoming();
         /// 注册某类 IG→Host 报文的到达回调（转发 HostSync::addCallback，状态同步设计初版.md §8.1）。

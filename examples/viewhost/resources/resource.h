@@ -10,6 +10,7 @@
 #define IDC_ENTITY_TREE    1021
 #define IDC_STATUS_ENTITY  1022
 #define IDC_IG_LIST        1023
+#define IDC_COMMAND        1024
 
 #define IDC_TEST_TCP       1017
 #define IDC_TEST_UDP       1018
