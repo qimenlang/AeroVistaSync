@@ -2,14 +2,14 @@
 
 namespace aerovista::sync
 {
-    void SofRttTracker::pushCompletion(std::optional<Duration> sample)
+    void SofRttTracker::pushCompletion(std::optional<std::chrono::microseconds> sample)
     {
         _completions.push_back(sample);
         if (_completions.size() > avgWindow)
             _completions.pop_front();
     }
 
-    void SofRttTracker::recordMatch(Duration rtt)
+    void SofRttTracker::recordMatch(std::chrono::microseconds rtt)
     {
         _lastRtt = rtt;
         ++_matchCount;
@@ -22,7 +22,7 @@ namespace aerovista::sync
         pushCompletion(std::nullopt);
     }
 
-    void SofRttTracker::expire(TimePoint now)
+    void SofRttTracker::expire(std::chrono::steady_clock::time_point now)
     {
         for (auto it = _pending.begin(); it != _pending.end();)
         {
@@ -38,7 +38,7 @@ namespace aerovista::sync
         }
     }
 
-    void SofRttTracker::onIgCtrlSent(std::uint32_t hostFrameNumber, TimePoint tSend)
+    void SofRttTracker::onIgCtrlSent(std::uint32_t hostFrameNumber, std::chrono::steady_clock::time_point tSend)
     {
         expire(tSend);
         if (_pending.find(hostFrameNumber) != _pending.end())
@@ -46,23 +46,23 @@ namespace aerovista::sync
         _pending.emplace(hostFrameNumber, tSend);
     }
 
-    void SofRttTracker::onSofReceived(std::uint32_t echoedHostFrameNumber, TimePoint tRecv)
+    void SofRttTracker::onSofReceived(std::uint32_t echoedHostFrameNumber, std::chrono::steady_clock::time_point tRecv)
     {
         expire(tRecv);
         const auto it = _pending.find(echoedHostFrameNumber);
         if (it == _pending.end())
             return;
-        const Duration rtt = std::chrono::duration_cast<Duration>(tRecv - it->second);
+        const auto rtt = std::chrono::duration_cast<std::chrono::microseconds>(tRecv - it->second);
         _pending.erase(it);
         recordMatch(rtt);
     }
 
-    std::optional<SofRttTracker::Duration> SofRttTracker::lastRtt() const
+    std::optional<std::chrono::microseconds> SofRttTracker::lastRtt() const
     {
         return _lastRtt;
     }
 
-    std::optional<SofRttTracker::Duration> SofRttTracker::avgRtt() const
+    std::optional<std::chrono::microseconds> SofRttTracker::avgRtt() const
     {
         std::size_t matches = 0;
         std::int64_t sumUs = 0;
@@ -75,7 +75,7 @@ namespace aerovista::sync
         }
         if (matches < avgMinSamples)
             return std::nullopt;
-        return Duration{sumUs / static_cast<std::int64_t>(matches)};
+        return std::chrono::microseconds{sumUs / static_cast<std::int64_t>(matches)};
     }
 
     std::optional<double> SofRttTracker::lossRate() const

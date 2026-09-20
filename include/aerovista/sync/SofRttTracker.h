@@ -14,24 +14,20 @@ namespace aerovista::sync
     class SofRttTracker
     {
     public:
-        using Clock = std::chrono::steady_clock;
-        using TimePoint = Clock::time_point;
-        using Duration = std::chrono::microseconds;
-
         static constexpr std::chrono::milliseconds matchTimeout{100};
         static constexpr std::size_t avgWindow = 60;
         static constexpr std::size_t avgMinSamples = 10;
 
         /// 记下 Host Frame Number 的发出时刻。已在表中的同号不刷新 t_send。
-        void onIgCtrlSent(std::uint32_t hostFrameNumber, TimePoint tSend);
+        void onIgCtrlSent(std::uint32_t hostFrameNumber, std::chrono::steady_clock::time_point tSend);
         /// 按回显的 Host Frame Number 配对。先按 tRecv 做超时淘汰，再匹配。
-        void onSofReceived(std::uint32_t echoedHostFrameNumber, TimePoint tRecv);
+        void onSofReceived(std::uint32_t echoedHostFrameNumber, std::chrono::steady_clock::time_point tRecv);
         /// 把 now - tSend >= matchTimeout 且仍未匹配的帧记为丢失（不进 RTT）。
-        void expire(TimePoint now);
+        void expire(std::chrono::steady_clock::time_point now);
 
-        std::optional<Duration> lastRtt() const;
+        std::optional<std::chrono::microseconds> lastRtt() const;
         /// 最近 avgWindow 次完成里，匹配样本的算术平均；其中匹配数 < avgMinSamples 时为空。
-        std::optional<Duration> avgRtt() const;
+        std::optional<std::chrono::microseconds> avgRtt() const;
         /// 最近 avgWindow 次完成（匹配或超时）中超时占比；完成数 < avgMinSamples 时为空。不含飞行中。
         std::optional<double> lossRate() const;
 
@@ -40,14 +36,14 @@ namespace aerovista::sync
         std::size_t pendingCount() const;
 
     private:
-        void recordMatch(Duration rtt);
+        void recordMatch(std::chrono::microseconds rtt);
         void recordTimeout();
-        void pushCompletion(std::optional<Duration> sample);
+        void pushCompletion(std::optional<std::chrono::microseconds> sample);
 
-        std::unordered_map<std::uint32_t, TimePoint> _pending;
+        std::unordered_map<std::uint32_t, std::chrono::steady_clock::time_point> _pending;
         /// 最近完成：有值 = 匹配 RTT，空 = 超时。与 avgRtt / lossRate 同一时间轴。
-        std::deque<std::optional<Duration>> _completions;
-        std::optional<Duration> _lastRtt;
+        std::deque<std::optional<std::chrono::microseconds>> _completions;
+        std::optional<std::chrono::microseconds> _lastRtt;
         std::size_t _matchCount = 0;
         std::size_t _lossCount = 0;
     };

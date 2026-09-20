@@ -10,8 +10,8 @@
 
 namespace
 {
-    std::optional<std::chrono::microseconds> ageSince(const std::optional<aerovista::sync::SofRttTracker::TimePoint>& then,
-                                                     aerovista::sync::SofRttTracker::TimePoint now)
+    std::optional<std::chrono::microseconds> ageSince(const std::optional<std::chrono::steady_clock::time_point>& then,
+                                                     std::chrono::steady_clock::time_point now)
     {
         if (!then)
             return std::nullopt;
@@ -111,7 +111,7 @@ namespace aerovista::sync
     std::vector<IgConnection> HostSync::igSnapshot() const
     {
         std::lock_guard lock(_peersMutex);
-        const auto now = SofRttTracker::Clock::now();
+        const auto now = std::chrono::steady_clock::now();
         std::vector<IgConnection> rows;
         rows.reserve(_peers.size());
         for (const auto& peer : _peers)
@@ -388,7 +388,7 @@ namespace aerovista::sync
         return fromIp;
     }
 
-    void HostSync::recordIgCtrlFanout(std::uint32_t hostFrameNumber, SofRttTracker::TimePoint tSend)
+    void HostSync::recordIgCtrlFanout(std::uint32_t hostFrameNumber, std::chrono::steady_clock::time_point tSend)
     {
         std::lock_guard lock(_peersMutex);
         for (auto& peer : _peers)
@@ -398,14 +398,14 @@ namespace aerovista::sync
         }
     }
 
-    void HostSync::expireSofRtt(SofRttTracker::TimePoint now)
+    void HostSync::expireSofRtt(std::chrono::steady_clock::time_point now)
     {
         std::lock_guard lock(_peersMutex);
         for (auto& peer : _peers)
             peer.sofRtt.expire(now);
     }
 
-    void HostSync::ingestUdpSof(const UdpIngress& frame, SofRttTracker::TimePoint now)
+    void HostSync::ingestUdpSof(const UdpIngress& frame, std::chrono::steady_clock::time_point now)
     {
         const auto countBefore = _sofProc.count.load();
         processIncomingUdpFrame(frame.bytes.data(), static_cast<int>(frame.bytes.size()));
@@ -502,7 +502,7 @@ namespace aerovista::sync
 
     void HostSync::drainIncoming()
     {
-        const auto now = SofRttTracker::Clock::now();
+        const auto now = std::chrono::steady_clock::now();
         expireSofRtt(now);
 
         // 按链路喂各 session 解包（§5.1 双 session）：UDP 队列 → _udpSession，TCP 队列 → _tcpSession。
@@ -604,7 +604,7 @@ namespace aerovista::sync
         }
 
         if (!targets.empty() && _dataFrameCounter > 0)
-            recordIgCtrlFanout(_dataFrameCounter - 1, SofRttTracker::Clock::now());
+            recordIgCtrlFanout(_dataFrameCounter - 1, std::chrono::steady_clock::now());
 
         omsg.FreeMsg();
     }

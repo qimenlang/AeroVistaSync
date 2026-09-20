@@ -183,7 +183,7 @@ namespace aerovista::sync
             bool udpReady = false;
             SofRttTracker sofRtt;
             /// 主线程 drain 见到该 peer UDP SOF 的时刻；未收到过则为空。
-            std::optional<SofRttTracker::TimePoint> lastSofAt;
+            std::optional<std::chrono::steady_clock::time_point> lastSofAt;
         };
 
         struct EarlyUdpSync
@@ -211,9 +211,9 @@ namespace aerovista::sync
         void processUdpDatagram(const unsigned char* buf, int n, const char* fromIp, int fromPort);
         /// UDP_SYNC：记下 IG 发送源端口，供后续 SOF 按 peer 配对。返回 ACK 目标 IP。
         std::string noteUdpSyncPeer(std::uint32_t udpRecvPort, const std::string& fromIp, int fromPort);
-        void recordIgCtrlFanout(std::uint32_t hostFrameNumber, SofRttTracker::TimePoint tSend);
-        void expireSofRtt(SofRttTracker::TimePoint now);
-        void ingestUdpSof(const UdpIngress& frame, SofRttTracker::TimePoint now);
+        void recordIgCtrlFanout(std::uint32_t hostFrameNumber, std::chrono::steady_clock::time_point tSend);
+        void expireSofRtt(std::chrono::steady_clock::time_point now);
+        void ingestUdpSof(const UdpIngress& frame, std::chrono::steady_clock::time_point now);
         void pollUdp();
         /// 主线程解包一条 UDP 报文：_udpSession->ProcessIncomingMsg → 基础设施 + 业务 processor。
         void processIncomingUdpFrame(const unsigned char* buf, int n);

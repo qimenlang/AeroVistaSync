@@ -12,6 +12,8 @@ BOOL CViewHostFrame::PreCreateWindow(CREATESTRUCT& cs)
 {
     if (!CFrameWndEx::PreCreateWindow(cs))
         return FALSE;
+    cs.style &= ~(WS_THICKFRAME | WS_MAXIMIZEBOX);
+    cs.style |= CViewHostFrame::kFrameStyle;
     cs.style &= ~FWS_ADDTOTITLE;
     cs.dwExStyle &= ~WS_EX_CLIENTEDGE;
     cs.lpszName = _T("AeroVista viewhost");
@@ -41,6 +43,10 @@ BOOL CViewHostFrame::LoadFrame(UINT resourceId, DWORD defaultStyle, CWnd* parent
 {
     if (!CFrameWndEx::LoadFrame(resourceId, defaultStyle, parentWnd, context))
         return FALSE;
+    // LoadFrame 必须能 LoadMenu(IDR_MAINFRAME)；空菜单满足加载，再去掉可见菜单栏。
+    if (CWnd* menuBar = GetDlgItem(AFX_IDW_MENUBAR))
+        menuBar->ShowWindow(SW_HIDE);
+    SetMenu(nullptr);
     // OnLoadFrame 会按注册表/默认 overlapping 尺寸改窗口，必须在那之后再收。
     fitToFormView();
     return TRUE;
