@@ -16,30 +16,15 @@ BEGIN
     END
 END
 
-IDD_VIEWHOST_DIALOG DIALOGEX 0, 0, 456, 274
+IDD_VIEWHOST_DIALOG DIALOGEX 0, 0, 300, 68
 STYLE DS_SETFONT | DS_CONTROL | WS_CHILD | WS_CLIPSIBLINGS
 FONT 9, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
-    GROUPBOX        "场景", IDC_STATIC, 7, 6, 148, 262
-    CONTROL         "", IDC_ENTITY_TREE, "SysTreeView32", WS_BORDER | WS_TABSTOP | TVS_HASBUTTONS | TVS_HASLINES | TVS_LINESATROOT | TVS_SHOWSELALWAYS, 12, 18, 138, 226
-    LTEXT           "单击 eyePoint 控制眼点；单击其它项停止。双击实体打开属性。", IDC_STATUS_ENTITY, 12, 248, 138, 16
+    GROUPBOX        "连接状态", IDC_STATIC, 7, 6, 286, 28
+    LTEXT           "Ready IG: 0    IGCtrl 发送: 0    SOF 接收: 0", IDC_STATUS_READY, 15, 18, 270, 10
 
-    GROUPBOX        "连接状态", IDC_STATIC, 162, 6, 286, 28
-    LTEXT           "Ready IG: 0    IGCtrl 发送: 0    SOF 接收: 0", IDC_STATUS_READY, 170, 18, 270, 10
-
-    GROUPBOX        "眼点 (LLA)", IDC_STATIC, 162, 36, 286, 28
-    LTEXT           "lat: -    lon: -    alt: -    yaw: -    pitch: -    roll: -", IDC_EYE_LAT, 170, 48, 270, 10
-
-    GROUPBOX        "报文自检", IDC_STATIC, 162, 66, 286, 32
-    PUSHBUTTON      "testtcp", IDC_TEST_TCP, 170, 78, 50, 14
-    PUSHBUTTON      "testudp", IDC_TEST_UDP, 224, 78, 50, 14
-    LTEXT           "测试: -    接收: -", IDC_STATUS_TEST, 278, 80, 162, 10
-
-    GROUPBOX        "IG 连接", IDC_STATIC, 162, 100, 286, 134
-    CONTROL         "", IDC_IG_LIST, "SysListView32", WS_BORDER | WS_TABSTOP | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER, 170, 112, 270, 114
-
-    GROUPBOX        "命令行", IDC_STATIC, 162, 236, 286, 32
-    EDITTEXT        IDC_COMMAND, 170, 248, 270, 14, ES_AUTOHSCROLL
+    GROUPBOX        "眼点 (LLA)", IDC_STATIC, 7, 36, 286, 28
+    LTEXT           "lat: -    lon: -    alt: -    yaw: -    pitch: -    roll: -", IDC_EYE_LAT, 15, 48, 270, 10
 END
 
 IDD_ENTITY_PROP DIALOGEX 0, 0, 232, 196

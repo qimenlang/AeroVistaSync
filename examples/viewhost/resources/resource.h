@@ -4,11 +4,15 @@
 #define IDD_ENTITY_PROP     102
 #define IDR_MAINFRAME       128
 
+#define ID_PANE_SCENE_TREE    2001
+#define ID_PANE_IG_LIST       2002
+#define ID_PANE_PACKET_PROBE  2003
+#define ID_PANE_COMMAND       2004
+
 #define IDC_STATUS_READY   1003
 #define IDC_EYE_LAT        1006
 
 #define IDC_ENTITY_TREE    1021
-#define IDC_STATUS_ENTITY  1022
 #define IDC_IG_LIST        1023
 #define IDC_COMMAND        1024
 

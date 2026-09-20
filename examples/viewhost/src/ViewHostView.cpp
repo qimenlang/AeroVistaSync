@@ -1,6 +1,7 @@
 ﻿#include "ViewHostView.h"
 
 #include "EntityPropDlg.h"
+#include "ViewHostFrame.h"
 
 #include <aerovista/sync/SyncConfig.h>
 
@@ -8,15 +9,11 @@
 
 #include <chrono>
 #include <cstdint>
-#include <optional>
 #include <string>
 
 BEGIN_MESSAGE_MAP(CViewHostView, CFormView)
     ON_WM_TIMER()
     ON_WM_DESTROY()
-    ON_BN_CLICKED(IDC_TEST_TCP, &CViewHostView::OnTestTcp)
-    ON_BN_CLICKED(IDC_TEST_UDP, &CViewHostView::OnTestUdp)
-    ON_NOTIFY(NM_DBLCLK, IDC_ENTITY_TREE, &CViewHostView::OnEntityTreeDblClk)
     ON_MESSAGE(wmRefreshEntityTree, &CViewHostView::OnRefreshEntityTree)
     ON_MESSAGE(wmOpenEntityProperties, &CViewHostView::OnOpenEntityProperties)
 END_MESSAGE_MAP()
@@ -50,50 +47,7 @@ namespace
         }
     }
 
-    constexpr UINT kOnItemHit = TVHT_ONITEM | TVHT_ONITEMINDENT | TVHT_ONITEMRIGHT;
-    constexpr UINT kEmptyTreeHit = TVHT_NOWHERE | TVHT_ABOVE | TVHT_BELOW | TVHT_TOLEFT | TVHT_TORIGHT;
     constexpr UINT kFocusSinkId = 4096;
-
-    const TCHAR* igLinkStatus(const aerovista::sync::IgConnection& row)
-    {
-        if (row.tcpReady && row.udpReady)
-            return _T("ready");
-        if (row.tcpReady)
-            return _T("tcp");
-        if (row.udpReady)
-            return _T("udp");
-        return _T("connecting");
-    }
-
-    CString formatDurationMs(const std::optional<std::chrono::microseconds>& duration)
-    {
-        if (!duration)
-            return _T("--");
-        CString text;
-        text.Format(_T("%.1f ms"), static_cast<double>(duration->count()) / 1000.0);
-        return text;
-    }
-
-    CString formatLossRate(const std::optional<double>& loss)
-    {
-        if (!loss)
-            return _T("--");
-        CString text;
-        text.Format(_T("%.1f%%"), *loss * 100.0);
-        return text;
-    }
-
-    void writeIgListRow(CListCtrl& list, int index, const aerovista::sync::IgConnection& row)
-    {
-        CString id;
-        id.Format(_T("%llu"), static_cast<unsigned long long>(row.id));
-        list.SetItemText(index, 0, id);
-        list.SetItemText(index, 1, igLinkStatus(row));
-        list.SetItemText(index, 2, formatDurationMs(row.avgRtt));
-        list.SetItemText(index, 3, formatDurationMs(row.lastRtt));
-        list.SetItemText(index, 4, formatLossRate(row.lossRate));
-        list.SetItemText(index, 5, formatDurationMs(row.sofAge));
-    }
 
     bool isReturnKey(const MSG* pMsg)
     {
@@ -110,7 +64,12 @@ CViewHostView::CViewHostView() : CFormView(IDD_VIEWHOST_DIALOG)
 {
 }
 
-BOOL CViewHostView::PreTranslateMessage(MSG* pMsg)
+CViewHostFrame* CViewHostView::hostFrame() const
+{
+    return DYNAMIC_DOWNCAST(CViewHostFrame, GetParentFrame());
+}
+
+BOOL CViewHostView::handleHostInput(MSG* pMsg)
 {
     if (isReturnKey(pMsg) && commandEditHasFocus())
     {
@@ -123,7 +82,14 @@ BOOL CViewHostView::PreTranslateMessage(MSG* pMsg)
         return TRUE;
     // NM_CLICK 点在树空白处常常不来；在按下时按 HitTest 决定进入/退出。
     if (pMsg->message == WM_LBUTTONDOWN && applyEyeControlFromCursor(pMsg->hwnd))
-        return TRUE; // 树/对话框空白、静态文本、分组框：吞掉点击，避免焦点弹回树
+        return TRUE;
+    return FALSE;
+}
+
+BOOL CViewHostView::PreTranslateMessage(MSG* pMsg)
+{
+    if (handleHostInput(pMsg))
+        return TRUE;
     return CFormView::PreTranslateMessage(pMsg);
 }
 
@@ -152,8 +118,6 @@ void CViewHostView::OnInitialUpdate()
     _startTime = std::chrono::steady_clock::now();
     SetTimer(kTimerId, kTimerPeriodMs, nullptr);
 
-    _entityTree.SubclassDlgItem(IDC_ENTITY_TREE, this);
-    setupIgList();
     createFocusSink();
     refreshEntityTree();
 
@@ -233,40 +197,6 @@ void CViewHostView::OnDestroy()
     CFormView::OnDestroy();
 }
 
-CViewHostView::EntityTreeHit CViewHostView::hitTestEntityTree()
-{
-    EntityTreeHit hit;
-    CPoint screen;
-    GetCursorPos(&screen);
-    hit.client = screen;
-    _entityTree.ScreenToClient(&hit.client);
-    hit.item = _entityTree.HitTest(hit.client, &hit.flags);
-    return hit;
-}
-
-bool CViewHostView::isEntityLeaf(HTREEITEM item)
-{
-    return item != nullptr && _entitiesFolder != nullptr &&
-           _entityTree.GetParentItem(item) == _entitiesFolder;
-}
-
-void CViewHostView::updateEyePointLabel()
-{
-    if (_eyePointItem == nullptr)
-        return;
-    _entityTree.SetItemText(_eyePointItem, _controlling ? _T("eyePoint [控制中]") : _T("eyePoint"));
-}
-
-bool CViewHostView::isEyePointHit(HTREEITEM item, UINT flags) const
-{
-    return item == _eyePointItem && (flags & kOnItemHit) != 0;
-}
-
-bool CViewHostView::isEmptyTreeHit(HTREEITEM item, UINT flags) const
-{
-    return item == nullptr || (flags & kEmptyTreeHit) != 0;
-}
-
 void CViewHostView::createFocusSink()
 {
     // 必须 WS_VISIBLE：隐藏窗不能持焦点。放到客户区外，避免看见插入符。
@@ -275,7 +205,8 @@ void CViewHostView::createFocusSink()
 
 void CViewHostView::defocusEntityTree()
 {
-    _entityTree.SelectItem(nullptr);
+    if (CViewHostFrame* frame = hostFrame())
+        frame->sceneTreePane().clearSelection();
     if (_focusSink.GetSafeHwnd() != nullptr)
         _focusSink.SetFocus();
 }
@@ -297,41 +228,17 @@ bool CViewHostView::isDialogChrome(HWND clickHwnd) const
 
 bool CViewHostView::applyEyeControlFromCursor(HWND clickHwnd)
 {
-    if (_entityTree.GetSafeHwnd() == nullptr)
-        return false;
-
-    const HWND treeHwnd = _entityTree.GetSafeHwnd();
-    if (clickHwnd != treeHwnd)
+    CViewHostFrame* frame = hostFrame();
+    if (frame != nullptr)
     {
-        setEyeControlling(false);
-        if (!isDialogChrome(clickHwnd))
-        {
-            _entityTree.SelectItem(nullptr);
-            return false; // 按钮等可持焦控件自己抢走键盘
-        }
-        defocusEntityTree();
-        return true; // 分组框内部是对话框客户区；吞掉点击，避免焦点弹回树
-    }
-
-    const EntityTreeHit hit = hitTestEntityTree();
-    CRect clientRect;
-    _entityTree.GetClientRect(&clientRect);
-    if (!clientRect.PtInRect(hit.client))
-    {
-        setEyeControlling(false);
-        return false; // 滚动条等非客户区：交给树，保持焦点
-    }
-
-    if (isEyePointHit(hit.item, hit.flags))
-    {
-        setEyeControlling(true);
-        return false;
+        CSceneTreePane& treePane = frame->sceneTreePane();
+        if (treePane.handleEyeControlClick(clickHwnd, *this))
+            return true;
     }
 
     setEyeControlling(false);
-    if (!isEmptyTreeHit(hit.item, hit.flags))
+    if (!isDialogChrome(clickHwnd))
         return false;
-
     defocusEntityTree();
     return true;
 }
@@ -339,46 +246,14 @@ bool CViewHostView::applyEyeControlFromCursor(HWND clickHwnd)
 void CViewHostView::setEyeControlling(bool controlling)
 {
     _controlling = controlling;
-    updateEyePointLabel();
-    if (controlling && _eyePointItem != nullptr)
-        _entityTree.SelectItem(_eyePointItem);
+    if (CViewHostFrame* frame = hostFrame())
+        frame->sceneTreePane().applyEyeControlling(controlling);
 }
 
 void CViewHostView::refreshEntityTree()
 {
-    if (_entityTree.GetSafeHwnd() == nullptr)
-        return;
-
-    const bool controlling = _controlling;
-    _entityTree.DeleteAllItems();
-    _rootItem = _entityTree.InsertItem(_T("root"));
-    _eyePointItem = _entityTree.InsertItem(_T("eyePoint"), _rootItem);
-    _entitiesFolder = _entityTree.InsertItem(_T("entities"), _rootItem);
-    _entityTree.SetItemData(_rootItem, 0);
-    _entityTree.SetItemData(_eyePointItem, 0);
-    _entityTree.SetItemData(_entitiesFolder, 0);
-    for (const aerovista::sync::EntityAuthorityRow& row : _driver.entitySnapshot())
-    {
-        const CString name(CA2T(row.name.c_str(), CP_UTF8));
-        const HTREEITEM item = _entityTree.InsertItem(name, _entitiesFolder);
-        _entityTree.SetItemData(item, row.entityId);
-    }
-    _entityTree.Expand(_rootItem, TVE_EXPAND);
-    _entityTree.Expand(_entitiesFolder, TVE_EXPAND);
-    setEyeControlling(controlling);
-}
-
-void CViewHostView::OnEntityTreeDblClk(NMHDR*, LRESULT* result)
-{
-    *result = 0; // root / entities / eyePoint 仍走默认展开/折叠
-    const HTREEITEM item = hitTestEntityTree().item;
-    if (!isEntityLeaf(item))
-        return;
-
-    *result = TRUE; // 实体叶子：不要再走默认展开
-    _entityTree.SelectItem(item);
-    // 通知返回后再弹模态框，避免双击的 mouse-up 落到面板按钮上。
-    PostMessage(wmOpenEntityProperties, _entityTree.GetItemData(item));
+    if (CViewHostFrame* frame = hostFrame())
+        frame->sceneTreePane().rebuild(_driver.entitySnapshot(), _controlling);
 }
 
 void CViewHostView::openEntityProperties(std::uint16_t entityId)
@@ -400,13 +275,13 @@ LRESULT CViewHostView::OnRefreshEntityTree(WPARAM, LPARAM)
     return 0;
 }
 
-void CViewHostView::OnTestTcp()
+void CViewHostView::testTcp()
 {
     _lastTestName = std::string("TCP ") + _driver.sendRandomTcpPacket();
     updateStatusText();
 }
 
-void CViewHostView::OnTestUdp()
+void CViewHostView::testUdp()
 {
     _lastTestName = std::string("UDP ") + _driver.sendRandomUdpPacket();
     updateStatusText();
@@ -418,55 +293,19 @@ void CViewHostView::closeFrame()
         frame->PostMessage(WM_CLOSE);
 }
 
-void CViewHostView::setupIgList()
-{
-    _igList.SubclassDlgItem(IDC_IG_LIST, this);
-    _igList.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
-    CRect client;
-    _igList.GetClientRect(&client);
-    const int width = client.Width();
-    const int idWidth = width * 10 / 100;
-    const int statusWidth = width * 14 / 100;
-    const int avgWidth = width * 16 / 100;
-    const int lastWidth = width * 16 / 100;
-    const int lossWidth = width * 14 / 100;
-    _igList.InsertColumn(0, _T("id"), LVCFMT_LEFT, idWidth);
-    _igList.InsertColumn(1, _T("状态"), LVCFMT_LEFT, statusWidth);
-    _igList.InsertColumn(2, _T("平均RTT"), LVCFMT_LEFT, avgWidth);
-    _igList.InsertColumn(3, _T("最近RTT"), LVCFMT_LEFT, lastWidth);
-    _igList.InsertColumn(4, _T("丢包率"), LVCFMT_LEFT, lossWidth);
-    _igList.InsertColumn(5, _T("距上次SOF"), LVCFMT_LEFT, width - idWidth - statusWidth - avgWidth - lastWidth - lossWidth - 4);
-}
-
-void CViewHostView::refreshIgList()
-{
-    const auto rows = _driver.igSnapshot();
-    if (rows == _igSnapshot)
-        return;
-    _igSnapshot = rows;
-
-    const int n = static_cast<int>(rows.size());
-    if (_igList.GetItemCount() != n)
-    {
-        _igList.DeleteAllItems();
-        for (int i = 0; i < n; ++i)
-            _igList.InsertItem(i, _T(""));
-    }
-    for (int i = 0; i < n; ++i)
-        writeIgListRow(_igList, i, rows[static_cast<size_t>(i)]);
-}
-
 bool CViewHostView::commandEditHasFocus() const
 {
-    const CWnd* edit = GetDlgItem(IDC_COMMAND);
-    return edit != nullptr && GetFocus() == edit;
+    CViewHostFrame* frame = hostFrame();
+    return frame != nullptr && frame->commandPane().hasFocus();
 }
 
 void CViewHostView::submitCommand()
 {
-    CString text;
-    GetDlgItemText(IDC_COMMAND, text);
-    text.Trim();
+    CViewHostFrame* frame = hostFrame();
+    if (frame == nullptr)
+        return;
+
+    const CString text = frame->commandPane().trimmedText();
     if (text.IsEmpty())
         return;
 
@@ -474,7 +313,7 @@ void CViewHostView::submitCommand()
     if (!_driver.sendSymbolText(cstringToUtf8(text), &error))
         return;
 
-    SetDlgItemText(IDC_COMMAND, _T(""));
+    frame->commandPane().clear();
     _lastTestName = "TCP CigiSymbolTextDefV4";
     updateStatusText();
 }
@@ -497,12 +336,15 @@ void CViewHostView::updateStatusText()
                _eye.x, _eye.y, _eye.z, _eye.yawDeg, _eye.pitchDeg, _eye.rollDeg);
     setText(IDC_EYE_LAT, eye);
 
+    CViewHostFrame* frame = hostFrame();
+    if (frame == nullptr)
+        return;
+
     CString probe;
     probe.Format(_T("测试: %hs    接收: %hs"), _lastTestName.empty() ? "-" : _lastTestName.c_str(),
                  _lastRecvName.empty() ? "-" : _lastRecvName.c_str());
-    setText(IDC_STATUS_TEST, probe);
-
-    refreshIgList();
+    frame->packetProbePane().setStatus(probe);
+    frame->igListPane().refresh(_driver.igSnapshot());
 }
 
 void CViewHostView::subscribeIgPackets()

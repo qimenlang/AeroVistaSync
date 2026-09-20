@@ -21,6 +21,10 @@ add_executable(aerovistaViewHost WIN32
     src/ViewHostApp.cpp
     src/ViewHostFrame.cpp
     src/ViewHostView.cpp
+    src/SceneTreePane.cpp
+    src/IgListPane.cpp
+    src/PacketProbePane.cpp
+    src/CommandPane.cpp
     src/EntityPropDlg.cpp
     src/HostDriver.cpp
     src/ViewHostMath.cpp
