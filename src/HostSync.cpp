@@ -5,7 +5,21 @@
 #include <chrono>
 #include <cstring>
 #include <iostream>
+#include <optional>
 #include <vector>
+
+namespace
+{
+    std::optional<std::chrono::microseconds> ageSince(const std::optional<aerovista::sync::SofRttTracker::TimePoint>& then,
+                                                     aerovista::sync::SofRttTracker::TimePoint now)
+    {
+        if (!then)
+            return std::nullopt;
+        if (now < *then)
+            return std::chrono::microseconds{0};
+        return std::chrono::duration_cast<std::chrono::microseconds>(now - *then);
+    }
+} // namespace
 
 namespace aerovista::sync
 {
@@ -97,6 +111,7 @@ namespace aerovista::sync
     std::vector<IgConnection> HostSync::igSnapshot() const
     {
         std::lock_guard lock(_peersMutex);
+        const auto now = SofRttTracker::Clock::now();
         std::vector<IgConnection> rows;
         rows.reserve(_peers.size());
         for (const auto& peer : _peers)
@@ -105,6 +120,10 @@ namespace aerovista::sync
             row.id = peer.clientId;
             row.tcpReady = peer.tcpReady;
             row.udpReady = peer.udpReady;
+            row.avgRtt = peer.sofRtt.avgRtt();
+            row.lastRtt = peer.sofRtt.lastRtt();
+            row.lossRate = peer.sofRtt.lossRate();
+            row.sofAge = ageSince(peer.lastSofAt, now);
             rows.push_back(row);
         }
         return rows;
@@ -125,6 +144,17 @@ namespace aerovista::sync
         return _sofProc.count.load();
     }
 
+    std::optional<std::chrono::microseconds> HostSync::sofRttLast(std::uint64_t clientId) const
+    {
+        std::lock_guard lock(_peersMutex);
+        for (const auto& peer : _peers)
+        {
+            if (peer.clientId == clientId)
+                return peer.sofRtt.lastRtt();
+        }
+        return std::nullopt;
+    }
+
     void HostSync::run()
     {
         _status = HostStatus::RUNNING;
@@ -136,6 +166,7 @@ namespace aerovista::sync
         {
             unsigned char buf[4096]{};
             char fromIp[64]{};
+            int fromPort = 0;
             int n = 0;
         };
         std::vector<Packet> packets;
@@ -148,8 +179,7 @@ namespace aerovista::sync
             for (;;)
             {
                 Packet p{};
-                int fromPort = 0;
-                p.n = _udp.recvFrom(p.buf, sizeof(p.buf), p.fromIp, sizeof(p.fromIp), &fromPort);
+                p.n = _udp.recvFrom(p.buf, sizeof(p.buf), p.fromIp, sizeof(p.fromIp), &p.fromPort);
                 if (p.n <= 0)
                     break;
                 packets.push_back(p);
@@ -157,7 +187,7 @@ namespace aerovista::sync
         }
 
         for (const auto& p : packets)
-            processUdpDatagram(p.buf, p.n, p.fromIp);
+            processUdpDatagram(p.buf, p.n, p.fromIp, p.fromPort);
     }
 
     bool HostSync::initialize(const HostConfig& local)
@@ -166,6 +196,7 @@ namespace aerovista::sync
         _local = local;
         _status = HostStatus::IDLE;
         _sofProc.count = 0;
+        _sofProc.lastFrameCntr = 0;
         _dataFrameCounter = 0;
         _cmdFrameCounter = 0;
         _tcpMsgOpen = false;
@@ -271,7 +302,14 @@ namespace aerovista::sync
             peer.ip = peerIp;
             peer.udpRecvPort = hello.udpRecvPort;
             peer.tcpReady = true;
-            udpAlready = _earlyUdpSyncByPort.erase(hello.udpRecvPort) > 0;
+            const auto early = _earlyUdpSyncByPort.find(hello.udpRecvPort);
+            udpAlready = early != _earlyUdpSyncByPort.end();
+            if (udpAlready)
+            {
+                peer.udpFromPort = early->second.fromPort;
+                peer.udpFromIp = early->second.ip;
+                _earlyUdpSyncByPort.erase(early);
+            }
             peer.udpReady = udpAlready;
             _peers.push_back(std::move(peer));
         }
@@ -333,7 +371,61 @@ namespace aerovista::sync
         }
     }
 
-    void HostSync::processUdpDatagram(const unsigned char* buf, int n, const char* fromIp)
+    std::string HostSync::noteUdpSyncPeer(std::uint32_t udpRecvPort, const std::string& fromIp, int fromPort)
+    {
+        std::lock_guard lock(_peersMutex);
+        for (auto& peer : _peers)
+        {
+            if (peer.tcpReady && peer.udpRecvPort == udpRecvPort)
+            {
+                peer.udpReady = true;
+                peer.udpFromPort = fromPort;
+                peer.udpFromIp = fromIp;
+                return peer.ip.empty() ? fromIp : peer.ip;
+            }
+        }
+        _earlyUdpSyncByPort[udpRecvPort] = EarlyUdpSync{fromIp, fromPort};
+        return fromIp;
+    }
+
+    void HostSync::recordIgCtrlFanout(std::uint32_t hostFrameNumber, SofRttTracker::TimePoint tSend)
+    {
+        std::lock_guard lock(_peersMutex);
+        for (auto& peer : _peers)
+        {
+            if (peer.tcpReady && peer.udpReady)
+                peer.sofRtt.onIgCtrlSent(hostFrameNumber, tSend);
+        }
+    }
+
+    void HostSync::expireSofRtt(SofRttTracker::TimePoint now)
+    {
+        std::lock_guard lock(_peersMutex);
+        for (auto& peer : _peers)
+            peer.sofRtt.expire(now);
+    }
+
+    void HostSync::ingestUdpSof(const UdpIngress& frame, SofRttTracker::TimePoint now)
+    {
+        const auto countBefore = _sofProc.count.load();
+        processIncomingUdpFrame(frame.bytes.data(), static_cast<int>(frame.bytes.size()));
+        if (_sofProc.count.load() == countBefore)
+            return;
+
+        const auto frameCntr = _sofProc.lastFrameCntr.load();
+        std::lock_guard lock(_peersMutex);
+        for (auto& peer : _peers)
+        {
+            if (peer.udpFromPort == frame.fromPort && peer.udpFromIp == frame.fromIp)
+            {
+                peer.lastSofAt = now;
+                peer.sofRtt.onSofReceived(frameCntr, now);
+                return;
+            }
+        }
+    }
+
+    void HostSync::processUdpDatagram(const unsigned char* buf, int n, const char* fromIp, int fromPort)
     {
         if (n <= 0)
             return;
@@ -350,24 +442,7 @@ namespace aerovista::sync
                 return;
 
             const uint32_t replyPort = header.udpRecvPort;
-            std::string replyIp = fromIp;
-            {
-                std::lock_guard lock(_peersMutex);
-                bool matched = false;
-                for (auto& p : _peers)
-                {
-                    if (p.tcpReady && p.udpRecvPort == header.udpRecvPort)
-                    {
-                        p.udpReady = true;
-                        if (!p.ip.empty())
-                            replyIp = p.ip;
-                        matched = true;
-                        break;
-                    }
-                }
-                if (!matched)
-                    _earlyUdpSyncByPort[header.udpRecvPort] = replyIp;
-            }
+            const std::string replyIp = noteUdpSyncPeer(header.udpRecvPort, fromIp, fromPort);
 
             sync_proto::WireMsg ack{};
             ack.magic = sync_proto::kMagic;
@@ -382,10 +457,12 @@ namespace aerovista::sync
         }
 
         // CIGI 数据报文（SOF / IG 上报等）：I/O 线程只入队，主线程 drainIncoming 解包。
-        {
-            std::lock_guard lock(_udpPayloadMutex);
-            _udpPayloadQueue.emplace_back(buf, buf + n);
-        }
+        UdpIngress ingress;
+        ingress.bytes.assign(buf, buf + n);
+        ingress.fromIp = fromIp ? fromIp : "";
+        ingress.fromPort = fromPort;
+        std::lock_guard lock(_udpPayloadMutex);
+        _udpPayloadQueue.push_back(std::move(ingress));
     }
 
     void HostSync::udpLoop()
@@ -425,14 +502,17 @@ namespace aerovista::sync
 
     void HostSync::drainIncoming()
     {
+        const auto now = SofRttTracker::Clock::now();
+        expireSofRtt(now);
+
         // 按链路喂各 session 解包（§5.1 双 session）：UDP 队列 → _udpSession，TCP 队列 → _tcpSession。
-        std::vector<std::vector<unsigned char>> udpFrames;
+        std::vector<UdpIngress> udpFrames;
         {
             std::lock_guard lock(_udpPayloadMutex);
             udpFrames.swap(_udpPayloadQueue);
         }
-        for (const auto& f : udpFrames)
-            processIncomingUdpFrame(f.data(), static_cast<int>(f.size()));
+        for (const auto& frame : udpFrames)
+            ingestUdpSof(frame, now);
 
         std::vector<std::vector<unsigned char>> tcpFrames;
         {
@@ -522,6 +602,9 @@ namespace aerovista::sync
             for (const auto& t : targets)
                 _udp.sendTo(t.first, static_cast<int>(t.second), buf, len);
         }
+
+        if (!targets.empty() && _dataFrameCounter > 0)
+            recordIgCtrlFanout(_dataFrameCounter - 1, SofRttTracker::Clock::now());
 
         omsg.FreeMsg();
     }

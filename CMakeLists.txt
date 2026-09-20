@@ -38,6 +38,7 @@ set(AEROVISTA_SYNC_PUBLIC_HEADERS
     include/aerovista/sync/EventProcess.h
     include/aerovista/sync/HostDataManager.h
     include/aerovista/sync/HostSync.h
+    include/aerovista/sync/SofRttTracker.h
     include/aerovista/sync/IgSync.h
     include/aerovista/sync/SyncConfig.h
     include/aerovista/sync/SyncProtocol.h
@@ -52,6 +53,7 @@ add_library(aerovistaSync STATIC
     src/EventProcess.cpp
     src/HostDataManager.cpp
     src/HostSync.cpp
+    src/SofRttTracker.cpp
     src/IgSync.cpp
     src/SocketCommon.cpp
     src/SyncConfig.cpp

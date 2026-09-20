@@ -17,7 +17,10 @@ namespace aerovista::sync
 
     void SofCaptureProc::OnPacketReceived(CigiBasePacket* packet)
     {
-        if (dynamic_cast<CigiSOFV4*>(packet))
-            count.fetch_add(1);
+        auto* sof = dynamic_cast<CigiSOFV4*>(packet);
+        if (!sof)
+            return;
+        lastFrameCntr.store(sof->GetFrameCntr());
+        count.fetch_add(1);
     }
 } // namespace aerovista::sync

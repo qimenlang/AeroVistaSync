@@ -58,12 +58,13 @@ namespace aerovista::sync
         CigiIGCtrlV4 igCtrl{}; ///< CCL 报文值拷贝（状态同步设计初版.md §8.1）
     };
 
-    /// SOF 回显计数（Host 侧）。
+    /// SOF 回显计数（Host 侧）。lastFrameCntr 供数据面 RTT 按 Host Frame Number 配对。
     class SofCaptureProc : public CigiBaseEventProcessor
     {
     public:
         void OnPacketReceived(CigiBasePacket* packet) override;
         std::atomic<std::uint32_t> count{0};
+        std::atomic<std::uint32_t> lastFrameCntr{0};
     };
 
     /// 通用报文捕获（状态同步设计初版.md §8.1）：按 PacketID 注册到收包端 CCL session，

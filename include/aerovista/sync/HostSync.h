@@ -4,6 +4,7 @@
 
 #include <aerovista/sync/CigiWire.h>
 #include <aerovista/sync/EventProcess.h>
+#include <aerovista/sync/SofRttTracker.h>
 #include <aerovista/sync/SyncConfig.h>
 #include <aerovista/sync/TcpSocket.h>
 #include <aerovista/sync/UdpSocket.h>
@@ -36,6 +37,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -49,11 +51,20 @@ namespace aerovista::sync
         std::uint64_t id = 0;
         bool tcpReady = false;
         bool udpReady = false;
+        /// 滚动平均应用 RTT；不满 10 个匹配样本时为空（SofRttTracker::avgRtt）。
+        std::optional<std::chrono::microseconds> avgRtt;
+        /// 最近一次匹配的应用 RTT；尚无匹配时为空（SofRttTracker::lastRtt）。
+        std::optional<std::chrono::microseconds> lastRtt;
+        /// 最近 60 次完成中的超时占比；不满 10 次完成时为空（SofRttTracker::lossRate）。
+        std::optional<double> lossRate;
+        /// 距上次 UDP SOF 的墙钟间隔；本会话尚未收到该 peer 的 UDP SOF 时为空。
+        std::optional<std::chrono::microseconds> sofAge;
     };
 
     inline bool operator==(const IgConnection& a, const IgConnection& b)
     {
-        return a.id == b.id && a.tcpReady == b.tcpReady && a.udpReady == b.udpReady;
+        return a.id == b.id && a.tcpReady == b.tcpReady && a.udpReady == b.udpReady && a.avgRtt == b.avgRtt &&
+               a.lastRtt == b.lastRtt && a.lossRate == b.lossRate && a.sofAge == b.sofAge;
     }
 
     /// Host 侧同步端点：UDP 同步面 + TCP 命令监听。
@@ -83,6 +94,9 @@ namespace aerovista::sync
         std::uint32_t igCtrlSentCount() const;
         /// 本会话已解包的 SOF 数（观测无副作用；调用方须先 drainIncoming）。
         std::uint32_t sofReceivedCount() const;
+        /// 该 peer 最近一次匹配的 IGCtrl↔SOF 应用 RTT（主线程 drain 见到 SOF 的时刻）。
+        /// 无匹配样本或未知 clientId 为空。规则见 多通道同步验收测量设计.md §4.5。
+        std::optional<std::chrono::microseconds> sofRttLast(std::uint64_t clientId) const;
 
         // ---- 命令面 / 数据面发送（状态同步设计初版.md §7）：引用式发送接口 ----
 
@@ -162,8 +176,27 @@ namespace aerovista::sync
             std::shared_ptr<TcpSocket> tcp;
             std::string ip;
             uint32_t udpRecvPort = 0;
+            /// IG 发送 socket 的源地址/端口（UDP_SYNC 学到）。SOF 按这对字段分到本 peer。
+            std::string udpFromIp;
+            int udpFromPort = 0;
             bool tcpReady = false;
             bool udpReady = false;
+            SofRttTracker sofRtt;
+            /// 主线程 drain 见到该 peer UDP SOF 的时刻；未收到过则为空。
+            std::optional<SofRttTracker::TimePoint> lastSofAt;
+        };
+
+        struct EarlyUdpSync
+        {
+            std::string ip;
+            int fromPort = 0;
+        };
+
+        struct UdpIngress
+        {
+            std::vector<unsigned char> bytes;
+            std::string fromIp;
+            int fromPort = 0;
         };
 
         void acceptLoop();
@@ -175,7 +208,12 @@ namespace aerovista::sync
         void joinClientThreads();
         int countReadyUnlocked() const;
         /// I/O 线程处理一条 UDP 数据报：握手面即时回 ACK；CIGI 报文入队 udpPayload（不解包）。
-        void processUdpDatagram(const unsigned char* buf, int n, const char* fromIp);
+        void processUdpDatagram(const unsigned char* buf, int n, const char* fromIp, int fromPort);
+        /// UDP_SYNC：记下 IG 发送源端口，供后续 SOF 按 peer 配对。返回 ACK 目标 IP。
+        std::string noteUdpSyncPeer(std::uint32_t udpRecvPort, const std::string& fromIp, int fromPort);
+        void recordIgCtrlFanout(std::uint32_t hostFrameNumber, SofRttTracker::TimePoint tSend);
+        void expireSofRtt(SofRttTracker::TimePoint now);
+        void ingestUdpSof(const UdpIngress& frame, SofRttTracker::TimePoint now);
         void pollUdp();
         /// 主线程解包一条 UDP 报文：_udpSession->ProcessIncomingMsg → 基础设施 + 业务 processor。
         void processIncomingUdpFrame(const unsigned char* buf, int n);
@@ -257,7 +295,7 @@ namespace aerovista::sync
 
         mutable std::mutex _peersMutex;
         std::vector<IgPeer> _peers;
-        std::unordered_map<uint32_t, std::string> _earlyUdpSyncByPort;
+        std::unordered_map<uint32_t, EarlyUdpSync> _earlyUdpSyncByPort;
 
         std::mutex _clientThreadsMutex;
         std::vector<std::thread> _clientThreads;
@@ -274,7 +312,7 @@ namespace aerovista::sync
         // 收包 payload 队列：I/O 线程（udpLoop / commandReadLoop）入队，主线程 drainIncoming 解包。
         // UDP 一条数据报 = 一条 CIGI 消息（无需分帧）；TCP 需分帧（§4.2）。
         std::mutex _udpPayloadMutex;
-        std::vector<std::vector<unsigned char>> _udpPayloadQueue;
+        std::vector<UdpIngress> _udpPayloadQueue;
         std::mutex _tcpPayloadMutex;
         std::vector<std::vector<unsigned char>> _tcpPayloadQueue;
 

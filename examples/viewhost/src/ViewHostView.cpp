@@ -6,7 +6,9 @@
 
 #include <atlconv.h>
 
+#include <chrono>
 #include <cstdint>
+#include <optional>
 #include <string>
 
 BEGIN_MESSAGE_MAP(CViewHostView, CFormView)
@@ -63,12 +65,34 @@ namespace
         return _T("connecting");
     }
 
+    CString formatDurationMs(const std::optional<std::chrono::microseconds>& duration)
+    {
+        if (!duration)
+            return _T("--");
+        CString text;
+        text.Format(_T("%.1f ms"), static_cast<double>(duration->count()) / 1000.0);
+        return text;
+    }
+
+    CString formatLossRate(const std::optional<double>& loss)
+    {
+        if (!loss)
+            return _T("--");
+        CString text;
+        text.Format(_T("%.1f%%"), *loss * 100.0);
+        return text;
+    }
+
     void writeIgListRow(CListCtrl& list, int index, const aerovista::sync::IgConnection& row)
     {
         CString id;
         id.Format(_T("%llu"), static_cast<unsigned long long>(row.id));
         list.SetItemText(index, 0, id);
         list.SetItemText(index, 1, igLinkStatus(row));
+        list.SetItemText(index, 2, formatDurationMs(row.avgRtt));
+        list.SetItemText(index, 3, formatDurationMs(row.lastRtt));
+        list.SetItemText(index, 4, formatLossRate(row.lossRate));
+        list.SetItemText(index, 5, formatDurationMs(row.sofAge));
     }
 
     bool isReturnKey(const MSG* pMsg)
@@ -400,9 +424,18 @@ void CViewHostView::setupIgList()
     _igList.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
     CRect client;
     _igList.GetClientRect(&client);
-    const int idWidth = client.Width() / 3;
+    const int width = client.Width();
+    const int idWidth = width * 10 / 100;
+    const int statusWidth = width * 14 / 100;
+    const int avgWidth = width * 16 / 100;
+    const int lastWidth = width * 16 / 100;
+    const int lossWidth = width * 14 / 100;
     _igList.InsertColumn(0, _T("id"), LVCFMT_LEFT, idWidth);
-    _igList.InsertColumn(1, _T("状态"), LVCFMT_LEFT, client.Width() - idWidth - 4);
+    _igList.InsertColumn(1, _T("状态"), LVCFMT_LEFT, statusWidth);
+    _igList.InsertColumn(2, _T("平均RTT"), LVCFMT_LEFT, avgWidth);
+    _igList.InsertColumn(3, _T("最近RTT"), LVCFMT_LEFT, lastWidth);
+    _igList.InsertColumn(4, _T("丢包率"), LVCFMT_LEFT, lossWidth);
+    _igList.InsertColumn(5, _T("距上次SOF"), LVCFMT_LEFT, width - idWidth - statusWidth - avgWidth - lastWidth - lossWidth - 4);
 }
 
 void CViewHostView::refreshIgList()
