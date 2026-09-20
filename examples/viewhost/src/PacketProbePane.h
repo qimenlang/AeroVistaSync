@@ -3,6 +3,8 @@
 #include <afxcontrolbars.h>
 #include <afxwin.h>
 
+#include "HudLabel.h"
+
 class CPacketProbePane : public CDockablePane
 {
 public:
@@ -22,5 +24,5 @@ private:
 
     CButton _testTcp;
     CButton _testUdp;
-    CStatic _status;
+    CHudLabel _status;
 };

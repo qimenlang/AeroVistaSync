@@ -66,8 +66,7 @@ void CPacketProbePane::adjustLayout()
 
 void CPacketProbePane::setStatus(const CString& text)
 {
-    if (_status.GetSafeHwnd() != nullptr)
-        _status.SetWindowText(text);
+    _status.setText(text);
 }
 
 void CPacketProbePane::OnTestTcp()

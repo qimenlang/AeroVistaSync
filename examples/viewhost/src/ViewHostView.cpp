@@ -64,6 +64,13 @@ CViewHostView::CViewHostView() : CFormView(IDD_VIEWHOST_DIALOG)
 {
 }
 
+void CViewHostView::DoDataExchange(CDataExchange* dx)
+{
+    CFormView::DoDataExchange(dx);
+    DDX_Control(dx, IDC_STATUS_READY, _statusReady);
+    DDX_Control(dx, IDC_EYE_LAT, _eyeLat);
+}
+
 CViewHostFrame* CViewHostView::hostFrame() const
 {
     return DYNAMIC_DOWNCAST(CViewHostFrame, GetParentFrame());
@@ -96,6 +103,7 @@ BOOL CViewHostView::PreTranslateMessage(MSG* pMsg)
 void CViewHostView::OnInitialUpdate()
 {
     CFormView::OnInitialUpdate();
+    ModifyStyle(0, WS_CLIPCHILDREN);
     if (CFrameWnd* frame = GetParentFrame())
         frame->RecalcLayout();
 
@@ -232,8 +240,9 @@ bool CViewHostView::applyEyeControlFromCursor(HWND clickHwnd)
     if (frame != nullptr)
     {
         CSceneTreePane& treePane = frame->sceneTreePane();
-        if (treePane.handleEyeControlClick(clickHwnd, *this))
-            return true;
+        // 点在树上时进入/退出已写好；false 只表示「不吞点击」，不是「没处理」。
+        if (treePane.isTreeHwnd(clickHwnd))
+            return treePane.handleEyeControlClick(clickHwnd, *this);
     }
 
     setEyeControlling(false);
@@ -278,13 +287,13 @@ LRESULT CViewHostView::OnRefreshEntityTree(WPARAM, LPARAM)
 void CViewHostView::testTcp()
 {
     _lastTestName = std::string("TCP ") + _driver.sendRandomTcpPacket();
-    updateStatusText();
+    updateStatusText(true);
 }
 
 void CViewHostView::testUdp()
 {
     _lastTestName = std::string("UDP ") + _driver.sendRandomUdpPacket();
-    updateStatusText();
+    updateStatusText(true);
 }
 
 void CViewHostView::closeFrame()
@@ -315,26 +324,30 @@ void CViewHostView::submitCommand()
 
     frame->commandPane().clear();
     _lastTestName = "TCP CigiSymbolTextDefV4";
-    updateStatusText();
+    updateStatusText(true);
 }
 
-void CViewHostView::updateStatusText()
+void CViewHostView::updateStatusText(bool force)
 {
-    auto setText = [this](int id, const CString& text)
-    {
-        if (CWnd* wnd = GetDlgItem(id))
-            wnd->SetWindowText(text);
-    };
+    const int ready = _driver.readyIgCount();
+    const auto now = std::chrono::steady_clock::now();
+    // 数据面仍 60fps；仪表盘文案 ~10Hz，由 CHudLabel 离屏绘制，避免 CStatic 擦背景闪烁。
+    if (!force && ready == _lastReadyIgShown &&
+        now - _lastStatusHud < std::chrono::milliseconds(kStatusHudPeriodMs))
+        return;
+
+    _lastStatusHud = now;
+    _lastReadyIgShown = ready;
 
     CString conn;
-    conn.Format(_T("Ready IG: %d    IGCtrl 发送: %u    SOF 接收: %u"), _driver.readyIgCount(),
-                _driver.igCtrlSentCount(), _driver.sofReceivedCount());
-    setText(IDC_STATUS_READY, conn);
+    conn.Format(_T("Ready IG: %d    IGCtrl 发送: %u    SOF 接收: %u"), ready, _driver.igCtrlSentCount(),
+                _driver.sofReceivedCount());
+    _statusReady.setText(conn);
 
     CString eye;
     eye.Format(_T("lat: %.6f    lon: %.6f    alt: %.1f    yaw: %.2f    pitch: %.2f    roll: %.2f"),
                _eye.x, _eye.y, _eye.z, _eye.yawDeg, _eye.pitchDeg, _eye.rollDeg);
-    setText(IDC_EYE_LAT, eye);
+    _eyeLat.setText(eye);
 
     CViewHostFrame* frame = hostFrame();
     if (frame == nullptr)

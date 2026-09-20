@@ -86,6 +86,11 @@ void CSceneTreePane::clearSelection()
         _tree.SelectItem(nullptr);
 }
 
+bool CSceneTreePane::isTreeHwnd(HWND hwnd) const
+{
+    return hwnd != nullptr && hwnd == _tree.GetSafeHwnd();
+}
+
 void CSceneTreePane::updateEyePointLabel(bool controlling)
 {
     if (_eyePointItem == nullptr)
@@ -140,7 +145,7 @@ bool CSceneTreePane::handleEyeControlClick(HWND clickHwnd, CViewHostView& view)
     if (isEyePointHit(hit.item, hit.flags))
     {
         view.setEyeControlling(true);
-        return false;
+        return false; // 不吞：交给树选中并持焦，调用方不得再清 _controlling
     }
 
     view.setEyeControlling(false);

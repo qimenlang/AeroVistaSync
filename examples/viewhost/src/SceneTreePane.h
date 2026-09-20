@@ -16,6 +16,7 @@ public:
     void rebuild(const std::vector<aerovista::sync::EntityAuthorityRow>& rows, bool controlling);
     void applyEyeControlling(bool controlling);
     void clearSelection();
+    bool isTreeHwnd(HWND hwnd) const;
     /// 点在树上：处理眼点进入/退出。返回 true 表示已吞掉点击。
     bool handleEyeControlClick(HWND clickHwnd, CViewHostView& view);
 

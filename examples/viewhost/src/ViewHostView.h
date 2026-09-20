@@ -9,6 +9,7 @@
 #include <string>
 
 #include "HostDriver.h"
+#include "HudLabel.h"
 #include "ViewHostMath.h"
 #include "ViewHostMessages.h"
 #include "resource.h"
@@ -33,6 +34,7 @@ public:
 protected:
     CViewHostView();
 
+    void DoDataExchange(CDataExchange* dx) override;
     void OnInitialUpdate() override;
     BOOL PreTranslateMessage(MSG* pMsg) override;
 
@@ -45,7 +47,7 @@ protected:
 
 private:
     bool loadConfig();
-    void updateStatusText();
+    void updateStatusText(bool force = false);
     bool commandEditHasFocus() const;
     void submitCommand();
     /// 订阅 IG→Host TCP 上行报文（16 类响应/通知），收到即记录类名到 _lastRecvName（报文自检，§4.7）。
@@ -60,9 +62,13 @@ private:
     aerovista::viewhost::HostDriver _driver;
     aerovista::sync::cigi_wire::EyePose _eye;
     CEdit _focusSink;
+    CHudLabel _statusReady;
+    CHudLabel _eyeLat;
 
     bool _controlling = false;
     std::chrono::steady_clock::time_point _startTime{};
+    std::chrono::steady_clock::time_point _lastStatusHud{};
+    int _lastReadyIgShown = -1;
     double _lastSimTimeMs = 0.0;
     double _speed = 30.0;    // m/s
     double _turnRate = 60.0; // deg/s
@@ -74,6 +80,7 @@ private:
 
     static constexpr UINT_PTR kTimerId = 1;
     static constexpr UINT kTimerPeriodMs = 16; // ~60 fps，viewhost设计.md §4.3
+    static constexpr UINT kStatusHudPeriodMs = 100; // 仪表盘文案 ~10Hz，不跟数据面绑死
 };
 
 inline CViewHostView* viewHostView(CWnd* from)
