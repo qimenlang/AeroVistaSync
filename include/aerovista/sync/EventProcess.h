@@ -13,7 +13,7 @@
 
 namespace aerovista::sync
 {
-    /// CIGI 报文处理单元集合（状态同步设计初版.md §8.1）。
+    /// CIGI 报文处理单元集合（状态同步设计.md §8.1）。
     /// 所有报文 processor 统一定义于此：捕获后经订阅回调投递；翻译/合成在回调内同步完成。
 
     /// 类型化投递回调列表 + addCallback。纯 mixin，不继承 CigiBaseEventProcessor
@@ -55,7 +55,7 @@ namespace aerovista::sync
             igCtrl = {};
         }
         bool got = false;
-        CigiIGCtrlV4 igCtrl{}; ///< CCL 报文值拷贝（状态同步设计初版.md §8.1）
+        CigiIGCtrlV4 igCtrl{}; ///< CCL 报文值拷贝（状态同步设计.md §8.1）
     };
 
     /// SOF 回显计数（Host 侧）。lastFrameCntr 供数据面 RTT 按 Host Frame Number 配对。
@@ -67,7 +67,7 @@ namespace aerovista::sync
         std::atomic<std::uint32_t> lastFrameCntr{0};
     };
 
-    /// 通用报文捕获（状态同步设计初版.md §8.1）：按 PacketID 注册到收包端 CCL session，
+    /// 通用报文捕获（状态同步设计.md §8.1）：按 PacketID 注册到收包端 CCL session，
     /// OnPacketReceived = dynamic_cast + 经回调列表同步多播投递。CCL 复用单例必须立即处理/拷贝。
     /// 注册按发送源（IgSync/HostSync）与链路（UDP 持续 / TCP 一次性）（cigi梳理.md 链路矩阵）。
     /// 业务翻译/过滤/合成统一在订阅回调内完成；同一报文类型跨链路多 processor 时各链路的

@@ -15,13 +15,20 @@ namespace aerovista::sync
         double roll = 0.0;
     };
 
+    /// IG 连 Host 的远端目标（TCP connect + UDP 发送）。
+    /// JSON 仍扁平：`targetAddr` / `targetTcpPort` / `targetUdpPortRecv` → 本结构。
+    struct HostTarget
+    {
+        std::string addr;    ///< Host IP
+        int tcpPort = 0;     ///< Host TCP 监听端口
+        int udpPortRecv = 0; ///< Host UDP 接收端口
+    };
+
     /// IG 侧配置 = 本地 UDP 接收端口 + 远端 Host 目标。
     struct IgConfig
     {
-        int udpPortRecv = 0;       ///< 本地 UDP 接收端口
-        std::string targetAddr;    ///< Host IP
-        int targetTcpPort = 0;     ///< Host TCP 监听端口
-        int targetUdpPortRecv = 0; ///< Host UDP 接收端口
+        int udpPortRecv = 0; ///< 本地 UDP 接收端口
+        HostTarget target;   ///< 远端 Host
     };
 
     /// Host 侧本地配置。

@@ -48,7 +48,7 @@ int main(int argc, char** argv)
               << host.udpPortRecv << " / TCP " << host.tcpPort << "\n";
 
     // 3) 无渲染节拍：按 60fps 驱动 outMsgWithIgCtrlUdp+flushUdp 扇出（HostSync 线程只收，扇出需外部驱动）。
-    //    IGCtrl（帧号/时间戳）由 outMsgWithIgCtrlUdp() 自动填充（HostSync 自计时，状态同步设计初版.md §7.1）。
+    //    IGCtrl（帧号/时间戳）由 outMsgWithIgCtrlUdp() 自动填充（HostSync 自计时，状态同步设计.md §7.1）。
     for (int frame = 0; frame < 600; ++frame)
     {
         hostSync.outMsgWithIgCtrlUdp();

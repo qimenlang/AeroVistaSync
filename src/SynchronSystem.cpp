@@ -26,14 +26,14 @@ namespace aerovista::sync
         if (igConfig.has_value())
         {
             _ig = std::make_unique<IgSync>();
-            if (!_ig->initialize(*igConfig))
+            if (!_ig->initialize(igConfig->udpPortRecv))
             {
                 std::cerr << "SynchronSystem: IgSync initialize failed\n";
                 shutdown();
                 return false;
             }
 
-            if (!_ig->connect(*igConfig))
+            if (!_ig->connect(igConfig->target))
             {
                 if (syncSystem.requireConnectedIg)
                 {

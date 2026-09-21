@@ -85,8 +85,10 @@ namespace aerovista::sync
         };
 
         // ---- 生命周期 ----
-        bool initialize(const IgConfig& local);
-        bool connect(const IgConfig& config);
+        /// 本端 UDP bind；未连接。
+        bool initialize(int udpPortRecv);
+        /// TCP HELLO + UDP_SYNC。可换 Host、可重连（不改本端 UDP 端口）。
+        bool connect(const HostTarget& target);
         void shutdown();
 
         // ---- 帧循环收包（SynchronSystem::preFrame 每帧驱动）----
@@ -145,7 +147,7 @@ namespace aerovista::sync
         void flushTcp();
 
         /// UDP 出站 OutgoingMsg：业务侧 << 报文后调 flushUdp 发送（IG→Host UDP 上报/回传）。
-        /// 以 CigiSOFV4 帧头开消息（CCL 要求 IG 消息以 SOF 开头）；目标 = Host `targetUdpPortRecv`。
+        /// 以 CigiSOFV4 帧头开消息（CCL 要求 IG 消息以 SOF 开头）；目标 = `_local.target.udpPortRecv`。
         /// 绑定 _udpSession（状态同步设计初版.md §5.1 双 session）。单次 flush 周期内可多次调用填充报文——
         /// 帧头只填一次（去重），flushUdp 后重置（状态同步设计初版.md §8.1）。
         CigiOutgoingMsg& outMsgWithSofUdp()
@@ -207,7 +209,7 @@ namespace aerovista::sync
 
         void drainUdp();
         bool waitUdpAck(int timeoutMs);
-        bool connectOnce(const IgConfig& config);
+        bool connectOnce(const HostTarget& target);
         void sendSofPacket(std::uint32_t frameCntr);
         void markDisconnected();
         /// UDP 生产-消费等待：I/O 线程 1ms 轮询，drain 空队列时最多再等 2ms（两个 poll 周期），
@@ -261,7 +263,6 @@ namespace aerovista::sync
         void registerCapture(CigiIGSession& session, int packetId, CigiBaseEventProcessor* proc);
 
         IgConfig _local{};
-        IgConfig _hostTarget{};
         UdpSocket _udp;
         TcpSocket _tcp;
 

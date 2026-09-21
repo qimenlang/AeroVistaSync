@@ -21,9 +21,9 @@ namespace aerovista::sync
         config::rejectUnknownKeys(obj, {"udpPortRecv", "targetAddr", "targetTcpPort", "targetUdpPortRecv"});
         IgConfig cfg;
         cfg.udpPortRecv = config::requireInt(obj, "udpPortRecv");
-        cfg.targetAddr = config::requireString(obj, "targetAddr");
-        cfg.targetTcpPort = config::requireInt(obj, "targetTcpPort");
-        cfg.targetUdpPortRecv = config::requireInt(obj, "targetUdpPortRecv");
+        cfg.target.addr = config::requireString(obj, "targetAddr");
+        cfg.target.tcpPort = config::requireInt(obj, "targetTcpPort");
+        cfg.target.udpPortRecv = config::requireInt(obj, "targetUdpPortRecv");
         return cfg;
     }
 
