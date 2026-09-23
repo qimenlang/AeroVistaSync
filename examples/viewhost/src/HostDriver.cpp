@@ -1,5 +1,7 @@
 ﻿#include "HostDriver.h"
 
+#include <aerovista/sync/IgSync.h>
+
 #include "CigiEntityPositionCtrlV4.h"
 
 // 命令面/数据面测试报文（cigi梳理.md 链路矩阵；HostDriver 随机构造并发送）。
@@ -42,6 +44,7 @@
 #include "CigiWeatherCtrlV4.h"
 
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <random>
 #include <string>
@@ -166,6 +169,8 @@ namespace aerovista::viewhost
             return false;
         }
         _host.run();
+        _relay = config.relay;
+        _igConfig = config.igConfig;
         _initialized = true;
         return true;
     }
@@ -174,6 +179,7 @@ namespace aerovista::viewhost
     {
         if (_initialized)
         {
+            _virtualIg.reset();
             _host.shutdown();
             _initialized = false;
         }
@@ -271,6 +277,37 @@ namespace aerovista::viewhost
     void HostDriver::pollIncoming()
     {
         _host.drainIncoming();
+    }
+
+    void HostDriver::pollRelay()
+    {
+        if (!shouldConnectVirtualIg())
+            return;
+        connectVirtualIg();
+    }
+
+    bool HostDriver::virtualIgLinked() const
+    {
+        return _virtualIg && _virtualIg->tcpConnected() && _virtualIg->udpSynced();
+    }
+
+    bool HostDriver::shouldConnectVirtualIg() const
+    {
+        if (!_initialized || !_relay.enable || !_igConfig)
+            return false;
+        if (virtualIgLinked())
+            return false;
+        return _host.readyIgCount() >= _relay.expectedIgCount;
+    }
+
+    void HostDriver::connectVirtualIg()
+    {
+        if (!_virtualIg)
+            _virtualIg = std::make_unique<aerovista::sync::IgSync>();
+        // 虚 IG 对平台 HELLO 恒 channelId=0（平台同步设计.md §6.3）。
+        if (!_virtualIg->initialize(_igConfig->udpPortRecv, 0))
+            return;
+        _virtualIg->connect(_igConfig->target);
     }
 
     bool HostDriver::isRunning() const

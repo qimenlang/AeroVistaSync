@@ -6,13 +6,20 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
+namespace aerovista::sync
+{
+    class IgSync;
+}
+
 namespace aerovista::viewhost
 {
     /// 持有 HostSync + HostDataManager：生命周期 + 帧驱动 + 意图 API（viewhost设计.md §4.0）。
+    /// 中继时另持虚 IG（`IgSync`），起齐后才 `connect` 平台（平台同步设计.md §6.4）。
     class HostDriver
     {
     public:
@@ -23,6 +30,7 @@ namespace aerovista::viewhost
         HostDriver& operator=(const HostDriver&) = delete;
 
         /// initialize + run（置 RUNNING）。失败时 error 带上下文。
+        /// `relay.enable=true` 时只 listen 真实 IG，不在此时连平台。
         bool initialize(const aerovista::sync::HostConfig& config, std::string* error = nullptr);
         void shutdown();
 
@@ -60,6 +68,11 @@ namespace aerovista::viewhost
 
         /// 接收轮询：drain IG→Host 收包队列并解包，触发订阅回调（Host push 模式，UI 定时器每帧调用）。
         void pollIncoming();
+        /// 中继起齐门闩（平台同步设计.md §6.4）：`readyIgCount >= expectedIgCount` 之后才虚 IG `connect`。
+        /// 本地调试（`relay.enable=false`）无操作。由 UI 定时器每拍调用。
+        void pollRelay();
+        /// 虚 IG 已对平台完成 TCP HELLO + UDP_SYNC。
+        bool virtualIgLinked() const;
         /// 注册某类 IG→Host 报文的到达回调（转发 HostSync::addCallback，状态同步设计初版.md §8.1）。
         /// 回调在 pollIncoming（UI 线程）同步调用；本示例只置位报文名。
         /// 解包栈内勿做对话框重绘 / 磁盘 IO。
@@ -76,8 +89,14 @@ namespace aerovista::viewhost
         std::uint32_t sofReceivedCount() const;
 
     private:
+        bool shouldConnectVirtualIg() const;
+        void connectVirtualIg();
+
         aerovista::sync::HostSync _host;
         aerovista::sync::HostDataManager _data;
+        aerovista::sync::RelayConfig _relay{};
+        std::optional<aerovista::sync::IgConfig> _igConfig;
+        std::unique_ptr<aerovista::sync::IgSync> _virtualIg;
         bool _initialized = false;
     };
 } // namespace aerovista::viewhost
