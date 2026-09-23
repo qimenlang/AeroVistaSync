@@ -32,6 +32,7 @@ target_link_libraries(your_target PRIVATE aerovista::aerovistaSync)
 
 ```cpp
 #include <aerovista/sync/SynchronSystem.h>
+#include <aerovista/sync/HostDriver.h>
 #include <aerovista/sync/SyncConfig.h>
 
 IgConfig ig;
@@ -43,7 +44,7 @@ sync->initialize(std::optional<IgConfig>{ig}, syncSystem);
 
 ## 快速开始
 
-- viewhost（Host-only）：见 `examples/minimal_viewhost.cpp` + `examples/viewhost.json`，直接持 `HostSync`（`initialize(HostConfig)` + `run`）。
+- viewhost（Host-only）：持 `aerovista::sync::HostDriver`（`HostSync` + `HostDataManager`；中继时另持虚 `IgSync`）。最小接入也可直接持 `HostSync`（`examples/minimal_viewhost.cpp`：`initialize(HostConfig)` + `run`）。
 - 独立 IG：用 `loadIgConfig(path, igConfig, err)` 读配置后 `SynchronSystem::create()->initialize(igConfig)`。
 
 ## 测试

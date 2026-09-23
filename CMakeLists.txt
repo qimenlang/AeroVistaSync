@@ -37,6 +37,7 @@ set(AEROVISTA_SYNC_PUBLIC_HEADERS
     include/aerovista/sync/CigiWire.h
     include/aerovista/sync/EventProcess.h
     include/aerovista/sync/HostDataManager.h
+    include/aerovista/sync/HostDriver.h
     include/aerovista/sync/HostSync.h
     include/aerovista/sync/SofRttTracker.h
     include/aerovista/sync/IgSync.h
@@ -52,6 +53,8 @@ add_library(aerovistaSync STATIC
     src/CigiWire.cpp
     src/EventProcess.cpp
     src/HostDataManager.cpp
+    src/HostDriver.cpp
+    src/HostDriverProbes.cpp
     src/HostSync.cpp
     src/SofRttTracker.cpp
     src/IgSync.cpp

@@ -8,7 +8,8 @@
 #include <cstdint>
 #include <string>
 
-#include "HostDriver.h"
+#include <aerovista/sync/HostDriver.h>
+
 #include "HudLabel.h"
 #include "ViewHostMath.h"
 #include "ViewHostMessages.h"
@@ -59,7 +60,7 @@ private:
     void createFocusSink();
     CViewHostFrame* hostFrame() const;
 
-    aerovista::viewhost::HostDriver _driver;
+    aerovista::sync::HostDriver _driver;
     aerovista::sync::cigi_wire::EyePose _eye;
     CEdit _focusSink;
     CHudLabel _statusReady;

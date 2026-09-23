@@ -13,7 +13,7 @@ namespace aerovista::sync
     /// IG 侧同步收发端点：持有 IgSync，负责收包解包 + 帧级维护 + 连接状态查询。
     /// 不承担眼点业务。本仓库里：offset 合成在 Engine `CameraDriver`
     /// （`Engine::registerIgCallbacks` → `CameraDriver::onOwnshipEyePose`）；写相机在
-    /// `Engine::applyLastHostEye`。公开接口零 vsg。Host 采样/扇出由 viewhost `HostDriver` 完成。
+    /// `Engine::applyLastHostEye`。公开接口零 vsg。Host 采样/扇出由 `HostDriver` 完成。
     class SynchronSystem
     {
     public:

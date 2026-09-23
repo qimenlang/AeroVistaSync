@@ -5,13 +5,14 @@
 #include <cstdint>
 #include <string>
 
-#include "HostDriver.h"
+#include <aerovista/sync/HostDriver.h>
+
 #include "resource.h"
 
 class CEntityPropDlg : public CDialog
 {
 public:
-    CEntityPropDlg(aerovista::viewhost::HostDriver& driver, std::uint16_t entityId, CWnd* pParent);
+    CEntityPropDlg(aerovista::sync::HostDriver& driver, std::uint16_t entityId, CWnd* pParent);
 
     enum { IDD = IDD_ENTITY_PROP };
 
@@ -30,7 +31,7 @@ private:
     void captureBaseline();
     bool applyDirtyFields(std::string& error);
 
-    aerovista::viewhost::HostDriver& _driver;
+    aerovista::sync::HostDriver& _driver;
     std::uint16_t _entityId = 0;
 
     aerovista::sync::EntityAuthorityState _baselineState = aerovista::sync::EntityAuthorityState::ACTIVE;

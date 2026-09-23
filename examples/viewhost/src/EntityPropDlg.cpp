@@ -49,7 +49,7 @@ namespace
     }
 } // namespace
 
-CEntityPropDlg::CEntityPropDlg(aerovista::viewhost::HostDriver& driver, std::uint16_t entityId, CWnd* pParent)
+CEntityPropDlg::CEntityPropDlg(aerovista::sync::HostDriver& driver, std::uint16_t entityId, CWnd* pParent)
     : CDialog(IDD_ENTITY_PROP, pParent), _driver(driver), _entityId(entityId)
 {
 }
@@ -158,7 +158,7 @@ bool CEntityPropDlg::applyDirtyFields(std::string& error)
             return false;
     }
 
-    aerovista::viewhost::HostDriver::EntitySend send;
+    aerovista::sync::HostDriver::EntitySend send;
     send.entityCtrl = ctrlDirty;
     send.entityPosition = poseDirty;
     if (!ctrlDirty && !poseDirty)
