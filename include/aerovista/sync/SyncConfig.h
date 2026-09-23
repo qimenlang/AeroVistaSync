@@ -3,6 +3,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace aerovista::sync
@@ -31,11 +32,21 @@ namespace aerovista::sync
         HostTarget target;   ///< 远端 Host
     };
 
+    /// viewhost 中继开关（平台同步设计.md §9）。仅 `enable=true` 时消费 `HostConfig::igConfig`。
+    struct RelayConfig
+    {
+        bool enable = false;
+        int expectedIgCount = 0;
+    };
+
     /// Host 侧本地配置。
     struct HostConfig
     {
         int udpPortRecv = 0;
         int tcpPort = 0;
+        RelayConfig relay{};
+        /// 虚 IG；`relay.enable=false` 时为空（JSON 有也忽略）。
+        std::optional<IgConfig> igConfig;
     };
 
     enum class HostStatus
@@ -59,8 +70,8 @@ namespace aerovista::sync
         bool requireConnectedIg = false;
     };
 
-    /// 解析只含 `hostConfig` 块的文件（viewhost / 独立 Host 进程）。
-    /// 顶层未知键拒绝。见 sync模块化设计.md §4.0。
+    /// 解析 Host 进程配置（viewhost）。本地调试只含 `hostConfig`；
+    /// 中继时可含 `relay` / `igConfig`（平台同步设计.md §9）。顶层未知键拒绝。
     bool loadHostConfig(const std::string& path, HostConfig& out, std::string* error = nullptr);
 
     /// 解析只含 `igConfig` 块的文件（独立 IG 进程 / 外部引擎使用 sync 且不带引擎配置）。
