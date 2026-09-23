@@ -610,6 +610,20 @@ namespace aerovista::sync
         return tcpFrames;
     }
 
+    std::vector<std::vector<unsigned char>> HostSync::takeIncomingUdp()
+    {
+        std::vector<UdpIngress> udpFrames;
+        {
+            std::lock_guard lock(_udpPayloadMutex);
+            udpFrames.swap(_udpPayloadQueue);
+        }
+        std::vector<std::vector<unsigned char>> out;
+        out.reserve(udpFrames.size());
+        for (auto& frame : udpFrames)
+            out.push_back(std::move(frame.bytes));
+        return out;
+    }
+
     void HostSync::fanoutTcp(const unsigned char* buf, int len)
     {
         std::vector<std::shared_ptr<TcpSocket>> targets;

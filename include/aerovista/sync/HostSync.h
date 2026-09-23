@@ -6,6 +6,7 @@
 #include <aerovista/sync/EventProcess.h>
 #include <aerovista/sync/SofRttTracker.h>
 #include <aerovista/sync/SyncConfig.h>
+#include <aerovista/sync/SyncInterface.h>
 #include <aerovista/sync/TcpSocket.h>
 #include <aerovista/sync/UdpSocket.h>
 
@@ -71,20 +72,20 @@ namespace aerovista::sync
     }
 
     /// Host 侧同步端点：UDP 同步面 + TCP 命令监听。
-    class HostSync
+    class HostSync : public SyncInterface
     {
     public:
         // ===== 门面 =====
 
         HostSync() = default;
-        ~HostSync();
+        ~HostSync() override;
 
         HostSync(const HostSync&) = delete;
         HostSync& operator=(const HostSync&) = delete;
 
         // ---- 生命周期 ----
         bool initialize(const HostConfig& local);
-        void shutdown();
+        void shutdown() override;
         void run();
 
         // ---- 状态观测 ----
@@ -143,14 +144,14 @@ namespace aerovista::sync
             }
             return omsg;
         }
-        void flushTcp();
-        void flushUdp();
+        void flushTcp() override;
+        void flushUdp() override;
         /// 中继：把已切齐的 Host→IG TCP 消息原样 `sendAll` 全体 ready IG（平台同步设计.md §6.2 / §8）。
         /// 不 `PackageMsg`、不加 IGCtrl。空消息跳过。
-        void sendTcpMessage(const std::vector<unsigned char>& message);
+        void sendTcpMessage(const std::vector<unsigned char>& message) override;
         /// 中继：把已切齐的 Host→IG UDP 数据报原样 `sendto` 全体 ready IG（平台同步设计.md §6.2 / §8）。
         /// 不 `PackageMsg`、不加 IGCtrl。空消息跳过。
-        void sendUdpMessage(const std::vector<unsigned char>& message);
+        void sendUdpMessage(const std::vector<unsigned char>& message) override;
 
         // ---- 收包（对等 IG 侧 §8.1）：订阅回调处理 IG→Host 报文 ----
 
@@ -159,7 +160,10 @@ namespace aerovista::sync
         void drainIncoming();
         /// 中继回程：取走已按 SOF 切齐的 TCP 消息字节，不解包（平台同步设计.md §6.3 / §8）。
         /// 与 `drainIncoming` 互斥消费同一 TCP 队列。
-        std::vector<std::vector<unsigned char>> takeIncomingTcp();
+        std::vector<std::vector<unsigned char>> takeIncomingTcp() override;
+        /// 取走 UDP 数据报字节，不解包（丢弃 fromIp/fromPort）。与 `drainIncoming` 互斥。
+        /// 中继不得用本接口把真实 IG SOF 转给平台。
+        std::vector<std::vector<unsigned char>> takeIncomingUdp() override;
 
         /// 注册某类 IG→Host 报文的到达回调：报文解包捕获时同步多播投递（状态同步设计初版.md §8.1）。
         /// 同一类型可注册多个回调（多播，对齐 CCL EventList 多 processor）；捕获时同步调用，

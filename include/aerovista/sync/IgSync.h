@@ -5,6 +5,7 @@
 #include <aerovista/sync/CigiWire.h>
 #include <aerovista/sync/EventProcess.h>
 #include <aerovista/sync/SyncConfig.h>
+#include <aerovista/sync/SyncInterface.h>
 #include <aerovista/sync/TcpSocket.h>
 #include <aerovista/sync/UdpSocket.h>
 
@@ -63,13 +64,13 @@
 namespace aerovista::sync
 {
     /// IG 侧同步端点：连接 Host，UDP 同步 + TCP 命令客户端。
-    class IgSync
+    class IgSync : public SyncInterface
     {
     public:
         // ===== 门面 =====
 
         IgSync() = default;
-        ~IgSync();
+        ~IgSync() override;
 
         IgSync(const IgSync&) = delete;
         IgSync& operator=(const IgSync&) = delete;
@@ -89,7 +90,7 @@ namespace aerovista::sync
         bool initialize(int udpPortRecv, int channelId = 0);
         /// TCP CIGI HELLO + UDP_SYNC。可换 Host、可重连（不改本端 UDP 端口）。无 TCP ACK。
         bool connect(const HostTarget& target);
-        void shutdown();
+        void shutdown() override;
 
         // ---- 帧循环收包（SynchronSystem::preFrame 每帧驱动）----
         /// 主线程收包入口（对等 HostSync::drainIncoming）：统一 drain TCP+UDP 收包队列 → CCL 解包。
@@ -97,13 +98,15 @@ namespace aerovista::sync
         void drainIncoming(bool sendSof = true);
         /// 中继：取走已切齐的 TCP 消息字节，不解包、不回 SOF（平台同步设计.md §6.1 / §8）。
         /// 与 `drainIncoming` 互斥消费同一 TCP 队列。
-        std::vector<std::vector<unsigned char>> takeIncomingTcp();
+        std::vector<std::vector<unsigned char>> takeIncomingTcp() override;
         /// 中继：取走 UDP 数据报字节，不解包、不回 SOF（平台同步设计.md §6.1 / §8）。
         /// 与 `drainIncoming` 互斥消费同一 UDP 队列。
-        std::vector<std::vector<unsigned char>> takeIncomingUdp();
+        std::vector<std::vector<unsigned char>> takeIncomingUdp() override;
         /// 中继：已切齐 IG→Host TCP 消息原样 `sendAll`（平台同步设计.md §6.3 / §8）。
         /// 不加 SOF。空消息跳过。
-        void sendTcpMessage(const std::vector<unsigned char>& message);
+        void sendTcpMessage(const std::vector<unsigned char>& message) override;
+        /// 中继：已切齐 UDP 数据报原样 `sendto` Host（`HostTarget::udpPortRecv`）。不加 SOF。空消息跳过。
+        void sendUdpMessage(const std::vector<unsigned char>& message) override;
         /// 中继：数据面 UDP 已 `sendto` 有 ready peer 后，按该 IGCtrl 头 FrameCntr `packSof` 回 Host。
         /// 非 IGCtrl 开头则跳过。
         void sendSofForIgCtrl(const std::vector<unsigned char>& igCtrlMessage);
@@ -156,7 +159,7 @@ namespace aerovista::sync
             }
             return omsg;
         }
-        void flushTcp();
+        void flushTcp() override;
 
         /// UDP 出站 OutgoingMsg：业务侧 << 报文后调 flushUdp 发送（IG→Host UDP 上报/回传）。
         /// 以 CigiSOFV4 帧头开消息（CCL 要求 IG 消息以 SOF 开头）；目标 = `_local.target.udpPortRecv`。
@@ -176,7 +179,7 @@ namespace aerovista::sync
             }
             return omsg;
         }
-        void flushUdp();
+        void flushUdp() override;
 
         // ===== 测试接口 =====
 

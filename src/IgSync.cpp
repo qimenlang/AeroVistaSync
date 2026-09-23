@@ -345,6 +345,14 @@ namespace aerovista::sync
         _tcp.sendAll(message.data(), static_cast<int>(message.size()));
     }
 
+    void IgSync::sendUdpMessage(const std::vector<unsigned char>& message)
+    {
+        if (message.empty() || _local.target.addr.empty())
+            return;
+        _udp.sendTo(_local.target.addr, _local.target.udpPortRecv, message.data(),
+                    static_cast<int>(message.size()));
+    }
+
     void IgSync::sendSofForIgCtrl(const std::vector<unsigned char>& igCtrlMessage)
     {
         if (!cigi_wire::isIgCtrlPacket(igCtrlMessage.data(), static_cast<int>(igCtrlMessage.size())))
