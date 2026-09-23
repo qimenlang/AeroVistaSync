@@ -18,9 +18,9 @@ namespace aerovista::sync
 {
     /// 同步平面的 UDP 薄封装。
     ///
-    /// 一个未绑定发送 socket（显式 `sendTo` 目标）+ 一个绑定 `rcvPort`（INADDR_ANY）
-    /// 的非阻塞接收 socket。Windows 上持有 WSAStartup / WSACleanup 引用计数。
-    /// 仅 IPv4，与 CIGI 同步平面拓扑一致（socket总结.md §2）。
+    /// 单个绑定 `rcvPort`（INADDR_ANY）的非阻塞 socket：收 `recv`/`recvFrom`，发 `sendTo`。
+    /// 源端口即 bind 口，UDP_SYNC 的 fromPort 才能对上 HELLO 上报的 `udpRecvPort`。
+    /// Windows 上持有 WSAStartup / WSACleanup 引用计数。仅 IPv4（socket总结.md §2）。
     class UdpSocket
     {
     public:
@@ -29,9 +29,7 @@ namespace aerovista::sync
         UdpSocket(const UdpSocket&) = delete;
         UdpSocket& operator=(const UdpSocket&) = delete;
 
-        /// 创建发送 + 接收 socket，并把接收 socket 绑定到 `rcvPort`（非阻塞）。
-        /// 发送 socket 不绑定：发送一律走 `sendTo` 显式目标（源端口由 OS 分配）。
-        /// 失败时关闭全部并返回 false。
+        /// 创建 socket 并绑定 `rcvPort`（非阻塞）。收发同一 socket。失败关闭并返回 false。
         bool initialize(int rcvPort, std::string* outError = nullptr);
         void close();
         bool valid() const { return _valid; }
@@ -59,7 +57,6 @@ namespace aerovista::sync
 
         bool openRecvSocket(int rcvPort, std::string* outError);
 
-        Handle _sendSock = kInvalid;
         Handle _recvSock = kInvalid;
         bool _valid = false;
         std::atomic<bool> _wsaAcquired{false};

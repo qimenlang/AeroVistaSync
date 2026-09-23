@@ -36,7 +36,7 @@ namespace aerovista::sync
     ///
     /// 生命周期：Idle → (listen) Listening → (accept) 产出 Connected；或 Idle → (connect) Connected。
     /// Windows 上 WSAStartup / WSACleanup 引用计数与 UdpSocket 共享（SocketCommon）。
-    /// 仅 IPv4。长度分帧（CommandFrameAssembler）与握手协议（WireMsg）不在此层。
+    /// 仅 IPv4。长度分帧与握手协议不在此层。
     class TcpSocket
     {
     public:

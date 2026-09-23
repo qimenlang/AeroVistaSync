@@ -1,9 +1,8 @@
 ﻿#include <aerovista/sync/IgSync.h>
 #include <aerovista/sync/CigiWire.h>
-#include <aerovista/sync/SyncProtocol.h>
 
 #include <chrono>
-#include <cstring>
+#include <cstdint>
 #include <iostream>
 #include <thread>
 #include <vector>
@@ -115,11 +114,12 @@ namespace aerovista::sync
         return _udpSynced;
     }
 
-    bool IgSync::initialize(int udpPortRecv)
+    bool IgSync::initialize(int udpPortRecv, int channelId)
     {
         shutdown();
         _local = {};
         _local.udpPortRecv = udpPortRecv;
+        _channelId = channelId;
         _tcpConnected = false;
         _udpSynced = false;
         _status = IgStatus::IDLE;
@@ -379,18 +379,12 @@ namespace aerovista::sync
     bool IgSync::waitUdpAck(int timeoutMs)
     {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
-        unsigned char buf[64]{};
+        unsigned char buf[256]{};
         while (std::chrono::steady_clock::now() < deadline)
         {
             const int n = _udp.recv(buf, sizeof(buf));
-            if (n >= static_cast<int>(sizeof(sync_proto::WireMsg)))
-            {
-                sync_proto::WireMsg msg{};
-                std::memcpy(&msg, buf, sizeof(msg));
-                if (msg.magic == sync_proto::kMagic &&
-                    msg.type == static_cast<uint32_t>(sync_proto::MsgType::UDP_SYNC_ACK))
-                    return true;
-            }
+            if (n > 0 && cigi_wire::isIgCtrlPacket(buf, n))
+                return true;
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
         return false;
@@ -398,29 +392,21 @@ namespace aerovista::sync
 
     bool IgSync::connectOnce(const HostTarget& target)
     {
-        // 假定 _tcp 上已连接 TCP。
-        sync_proto::WireMsg hello{};
-        hello.magic = sync_proto::kMagic;
-        hello.type = static_cast<uint32_t>(sync_proto::MsgType::HELLO);
-        hello.udpRecvPort = static_cast<uint32_t>(_local.udpPortRecv);
-        if (!_tcp.sendAll(&hello, sizeof(hello)))
+        // 假定 _tcp 上已连接 TCP。无 TCP ACK：发 HELLO 后立刻 UDP_SYNC。
+        std::vector<unsigned char> hello;
+        if (!cigi_wire::packHello(static_cast<std::uint32_t>(_local.udpPortRecv), _channelId, hello))
+            return false;
+        if (!_tcp.sendAll(hello.data(), static_cast<int>(hello.size())))
             return false;
 
-        sync_proto::WireMsg ack{};
-        if (!_tcp.recvAll(&ack, sizeof(ack), handshakeTimeoutMs) || ack.magic != sync_proto::kMagic ||
-            ack.type != static_cast<uint32_t>(sync_proto::MsgType::HELLO_ACK))
+        std::vector<unsigned char> probe;
+        if (!cigi_wire::packSof(0, probe))
             return false;
-
-        sync_proto::WireMsg udpSync{};
-        udpSync.magic = sync_proto::kMagic;
-        udpSync.type = static_cast<uint32_t>(sync_proto::MsgType::UDP_SYNC);
-        udpSync.udpRecvPort = static_cast<uint32_t>(_local.udpPortRecv);
 
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(handshakeTimeoutMs);
         while (std::chrono::steady_clock::now() < deadline)
         {
-            _udp.sendTo(target.addr, target.udpPortRecv,
-                        reinterpret_cast<const unsigned char*>(&udpSync), sizeof(udpSync));
+            _udp.sendTo(target.addr, target.udpPortRecv, probe.data(), static_cast<int>(probe.size()));
             if (waitUdpAck(50))
                 return true;
         }
@@ -505,15 +491,12 @@ namespace aerovista::sync
             const int n = _udp.recv(buf, sizeof(buf));
             if (n > 0)
             {
-                // 握手面（UDP_SYNC_ACK 等）不入数据面队列。
-                if (!cigi_wire::isAvsyMagic(buf, n))
-                {
-                    IncomingFrame frame;
-                    frame.bytes.assign(buf, buf + n);
-                    frame.receivedAtUs = nowUs(); // I/O 线程 recv 时刻（时钟同步方案.md §3）
-                    std::lock_guard lock(_udpPayloadMutex);
-                    _udpPayloadQueue.push_back(std::move(frame));
-                }
+                // 握手 ACK 已在 waitUdpAck 吃掉；此后 UDP 全是数据面。
+                IncomingFrame frame;
+                frame.bytes.assign(buf, buf + n);
+                frame.receivedAtUs = nowUs(); // I/O 线程 recv 时刻（时钟同步方案.md §3）
+                std::lock_guard lock(_udpPayloadMutex);
+                _udpPayloadQueue.push_back(std::move(frame));
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }

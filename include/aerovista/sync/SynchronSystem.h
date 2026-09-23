@@ -26,7 +26,7 @@ namespace aerovista::sync
 
         // ---- 生命周期 ----
         /// 初始化 IG 收发端点：`igConfig` 非空则启动 IgSync 并连接，空则不启 IG。
-        /// `requireConnectedIg` 控制 connect 失败是否拒绝；`channelId` 仅存储（当前无运行期消费）；
+        /// `requireConnectedIg` 控制 connect 失败是否拒绝；`channelId` 写入 IgSync HELLO；
         /// `offsetDeg` 由 Engine `CameraDriver` 消费，本类不读。眼点订阅由 Engine 在本函数返回后注册。
         bool initialize(const std::optional<IgConfig>& igConfig, const SyncSystemConfig& syncSystem);
         void shutdown();

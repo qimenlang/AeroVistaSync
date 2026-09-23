@@ -1,18 +1,24 @@
 ﻿#include <aerovista/sync/CigiIncludes.h>
 
 #include <aerovista/sync/CigiWire.h>
-#include <aerovista/sync/SyncProtocol.h>
 
 #include "CigiBaseEntityPositionCtrl.h"
+#include "CigiBaseIGCtrl.h"
+#include "CigiBaseIGMsg.h"
+#include "CigiBaseSOF.h"
 #include "CigiEntityPositionCtrlV4.h"
+#include "CigiHostSession.h"
+#include "CigiIGCtrlV4.h"
+#include "CigiIGMsgV4.h"
 #include "CigiIGSession.h"
 #include "CigiOutgoingMsg.h"
 #include "CigiSOFV4.h"
 
 #include <cmath>
-#include <cstring>
 #include <mutex>
 #include <optional>
+#include <sstream>
+#include <string>
 
 namespace aerovista::sync
 {
@@ -20,7 +26,7 @@ namespace aerovista::sync
     {
         namespace
         {
-            // CCL 非线程安全；packSof 共用内部 CigiSession，用这把锁串行化。
+            // CCL 非线程安全；packSof / packHello / packIgCtrl 共用内部 session，用这把锁串行化。
             // appendEye 追加到调用方已有的 omsg，不经过本锁。
             std::mutex gCigiMutex;
             std::uint64_t gEyePoseRejectedByRange = 0;
@@ -44,10 +50,10 @@ namespace aerovista::sync
             constexpr int kCigiBufCount = 1;
             constexpr int kCigiBufLen = 4096;
 
-            /// packSof 用的一次性 CCL 会话（生产 `IgSync::sendSofPacket`）。
-            struct CigiRuntime
+            /// packSof / packHello 用的一次性 CCL 会话（IG 出站：SOF 开头）。
+            struct IgPackRuntime
             {
-                CigiRuntime() : ig(kCigiBufCount, kCigiBufLen, kCigiBufCount, kCigiBufLen)
+                IgPackRuntime() : ig(kCigiBufCount, kCigiBufLen, kCigiBufCount, kCigiBufLen)
                 {
                     ig.SetCigiVersion(4, 0);
                     ig.SetSynchronous(false);
@@ -56,21 +62,51 @@ namespace aerovista::sync
                 CigiIGSession ig;
             };
 
-            CigiRuntime& runtime()
+            /// packIgCtrl 用的一次性 CCL 会话（Host 出站：IGCtrl 开头）。
+            struct HostPackRuntime
             {
-                static CigiRuntime rt;
+                HostPackRuntime() : host(kCigiBufCount, kCigiBufLen, kCigiBufCount, kCigiBufLen)
+                {
+                    host.SetCigiVersion(4, 0);
+                    host.SetSynchronous(false);
+                }
+
+                CigiHostSession host;
+            };
+
+            IgPackRuntime& igRuntime()
+            {
+                static IgPackRuntime rt;
                 return rt;
             }
-        } // namespace
 
-        bool isAvsyMagic(const unsigned char* data, int n)
-        {
-            if (data == nullptr || n < 4)
-                return false;
-            std::uint32_t magic = 0;
-            std::memcpy(&magic, data, sizeof(magic));
-            return magic == sync_proto::kMagic;
-        }
+            HostPackRuntime& hostRuntime()
+            {
+                static HostPackRuntime rt;
+                return rt;
+            }
+
+            bool packageCurrent(CigiOutgoingMsg& omsg, std::vector<unsigned char>& out)
+            {
+                Cigi_uint8* buf = nullptr;
+                int len = 0;
+                if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
+                {
+                    omsg.FreeMsg();
+                    return false;
+                }
+                out.assign(buf, buf + len);
+                omsg.FreeMsg();
+                return !out.empty();
+            }
+
+            std::uint16_t packetIdAt(const unsigned char* data, int n)
+            {
+                if (data == nullptr || n < 4)
+                    return 0xFFFF;
+                return static_cast<std::uint16_t>(data[2] | (data[3] << 8));
+            }
+        } // namespace
 
         std::uint64_t eyePoseRejectedByRange()
         {
@@ -108,25 +144,79 @@ namespace aerovista::sync
         {
             out.clear();
             std::lock_guard lock(gCigiMutex);
-            CigiRuntime& rt = runtime();
-
             CigiSOFV4 sof;
             sof.SetFrameCntr(frameCntr);
-
-            CigiOutgoingMsg& omsg = rt.ig.GetOutgoingMsgMgr();
+            CigiOutgoingMsg& omsg = igRuntime().ig.GetOutgoingMsgMgr();
             omsg.BeginMsg();
             omsg << sof;
+            return packageCurrent(omsg, out);
+        }
 
-            Cigi_uint8* buf = nullptr;
-            int len = 0;
-            if (omsg.PackageMsg(&buf, len) != CIGI_SUCCESS || buf == nullptr || len <= 0)
-            {
-                omsg.FreeMsg();
-                return false;
-            }
-            out.assign(buf, buf + len);
-            omsg.FreeMsg();
-            return !out.empty();
+        bool packHello(std::uint32_t udpRecvPort, int channelId, std::vector<unsigned char>& out)
+        {
+            out.clear();
+            const std::string body = std::to_string(udpRecvPort) + " " + std::to_string(channelId);
+            std::lock_guard lock(gCigiMutex);
+            CigiSOFV4 sof;
+            sof.SetFrameCntr(0);
+            CigiIGMsgV4 igMsg;
+            igMsg.SetMsgID(helloMsgId);
+            igMsg.SetMsg(body.c_str());
+            CigiOutgoingMsg& omsg = igRuntime().ig.GetOutgoingMsgMgr();
+            omsg.BeginMsg();
+            omsg << sof;
+            omsg << igMsg;
+            return packageCurrent(omsg, out);
+        }
+
+        std::optional<HelloIdentity> parseHello(const unsigned char* data, int n)
+        {
+            if (!isSofPacket(data, n))
+                return std::nullopt;
+            const std::uint16_t sofSize =
+                static_cast<std::uint16_t>(data[0] | (data[1] << 8));
+            if (sofSize < 8 || n < static_cast<int>(sofSize) + 8)
+                return std::nullopt;
+            const unsigned char* igMsgBytes = data + sofSize;
+            const int igMsgLen = n - sofSize;
+            if (packetIdAt(igMsgBytes, igMsgLen) != CIGI_IG_MSG_PACKET_ID_V4)
+                return std::nullopt;
+
+            CigiIGMsgV4 igMsg;
+            if (igMsg.Unpack(const_cast<Cigi_uint8*>(igMsgBytes), false, nullptr) <
+                CigiIGMsgV4::PacketHeaderSize)
+                return std::nullopt;
+            if (igMsg.GetMsgID() != helloMsgId)
+                return std::nullopt;
+
+            HelloIdentity identity;
+            std::istringstream in(reinterpret_cast<const char*>(igMsg.GetMsg()));
+            if (!(in >> identity.udpRecvPort >> identity.channelId))
+                return std::nullopt;
+            return identity;
+        }
+
+        bool packIgCtrl(std::uint32_t frameCntr, std::vector<unsigned char>& out)
+        {
+            out.clear();
+            std::lock_guard lock(gCigiMutex);
+            CigiIGCtrlV4 igCtrl;
+            igCtrl.SetFrameCntr(frameCntr);
+            igCtrl.SetTimeStampValid(false);
+            CigiOutgoingMsg& omsg = hostRuntime().host.GetOutgoingMsgMgr();
+            omsg.BeginMsg();
+            omsg << igCtrl;
+            return packageCurrent(omsg, out);
+        }
+
+        bool isSofPacket(const unsigned char* data, int n)
+        {
+            return data != nullptr && n >= 4 && packetIdAt(data, n) == CIGI_SOF_PACKET_ID_V4;
+        }
+
+        bool isIgCtrlPacket(const unsigned char* data, int n)
+        {
+            return data != nullptr && n >= 4 && packetIdAt(data, n) == CIGI_IG_CTRL_PACKET_ID_V4;
         }
 
         namespace
@@ -136,7 +226,8 @@ namespace aerovista::sync
             // 「读不到下一个包头」时乐观认为消息到此结束——命令面一条 flush 即一条消息，
             // 且消息小、本地回环下极少恰好拆在包边界；「后续包 body 不完整」才是必须等待的明确场景。
             std::optional<std::size_t> messageLength(const std::vector<unsigned char>& buf,
-                                                     std::size_t offset, std::uint16_t firstSize)
+                                                     std::size_t offset, std::uint16_t firstSize,
+                                                     std::uint16_t startPacketId)
             {
                 std::size_t msgLen = firstSize;
                 for (;;)
@@ -145,8 +236,8 @@ namespace aerovista::sync
                         return msgLen; // 读不到下一个包头：乐观认为消息到此结束
                     const std::uint16_t nextId = static_cast<std::uint16_t>(
                         buf[offset + msgLen + 2] | (buf[offset + msgLen + 3] << 8));
-                    if (nextId == 0x0000)
-                        return msgLen; // 下一个 IGCtrl = 新消息开始
+                    if (nextId == startPacketId)
+                        return msgLen; // 下一个消息起点（IGCtrl 或 SOF）
                     const std::uint16_t nextSize = static_cast<std::uint16_t>(
                         buf[offset + msgLen] | (buf[offset + msgLen + 1] << 8));
                     if (nextSize < 8)
@@ -165,8 +256,8 @@ namespace aerovista::sync
             if (data != nullptr && n > 0)
                 _buf.insert(_buf.end(), data, data + n);
 
-            // 消息级分帧：一条消息 = IGCtrl(PacketID 0x0000) 开头 + 后续非 IGCtrl 包。
-            // CCL ProcessIncomingMsg 要求首包为 IGCtrl，故必须按「完整消息」切，而非「单包」。
+            // 消息级分帧：一条消息 = startPacketId 开头 + 后续非起点包。
+            // Host→IG 起点 IGCtrl；IG→Host TCP 起点 SOF。必须按完整消息切，而非单包。
             std::size_t offset = 0;
             for (;;)
             {
@@ -177,7 +268,7 @@ namespace aerovista::sync
                 if (packetSize < 8 || _buf.size() - offset < packetSize)
                     break; // 报文不完整（拆包）
 
-                const auto maybeLen = messageLength(_buf, offset, packetSize);
+                const auto maybeLen = messageLength(_buf, offset, packetSize, _startPacketId);
                 if (!maybeLen)
                     break; // 后续包 body 不完整：等更多数据
 

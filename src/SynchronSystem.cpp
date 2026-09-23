@@ -26,7 +26,7 @@ namespace aerovista::sync
         if (igConfig.has_value())
         {
             _ig = std::make_unique<IgSync>();
-            if (!_ig->initialize(igConfig->udpPortRecv))
+            if (!_ig->initialize(igConfig->udpPortRecv, syncSystem.channelId))
             {
                 std::cerr << "SynchronSystem: IgSync initialize failed\n";
                 shutdown();

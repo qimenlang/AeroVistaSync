@@ -41,6 +41,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace aerovista::sync
@@ -49,6 +50,7 @@ namespace aerovista::sync
     struct IgConnection
     {
         std::uint64_t id = 0;
+        int channelId = 0; ///< HELLO 学到的 IG syncSystem.channelId
         bool tcpReady = false;
         bool udpReady = false;
         /// 滚动平均应用 RTT；不满 10 个匹配样本时为空（SofRttTracker::avgRtt）。
@@ -63,7 +65,8 @@ namespace aerovista::sync
 
     inline bool operator==(const IgConnection& a, const IgConnection& b)
     {
-        return a.id == b.id && a.tcpReady == b.tcpReady && a.udpReady == b.udpReady && a.avgRtt == b.avgRtt &&
+        return a.id == b.id && a.channelId == b.channelId && a.tcpReady == b.tcpReady && a.udpReady == b.udpReady &&
+               a.avgRtt == b.avgRtt &&
                a.lastRtt == b.lastRtt && a.lossRate == b.lossRate && a.sofAge == b.sofAge;
     }
 
@@ -176,6 +179,7 @@ namespace aerovista::sync
             std::shared_ptr<TcpSocket> tcp;
             std::string ip;
             uint32_t udpRecvPort = 0;
+            int channelId = 0;
             /// IG 发送 socket 的源地址/端口（UDP_SYNC 学到）。SOF 按这对字段分到本 peer。
             std::string udpFromIp;
             int udpFromPort = 0;
@@ -207,10 +211,17 @@ namespace aerovista::sync
         void commandReadLoop(const std::shared_ptr<TcpSocket>& client, std::uint64_t clientId);
         void joinClientThreads();
         int countReadyUnlocked() const;
-        /// I/O 线程处理一条 UDP 数据报：握手面即时回 ACK；CIGI 报文入队 udpPayload（不解包）。
+        /// I/O 线程处理一条 UDP 数据报：未 udpReady 的 SOF 当 UDP_SYNC 即时回 IGCtrl ACK；其余入队。
         void processUdpDatagram(const unsigned char* buf, int n, const char* fromIp, int fromPort);
-        /// UDP_SYNC：记下 IG 发送源端口，供后续 SOF 按 peer 配对。返回 ACK 目标 IP。
-        std::string noteUdpSyncPeer(std::uint32_t udpRecvPort, const std::string& fromIp, int fromPort);
+        /// UDP_SYNC：记下 IG 发送源端口，供后续 SOF 按 peer 配对。命中已有 peer 时返回 ACK 目标 IP。
+        std::optional<std::string> noteUdpSyncPeer(std::uint32_t udpRecvPort, const std::string& fromIp, int fromPort);
+        void sendUdpSyncAck(const std::string& ip, int udpRecvPort);
+        bool channelIdInUseUnlocked(int channelId) const;
+        bool hasUdpReadyPeer(const std::string& fromIp, int fromPort) const;
+        /// HELLO 验收：重复 channelId 拒绝；成功则返回 {clientId, udpAlready}。
+        std::optional<std::pair<std::uint64_t, bool>> tryAddHelloPeer(
+            const std::shared_ptr<TcpSocket>& client, const std::string& peerIp,
+            std::uint32_t udpRecvPort, int channelId);
         void recordIgCtrlFanout(std::uint32_t hostFrameNumber, std::chrono::steady_clock::time_point tSend);
         void expireSofRtt(std::chrono::steady_clock::time_point now);
         void ingestUdpSof(const UdpIngress& frame, std::chrono::steady_clock::time_point now);

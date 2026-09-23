@@ -1,11 +1,12 @@
 ﻿#include <aerovista/sync/HostSync.h>
 #include <aerovista/sync/CigiWire.h>
-#include <aerovista/sync/SyncProtocol.h>
+
+#include "CigiBaseSOF.h"
 
 #include <chrono>
-#include <cstring>
 #include <iostream>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace
@@ -18,6 +19,27 @@ namespace
         if (now < *then)
             return std::chrono::microseconds{0};
         return std::chrono::duration_cast<std::chrono::microseconds>(now - *then);
+    }
+
+    bool recvCigiHello(aerovista::sync::TcpSocket& client, std::vector<unsigned char>& outFrame)
+    {
+        client.setRecvTimeout(100);
+        aerovista::sync::cigi_wire::CigiFrameAssembler assembler(CIGI_SOF_PACKET_ID_V4);
+        unsigned char buf[4096];
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            const aerovista::sync::RecvOutcome outcome = client.recv(buf, sizeof(buf));
+            if (outcome.kind == aerovista::sync::RecvKind::PEER_CLOSED ||
+                outcome.kind == aerovista::sync::RecvKind::IO_ERROR)
+                return false;
+            if (outcome.kind == aerovista::sync::RecvKind::TIMEOUT)
+                continue;
+            assembler.feed(buf, outcome.bytes, [&](const std::vector<unsigned char>& frame) { outFrame = frame; });
+            if (!outFrame.empty())
+                return true;
+        }
+        return false;
     }
 } // namespace
 
@@ -118,6 +140,7 @@ namespace aerovista::sync
         {
             IgConnection row;
             row.id = peer.clientId;
+            row.channelId = peer.channelId;
             row.tcpReady = peer.tcpReady;
             row.udpReady = peer.udpReady;
             row.avgRtt = peer.sofRtt.avgRtt();
@@ -284,62 +307,30 @@ namespace aerovista::sync
 
     void HostSync::handleClient(std::shared_ptr<TcpSocket> client, std::string peerIp)
     {
-        sync_proto::WireMsg hello{};
-        if (!client->recvAll(&hello, sizeof(hello), 1000) || hello.magic != sync_proto::kMagic ||
-            hello.type != static_cast<uint32_t>(sync_proto::MsgType::HELLO))
-        {
+        std::vector<unsigned char> helloFrame;
+        if (!recvCigiHello(*client, helloFrame))
             return;
-        }
 
-        std::uint64_t clientId = 0;
-        bool udpAlready = false;
-        {
-            std::lock_guard lock(_peersMutex);
-            clientId = ++_nextClientId;
-            IgPeer peer;
-            peer.clientId = clientId;
-            peer.tcp = client;
-            peer.ip = peerIp;
-            peer.udpRecvPort = hello.udpRecvPort;
-            peer.tcpReady = true;
-            const auto early = _earlyUdpSyncByPort.find(hello.udpRecvPort);
-            udpAlready = early != _earlyUdpSyncByPort.end();
-            if (udpAlready)
-            {
-                peer.udpFromPort = early->second.fromPort;
-                peer.udpFromIp = early->second.ip;
-                _earlyUdpSyncByPort.erase(early);
-            }
-            peer.udpReady = udpAlready;
-            _peers.push_back(std::move(peer));
-        }
+        const auto hello = cigi_wire::parseHello(helloFrame.data(), static_cast<int>(helloFrame.size()));
+        if (!hello)
+            return;
 
-        sync_proto::WireMsg ack{};
-        ack.magic = sync_proto::kMagic;
-        ack.type = static_cast<uint32_t>(sync_proto::MsgType::HELLO_ACK);
-        ack.udpRecvPort = static_cast<uint32_t>(_local.udpPortRecv);
-        client->sendAll(&ack, sizeof(ack));
+        const auto accepted = tryAddHelloPeer(client, peerIp, hello->udpRecvPort, hello->channelId);
+        if (!accepted)
+            return;
 
-        if (udpAlready)
-        {
-            sync_proto::WireMsg udpAck{};
-            udpAck.magic = sync_proto::kMagic;
-            udpAck.type = static_cast<uint32_t>(sync_proto::MsgType::UDP_SYNC_ACK);
-            udpAck.udpRecvPort = static_cast<uint32_t>(_local.udpPortRecv);
-            std::lock_guard lock(_udpMutex);
-            _udp.sendTo(peerIp, static_cast<int>(hello.udpRecvPort),
-                        reinterpret_cast<const unsigned char*>(&udpAck), sizeof(udpAck));
-        }
+        if (accepted->second)
+            sendUdpSyncAck(peerIp, static_cast<int>(hello->udpRecvPort));
 
-        commandReadLoop(client, clientId);
-        markPeerDisconnected(clientId);
+        commandReadLoop(client, accepted->first);
+        markPeerDisconnected(accepted->first);
     }
 
     void HostSync::commandReadLoop(const std::shared_ptr<TcpSocket>& client, std::uint64_t clientId)
     {
         // TCP 读循环：recv → 分帧 → 入队 tcpPayload；主线程 drainIncoming 解包（§8.2 对等）。
         // PEER_CLOSED（对端关闭）/ IO_ERROR 即判定断线。
-        cigi_wire::CigiFrameAssembler assembler;
+        cigi_wire::CigiFrameAssembler assembler(CIGI_SOF_PACKET_ID_V4);
         unsigned char cmdBuf[4096];
         for (;;)
         {
@@ -371,7 +362,45 @@ namespace aerovista::sync
         }
     }
 
-    std::string HostSync::noteUdpSyncPeer(std::uint32_t udpRecvPort, const std::string& fromIp, int fromPort)
+    bool HostSync::channelIdInUseUnlocked(int channelId) const
+    {
+        for (const auto& peer : _peers)
+        {
+            if (peer.channelId == channelId)
+                return true;
+        }
+        return false;
+    }
+
+    std::optional<std::pair<std::uint64_t, bool>> HostSync::tryAddHelloPeer(
+        const std::shared_ptr<TcpSocket>& client, const std::string& peerIp, std::uint32_t udpRecvPort, int channelId)
+    {
+        std::lock_guard lock(_peersMutex);
+        if (channelIdInUseUnlocked(channelId))
+            return std::nullopt;
+
+        const std::uint64_t clientId = ++_nextClientId;
+        IgPeer peer;
+        peer.clientId = clientId;
+        peer.tcp = client;
+        peer.ip = peerIp;
+        peer.udpRecvPort = udpRecvPort;
+        peer.channelId = channelId;
+        peer.tcpReady = true;
+        const auto early = _earlyUdpSyncByPort.find(udpRecvPort);
+        const bool udpAlready = early != _earlyUdpSyncByPort.end();
+        if (udpAlready)
+        {
+            peer.udpFromPort = early->second.fromPort;
+            peer.udpFromIp = early->second.ip;
+            _earlyUdpSyncByPort.erase(early);
+        }
+        peer.udpReady = udpAlready;
+        _peers.push_back(std::move(peer));
+        return std::make_pair(clientId, udpAlready);
+    }
+
+    std::optional<std::string> HostSync::noteUdpSyncPeer(std::uint32_t udpRecvPort, const std::string& fromIp, int fromPort)
     {
         std::lock_guard lock(_peersMutex);
         for (auto& peer : _peers)
@@ -385,7 +414,27 @@ namespace aerovista::sync
             }
         }
         _earlyUdpSyncByPort[udpRecvPort] = EarlyUdpSync{fromIp, fromPort};
-        return fromIp;
+        return std::nullopt;
+    }
+
+    bool HostSync::hasUdpReadyPeer(const std::string& fromIp, int fromPort) const
+    {
+        std::lock_guard lock(_peersMutex);
+        for (const auto& peer : _peers)
+        {
+            if (peer.udpReady && peer.udpFromPort == fromPort && peer.udpFromIp == fromIp)
+                return true;
+        }
+        return false;
+    }
+
+    void HostSync::sendUdpSyncAck(const std::string& ip, int udpRecvPort)
+    {
+        std::vector<unsigned char> ack;
+        if (!cigi_wire::packIgCtrl(0, ack))
+            return;
+        std::lock_guard lock(_udpMutex);
+        _udp.sendTo(ip, udpRecvPort, ack.data(), static_cast<int>(ack.size()));
     }
 
     void HostSync::recordIgCtrlFanout(std::uint32_t hostFrameNumber, std::chrono::steady_clock::time_point tSend)
@@ -430,36 +479,19 @@ namespace aerovista::sync
         if (n <= 0)
             return;
 
-        // 握手面（AVSY）。数据面 SOF 是 CIGI（无 AVSY 魔数）。
-        if (cigi_wire::isAvsyMagic(buf, n))
+        const std::string ip = fromIp ? fromIp : "";
+        if (cigi_wire::isSofPacket(buf, n) && !hasUdpReadyPeer(ip, fromPort))
         {
-            if (n < static_cast<int>(sizeof(sync_proto::WireMsg)))
-                return;
-
-            sync_proto::WireMsg header{};
-            std::memcpy(&header, buf, sizeof(header));
-            if (header.type != static_cast<uint32_t>(sync_proto::MsgType::UDP_SYNC))
-                return;
-
-            const uint32_t replyPort = header.udpRecvPort;
-            const std::string replyIp = noteUdpSyncPeer(header.udpRecvPort, fromIp, fromPort);
-
-            sync_proto::WireMsg ack{};
-            ack.magic = sync_proto::kMagic;
-            ack.type = static_cast<uint32_t>(sync_proto::MsgType::UDP_SYNC_ACK);
-            ack.udpRecvPort = static_cast<uint32_t>(_local.udpPortRecv);
-            {
-                std::lock_guard lock(_udpMutex);
-                _udp.sendTo(replyIp, static_cast<int>(replyPort),
-                            reinterpret_cast<const unsigned char*>(&ack), sizeof(ack));
-            }
+            const auto replyIp = noteUdpSyncPeer(static_cast<std::uint32_t>(fromPort), ip, fromPort);
+            if (replyIp)
+                sendUdpSyncAck(*replyIp, fromPort);
             return;
         }
 
         // CIGI 数据报文（SOF / IG 上报等）：I/O 线程只入队，主线程 drainIncoming 解包。
         UdpIngress ingress;
         ingress.bytes.assign(buf, buf + n);
-        ingress.fromIp = fromIp ? fromIp : "";
+        ingress.fromIp = ip;
         ingress.fromPort = fromPort;
         std::lock_guard lock(_udpPayloadMutex);
         _udpPayloadQueue.push_back(std::move(ingress));

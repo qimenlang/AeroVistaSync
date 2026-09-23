@@ -85,9 +85,9 @@ namespace aerovista::sync
         };
 
         // ---- 生命周期 ----
-        /// 本端 UDP bind；未连接。
-        bool initialize(int udpPortRecv);
-        /// TCP HELLO + UDP_SYNC。可换 Host、可重连（不改本端 UDP 端口）。
+        /// 本端 UDP bind；未连接。`channelId` 写入随后 HELLO（缺省 0）。
+        bool initialize(int udpPortRecv, int channelId = 0);
+        /// TCP CIGI HELLO + UDP_SYNC。可换 Host、可重连（不改本端 UDP 端口）。无 TCP ACK。
         bool connect(const HostTarget& target);
         void shutdown();
 
@@ -263,6 +263,7 @@ namespace aerovista::sync
         void registerCapture(CigiIGSession& session, int packetId, CigiBaseEventProcessor* proc);
 
         IgConfig _local{};
+        int _channelId = 0;
         UdpSocket _udp;
         TcpSocket _tcp;
 

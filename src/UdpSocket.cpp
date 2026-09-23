@@ -20,13 +20,6 @@ namespace aerovista::sync
         socket_common::acquireWsa();
         _wsaAcquired = true;
 
-        _sendSock = socket(AF_INET, SOCK_DGRAM, 0);
-        if (_sendSock == kInvalid)
-        {
-            close();
-            return socket_common::setError(outError, "create send socket failed");
-        }
-
         if (!openRecvSocket(rcvPort, outError))
         {
             close();
@@ -39,21 +32,12 @@ namespace aerovista::sync
 
     void UdpSocket::close()
     {
-        if (_sendSock != kInvalid)
-        {
-#ifdef WIN32
-            closesocket(_sendSock);
-#else
-            close(_sendSock);
-#endif
-            _sendSock = kInvalid;
-        }
         if (_recvSock != kInvalid)
         {
 #ifdef WIN32
             closesocket(_recvSock);
 #else
-            close(_recvSock);
+            ::close(_recvSock);
 #endif
             _recvSock = kInvalid;
         }
@@ -133,7 +117,7 @@ namespace aerovista::sync
         if (dest.sin_addr.s_addr == INADDR_NONE)
             return -1;
 
-        return sendto(_sendSock, reinterpret_cast<const char*>(buf), size, 0,
+        return sendto(_recvSock, reinterpret_cast<const char*>(buf), size, 0,
                       reinterpret_cast<const sockaddr*>(&dest), sizeof(dest));
     }
 
