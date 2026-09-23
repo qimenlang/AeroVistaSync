@@ -10,6 +10,7 @@
 
 #include "CigiBaseEventProcessor.h"
 #include "CigiIGCtrlV4.h"
+#include "CigiSOFV4.h"
 
 namespace aerovista::sync
 {
@@ -59,7 +60,8 @@ namespace aerovista::sync
     };
 
     /// SOF 回显计数（Host 侧）。lastFrameCntr 供数据面 RTT 按 Host Frame Number 配对。
-    class SofCaptureProc : public CigiBaseEventProcessor
+    /// 经 Sinkable 可 `addCallback<CigiSOFV4>`（TCP 上报头 / UDP SOF 共用同一实例）。
+    class SofCaptureProc : public CigiBaseEventProcessor, public Sinkable<CigiSOFV4>
     {
     public:
         void OnPacketReceived(CigiBasePacket* packet) override;

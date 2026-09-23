@@ -22,5 +22,6 @@ namespace aerovista::sync
             return;
         lastFrameCntr.store(sof->GetFrameCntr());
         count.fetch_add(1);
+        notify(*sof);
     }
 } // namespace aerovista::sync

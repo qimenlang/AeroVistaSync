@@ -1,6 +1,8 @@
 ﻿#include <aerovista/sync/IgSync.h>
 #include <aerovista/sync/CigiWire.h>
 
+#include "CigiIGCtrlV4.h"
+
 #include <chrono>
 #include <cstdint>
 #include <iostream>
@@ -306,6 +308,51 @@ namespace aerovista::sync
         }
         for (const auto& frame : tcpFrames)
             processIncomingFrame(frame.bytes.data(), static_cast<int>(frame.bytes.size()));
+    }
+
+    std::vector<std::vector<unsigned char>> IgSync::takeIncomingTcp()
+    {
+        std::vector<IncomingFrame> tcpFrames;
+        {
+            std::lock_guard lock(_tcpPayloadMutex);
+            tcpFrames.swap(_tcpPayloadQueue);
+        }
+        std::vector<std::vector<unsigned char>> out;
+        out.reserve(tcpFrames.size());
+        for (auto& frame : tcpFrames)
+            out.push_back(std::move(frame.bytes));
+        return out;
+    }
+
+    std::vector<std::vector<unsigned char>> IgSync::takeIncomingUdp()
+    {
+        std::vector<IncomingFrame> udpFrames;
+        {
+            std::lock_guard lock(_udpPayloadMutex);
+            udpFrames.swap(_udpPayloadQueue);
+        }
+        std::vector<std::vector<unsigned char>> out;
+        out.reserve(udpFrames.size());
+        for (auto& frame : udpFrames)
+            out.push_back(std::move(frame.bytes));
+        return out;
+    }
+
+    void IgSync::sendTcpMessage(const std::vector<unsigned char>& message)
+    {
+        if (message.empty() || !_tcp.valid())
+            return;
+        _tcp.sendAll(message.data(), static_cast<int>(message.size()));
+    }
+
+    void IgSync::sendSofForIgCtrl(const std::vector<unsigned char>& igCtrlMessage)
+    {
+        if (!cigi_wire::isIgCtrlPacket(igCtrlMessage.data(), static_cast<int>(igCtrlMessage.size())))
+            return;
+        CigiIGCtrlV4 ctrl;
+        if (ctrl.Unpack(const_cast<unsigned char*>(igCtrlMessage.data()), false, nullptr) < 0)
+            return;
+        sendSofPacket(ctrl.GetFrameCntr());
     }
 
     void IgSync::waitForUdpFrames(std::vector<IncomingFrame>& out)

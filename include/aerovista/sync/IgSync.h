@@ -95,6 +95,18 @@ namespace aerovista::sync
         /// 主线程收包入口（对等 HostSync::drainIncoming）：统一 drain TCP+UDP 收包队列 → CCL 解包。
         /// 无条件 drain（不检查连接状态，与 Host 对等）；收到新 IGCtrl 时回 SOF（sendSof）。
         void drainIncoming(bool sendSof = true);
+        /// 中继：取走已切齐的 TCP 消息字节，不解包、不回 SOF（平台同步设计.md §6.1 / §8）。
+        /// 与 `drainIncoming` 互斥消费同一 TCP 队列。
+        std::vector<std::vector<unsigned char>> takeIncomingTcp();
+        /// 中继：取走 UDP 数据报字节，不解包、不回 SOF（平台同步设计.md §6.1 / §8）。
+        /// 与 `drainIncoming` 互斥消费同一 UDP 队列。
+        std::vector<std::vector<unsigned char>> takeIncomingUdp();
+        /// 中继：已切齐 IG→Host TCP 消息原样 `sendAll`（平台同步设计.md §6.3 / §8）。
+        /// 不加 SOF。空消息跳过。
+        void sendTcpMessage(const std::vector<unsigned char>& message);
+        /// 中继：数据面 UDP 已 `sendto` 有 ready peer 后，按该 IGCtrl 头 FrameCntr `packSof` 回 Host。
+        /// 非 IGCtrl 开头则跳过。
+        void sendSofForIgCtrl(const std::vector<unsigned char>& igCtrlMessage);
         /// 帧级维护（不收包）：外推冻结检查 + RUNNING 状态判定。每帧都应调用。
         void update();
 

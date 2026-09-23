@@ -145,12 +145,21 @@ namespace aerovista::sync
         }
         void flushTcp();
         void flushUdp();
+        /// 中继：把已切齐的 Host→IG TCP 消息原样 `sendAll` 全体 ready IG（平台同步设计.md §6.2 / §8）。
+        /// 不 `PackageMsg`、不加 IGCtrl。空消息跳过。
+        void sendTcpMessage(const std::vector<unsigned char>& message);
+        /// 中继：把已切齐的 Host→IG UDP 数据报原样 `sendto` 全体 ready IG（平台同步设计.md §6.2 / §8）。
+        /// 不 `PackageMsg`、不加 IGCtrl。空消息跳过。
+        void sendUdpMessage(const std::vector<unsigned char>& message);
 
         // ---- 收包（对等 IG 侧 §8.1）：订阅回调处理 IG→Host 报文 ----
 
         /// 主线程解包入口：drain UDP/TCP 收包队列 → CCL 解包 → 触发订阅回调。
         /// 业务/测试在需要处理 IG 上报时调用（Host 收包为 push 模式，无独立帧循环）。
         void drainIncoming();
+        /// 中继回程：取走已按 SOF 切齐的 TCP 消息字节，不解包（平台同步设计.md §6.3 / §8）。
+        /// 与 `drainIncoming` 互斥消费同一 TCP 队列。
+        std::vector<std::vector<unsigned char>> takeIncomingTcp();
 
         /// 注册某类 IG→Host 报文的到达回调：报文解包捕获时同步多播投递（状态同步设计初版.md §8.1）。
         /// 同一类型可注册多个回调（多播，对齐 CCL EventList 多 processor）；捕获时同步调用，
@@ -226,6 +235,10 @@ namespace aerovista::sync
         void expireSofRtt(std::chrono::steady_clock::time_point now);
         void ingestUdpSof(const UdpIngress& frame, std::chrono::steady_clock::time_point now);
         void pollUdp();
+        /// 快照 ready peer，逐个 `sendAll`（`flushTcp` 与中继 `sendTcpMessage` 共用）。
+        void fanoutTcp(const unsigned char* buf, int len);
+        /// 快照 ready peer，逐个 `sendto`（`flushUdp` 与中继 `sendUdpMessage` 共用）。返回发送目标数。
+        std::size_t fanoutUdp(const unsigned char* buf, int len);
         /// 主线程解包一条 UDP 报文：_udpSession->ProcessIncomingMsg → 基础设施 + 业务 processor。
         void processIncomingUdpFrame(const unsigned char* buf, int n);
         /// 主线程解包一条 TCP 报文：_tcpSession->ProcessIncomingMsg → 基础设施 + 业务 processor。

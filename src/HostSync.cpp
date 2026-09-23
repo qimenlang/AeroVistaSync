@@ -86,6 +86,7 @@ namespace aerovista::sync
         //（cigi梳理.md 链路矩阵；VolResp 为既有基础设施）。
         session.GetIncomingMsgMgr().RegisterEventProcessor(CIGI_SOF_PACKET_ID_V4, &_sofProc);
         attachCommandCaptures(session, &_captureProcs);
+        _captureProcs.push_back(&_sofProc);
     }
 
     HostSync::~HostSync()
@@ -580,6 +581,37 @@ namespace aerovista::sync
         }
         _tcpMsgOpen = false; // 消息已打包：下一轮 outMsgWithIgCtrlTcp 重新填帧头（§7.1 去重）
 
+        fanoutTcp(buf, len);
+
+        omsg.FreeMsg();
+    }
+
+    void HostSync::sendTcpMessage(const std::vector<unsigned char>& message)
+    {
+        if (message.empty())
+            return;
+        fanoutTcp(message.data(), static_cast<int>(message.size()));
+    }
+
+    void HostSync::sendUdpMessage(const std::vector<unsigned char>& message)
+    {
+        if (message.empty())
+            return;
+        fanoutUdp(message.data(), static_cast<int>(message.size()));
+    }
+
+    std::vector<std::vector<unsigned char>> HostSync::takeIncomingTcp()
+    {
+        std::vector<std::vector<unsigned char>> tcpFrames;
+        {
+            std::lock_guard lock(_tcpPayloadMutex);
+            tcpFrames.swap(_tcpPayloadQueue);
+        }
+        return tcpFrames;
+    }
+
+    void HostSync::fanoutTcp(const unsigned char* buf, int len)
+    {
         std::vector<std::shared_ptr<TcpSocket>> targets;
         {
             std::lock_guard lock(_peersMutex);
@@ -591,8 +623,25 @@ namespace aerovista::sync
         }
         for (const auto& sock : targets)
             sock->sendAll(buf, len);
+    }
 
-        omsg.FreeMsg();
+    std::size_t HostSync::fanoutUdp(const unsigned char* buf, int len)
+    {
+        std::vector<std::pair<std::string, uint32_t>> targets;
+        {
+            std::lock_guard lock(_peersMutex);
+            for (const auto& p : _peers)
+            {
+                if (p.tcpReady && p.udpReady)
+                    targets.emplace_back(p.ip, p.udpRecvPort);
+            }
+        }
+        {
+            std::lock_guard lock(_udpMutex);
+            for (const auto& t : targets)
+                _udp.sendTo(t.first, static_cast<int>(t.second), buf, len);
+        }
+        return targets.size();
     }
 
     void HostSync::flushUdp()
@@ -620,22 +669,8 @@ namespace aerovista::sync
         }
         _udpMsgOpen = false; // 消息已打包：下一轮 outMsgWithIgCtrlUdp 重新填帧头（§7.1 去重）
 
-        std::vector<std::pair<std::string, uint32_t>> targets;
-        {
-            std::lock_guard lock(_peersMutex);
-            for (const auto& p : _peers)
-            {
-                if (p.tcpReady && p.udpReady)
-                    targets.emplace_back(p.ip, p.udpRecvPort);
-            }
-        }
-        {
-            std::lock_guard lock(_udpMutex);
-            for (const auto& t : targets)
-                _udp.sendTo(t.first, static_cast<int>(t.second), buf, len);
-        }
-
-        if (!targets.empty() && _dataFrameCounter > 0)
+        const std::size_t sent = fanoutUdp(buf, len);
+        if (sent > 0 && _dataFrameCounter > 0)
             recordIgCtrlFanout(_dataFrameCounter - 1, std::chrono::steady_clock::now());
 
         omsg.FreeMsg();
