@@ -1,0 +1,57 @@
+﻿// platform 对话框资源（MFC）。
+#include "resource.h"
+// afxres.h → winres.h → commctrl.rh 已提供 TVS_*。不要 #include <commctrl.h>：
+// 那是 C++ 头，VS 资源视图解析 winnt.h 等会长符号，报 RC2247。
+#define APSTUDIO_HIDDEN_SYMBOLS
+#include "afxres.h"
+#undef APSTUDIO_HIDDEN_SYMBOLS
+
+LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
+
+IDR_MAINFRAME MENU
+BEGIN
+    POPUP " "
+    BEGIN
+        MENUITEM SEPARATOR
+    END
+END
+
+IDD_PLATFORM_DIALOG DIALOGEX 0, 0, 300, 68
+STYLE DS_SETFONT | DS_CONTROL | WS_CHILD | WS_CLIPSIBLINGS
+FONT 9, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "连接状态", IDC_STATIC, 7, 6, 286, 28
+    LTEXT           "Ready IG: 0    IGCtrl 发送: 0    SOF 接收: 0", IDC_STATUS_READY, 15, 18, 270, 10
+
+    GROUPBOX        "眼点 (LLA)", IDC_STATIC, 7, 36, 286, 28
+    LTEXT           "lat: -    lon: -    alt: -    yaw: -    pitch: -    roll: -", IDC_EYE_LAT, 15, 48, 270, 10
+END
+
+IDD_ENTITY_PROP DIALOGEX 0, 0, 232, 196
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "实体属性"
+FONT 9, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "id", IDC_STATIC, 8, 10, 40, 10
+    EDITTEXT        IDC_PROP_ID, 56, 8, 60, 12, ES_AUTOHSCROLL | ES_READONLY
+    LTEXT           "name", IDC_STATIC, 8, 26, 40, 10
+    EDITTEXT        IDC_PROP_NAME, 56, 24, 168, 12, ES_AUTOHSCROLL | ES_READONLY
+    LTEXT           "state", IDC_STATIC, 8, 42, 40, 10
+    COMBOBOX        IDC_PROP_STATE, 56, 40, 80, 48, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "alpha", IDC_STATIC, 8, 58, 40, 10
+    EDITTEXT        IDC_PROP_ALPHA, 56, 56, 40, 12, ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "lat", IDC_STATIC, 8, 74, 40, 10
+    EDITTEXT        IDC_PROP_LAT, 56, 72, 80, 12, ES_AUTOHSCROLL
+    LTEXT           "lon", IDC_STATIC, 8, 90, 40, 10
+    EDITTEXT        IDC_PROP_LON, 56, 88, 80, 12, ES_AUTOHSCROLL
+    LTEXT           "alt", IDC_STATIC, 8, 106, 40, 10
+    EDITTEXT        IDC_PROP_ALT, 56, 104, 80, 12, ES_AUTOHSCROLL
+    LTEXT           "yaw", IDC_STATIC, 8, 122, 40, 10
+    EDITTEXT        IDC_PROP_YAW, 56, 120, 80, 12, ES_AUTOHSCROLL
+    LTEXT           "pitch", IDC_STATIC, 8, 138, 40, 10
+    EDITTEXT        IDC_PROP_PITCH, 56, 136, 80, 12, ES_AUTOHSCROLL
+    LTEXT           "roll", IDC_STATIC, 8, 154, 40, 10
+    EDITTEXT        IDC_PROP_ROLL, 56, 152, 80, 12, ES_AUTOHSCROLL
+    PUSHBUTTON      "Apply", IDC_PROP_APPLY, 56, 174, 50, 14
+    PUSHBUTTON      "重置", IDC_PROP_RESET, 114, 174, 50, 14
+END

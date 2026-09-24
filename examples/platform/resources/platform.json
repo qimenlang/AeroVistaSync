@@ -1,0 +1,6 @@
+﻿{
+  "hostConfig": {
+    "udpPortRecv": 8000,
+    "tcpPort": 8100
+  }
+}

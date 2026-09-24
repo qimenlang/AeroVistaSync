@@ -119,3 +119,11 @@ if(AEROVISTA_BUILD_VIEWHOST AND MSVC)
 elseif(AEROVISTA_BUILD_VIEWHOST)
     message(STATUS "aerovistaViewHost requires MSVC (MFC); skipped (compiler: ${CMAKE_CXX_COMPILER_ID})")
 endif()
+
+# 可选：MFC 模拟平台（默认开启，仅 MSVC；非 MSVC 自动跳过，见 examples/platform/CMakeLists.txt）。
+option(AEROVISTA_BUILD_PLATFORM "Build MFC platform Host simulator (MSVC only)" ON)
+if(AEROVISTA_BUILD_PLATFORM AND MSVC)
+    add_subdirectory(examples/platform)
+elseif(AEROVISTA_BUILD_PLATFORM)
+    message(STATUS "aerovistaPlatform requires MSVC (MFC); skipped (compiler: ${CMAKE_CXX_COMPILER_ID})")
+endif()

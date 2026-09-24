@@ -40,6 +40,8 @@ namespace aerovista::sync
         }
     } // namespace
 
+    HostDriver::HostDriver() = default;
+
     HostDriver::~HostDriver()
     {
         shutdown();

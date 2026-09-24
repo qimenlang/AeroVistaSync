@@ -1,0 +1,64 @@
+﻿{
+  "entities": [
+    {
+      "id": 1,
+      "name": "teapot_center",
+      "model": "models/teapot.vsgt",
+      "initialEntityState": "Standby",
+      "pose": {
+        "ellipsoid": {
+          "lla": { "lat": 39.908700, "lon": 116.397500, "alt": 0.0 },
+          "eulerYprDeg": [0.0, 0.0, 0.0]
+        }
+      }
+    },
+    {
+      "id": 2,
+      "name": "teapot_north",
+      "model": "models/teapot.vsgt",
+      "initialEntityState": "Active",
+      "pose": {
+        "ellipsoid": {
+          "lla": { "lat": 39.908727, "lon": 116.397500, "alt": 0.0 },
+          "eulerYprDeg": [0.0, 0.0, 0.0]
+        }
+      }
+    },
+    {
+      "id": 3,
+      "name": "teapot_south",
+      "model": "models/teapot.vsgt",
+      "initialEntityState": "Standby",
+      "pose": {
+        "ellipsoid": {
+          "lla": { "lat": 39.908673, "lon": 116.397500, "alt": 0.0 },
+          "eulerYprDeg": [0.0, 0.0, 0.0]
+        }
+      }
+    },
+    {
+      "id": 4,
+      "name": "teapot_east",
+      "model": "models/teapot.vsgt",
+      "initialEntityState": "Active",
+      "pose": {
+        "ellipsoid": {
+          "lla": { "lat": 39.908700, "lon": 116.397535, "alt": 0.0 },
+          "eulerYprDeg": [0.0, 0.0, 0.0]
+        }
+      }
+    },
+    {
+      "id": 5,
+      "name": "teapot_west",
+      "model": "models/teapot.vsgt",
+      "initialEntityState": "Standby",
+      "pose": {
+        "ellipsoid": {
+          "lla": { "lat": 39.908700, "lon": 116.397465, "alt": 0.0 },
+          "eulerYprDeg": [0.0, 0.0, 0.0]
+        }
+      }
+    }
+  ]
+}

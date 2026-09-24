@@ -21,7 +21,7 @@ namespace aerovista::sync
     class HostDriver
     {
     public:
-        HostDriver() = default;
+        HostDriver();
         ~HostDriver();
 
         HostDriver(const HostDriver&) = delete;
