@@ -35,6 +35,7 @@ namespace aerovista::sync
         void shutdown();
 
         /// 扇出一帧（IGCtrl 由 outMsgWithIgCtrlUdp() 自动前置）+ 可选眼点 → flushUdp。
+        /// `relay.enable` 时无操作（平台同步设计.md §6.1）。
         void update(const cigi_wire::EyePose* eye);
 
         bool loadEntityCatalog(const std::string& path, std::string* error = nullptr);
@@ -53,7 +54,8 @@ namespace aerovista::sync
         bool sendEntity(std::uint16_t entityId, EntitySend send, std::string* error = nullptr);
 
         void pollIncoming();
-        /// 中继起齐门闩（平台同步设计.md §6.4）。本地调试无操作。
+        /// 中继：起齐后门闩；已连平台则 UI 定时器取出切齐字节原样转发（平台同步设计.md §6.1 / §11.1 序 3）。
+        /// 本地调试无操作。
         void pollRelay();
         bool virtualIgLinked() const;
 
@@ -79,6 +81,8 @@ namespace aerovista::sync
     private:
         bool shouldConnectVirtualIg() const;
         void connectVirtualIg();
+        void forwardFromPlatform();
+        void forwardToPlatform();
 
         HostSync _host;
         HostDataManager _data;

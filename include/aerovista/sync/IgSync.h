@@ -107,8 +107,8 @@ namespace aerovista::sync
         void sendTcpMessage(const std::vector<unsigned char>& message) override;
         /// 中继：已切齐 UDP 数据报原样 `sendto` Host（`HostTarget::udpPortRecv`）。不加 SOF。空消息跳过。
         void sendUdpMessage(const std::vector<unsigned char>& message) override;
-        /// 中继：数据面 UDP 已 `sendto` 有 ready peer 后，按该 IGCtrl 头 FrameCntr `packSof` 回 Host。
-        /// 非 IGCtrl 开头则跳过。
+        /// 中继：按已取出的数据面 UDP IGCtrl 头 FrameCntr `packSof` 回 Host。
+        /// 不依赖 `sendto` 是否有 ready peer。非 IGCtrl 开头则跳过。
         void sendSofForIgCtrl(const std::vector<unsigned char>& igCtrlMessage);
         /// 帧级维护（不收包）：外推冻结检查 + RUNNING 状态判定。每帧都应调用。
         void update();

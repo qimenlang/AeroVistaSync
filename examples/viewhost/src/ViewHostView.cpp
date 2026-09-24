@@ -194,8 +194,8 @@ void CViewHostView::OnTimer(UINT_PTR nIDEvent)
     }
 
     _driver.update(&_eye);
-    _driver.pollIncoming(); // Host push 收包：drain 并解包 IG→Host 报文，触发订阅回调（状态同步设计初版.md §8.1）。
-    _driver.pollRelay();    // 中继：起齐后虚 IG 连平台（平台同步设计.md §6.4）。
+    _driver.pollRelay();    // 中继：起齐后虚 IG 连平台；已连则取出切齐字节转发（须在 drain 前 take TCP）。
+    _driver.pollIncoming(); // Host push 收包：drain 并解包 IG→Host 报文（中继时 TCP 回程已由 pollRelay take 走，此处主要解 UDP SOF）。
     updateStatusText();
 }
 

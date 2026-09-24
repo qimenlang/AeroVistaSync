@@ -72,6 +72,8 @@ namespace aerovista::sync
 
     void HostDriver::update(const cigi_wire::EyePose* eye)
     {
+        if (_relay.enable)
+            return;
         auto& omsg = _host.outMsgWithIgCtrlUdp();
         cigi_wire::appendEye(omsg, eye);
         _host.flushUdp();
@@ -126,9 +128,31 @@ namespace aerovista::sync
 
     void HostDriver::pollRelay()
     {
-        if (!shouldConnectVirtualIg())
+        if (!_relay.enable)
             return;
-        connectVirtualIg();
+        if (shouldConnectVirtualIg())
+            connectVirtualIg();
+        if (!virtualIgLinked())
+            return;
+        forwardFromPlatform();
+        forwardToPlatform();
+    }
+
+    void HostDriver::forwardFromPlatform()
+    {
+        for (const auto& msg : _virtualIg->takeIncomingTcp())
+            _host.sendTcpMessage(msg);
+        for (const auto& dgram : _virtualIg->takeIncomingUdp())
+        {
+            _host.sendUdpMessage(dgram);
+            _virtualIg->sendSofForIgCtrl(dgram);
+        }
+    }
+
+    void HostDriver::forwardToPlatform()
+    {
+        for (const auto& msg : _host.takeIncomingTcp())
+            _virtualIg->sendTcpMessage(msg);
     }
 
     bool HostDriver::virtualIgLinked() const
