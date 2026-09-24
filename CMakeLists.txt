@@ -1,4 +1,4 @@
-﻿# aerovistaSync — 多通道同步模块独立库。
+# aerovistaSync — 多通道同步模块独立库。
 # 依赖方向单向：宿主 → aerovistaSync；库不反向依赖引擎。
 # namespace: aerovista::sync（sync模块化设计.md §1.2）。
 #

@@ -1,4 +1,4 @@
-﻿#include <aerovista/sync/IgSync.h>
+#include <aerovista/sync/IgSync.h>
 #include <aerovista/sync/CigiWire.h>
 
 #include "CigiIGCtrlV4.h"

@@ -54,8 +54,8 @@ namespace aerovista::sync
         bool sendEntity(std::uint16_t entityId, EntitySend send, std::string* error = nullptr);
 
         void pollIncoming();
-        /// 中继：起齐后门闩；已连平台则 UI 定时器取出切齐字节原样转发（平台同步设计.md §6.1 / §11.1 序 3）。
-        /// 本地调试无操作。
+        /// 中继：起齐后门闩；已连平台则 UI 定时器取出切齐字节原样转发（平台同步设计.md §6.1 / §11.1）。
+        /// 回程 TCP 队列只入 master，本类原样 take/send。本地调试无操作。
         void pollRelay();
         bool virtualIgLinked() const;
 

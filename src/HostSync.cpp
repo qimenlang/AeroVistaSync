@@ -11,6 +11,8 @@
 
 namespace
 {
+    constexpr int masterChannelId = 0;
+
     std::optional<std::chrono::microseconds> ageSince(const std::optional<std::chrono::steady_clock::time_point>& then,
                                                      std::chrono::steady_clock::time_point now)
     {
@@ -323,14 +325,22 @@ namespace aerovista::sync
         if (accepted->second)
             sendUdpSyncAck(peerIp, static_cast<int>(hello->udpRecvPort));
 
-        commandReadLoop(client, accepted->first);
+        commandReadLoop(client, accepted->first, hello->channelId);
         markPeerDisconnected(accepted->first);
     }
 
-    void HostSync::commandReadLoop(const std::shared_ptr<TcpSocket>& client, std::uint64_t clientId)
+    void HostSync::enqueueIncomingTcp(int channelId, const std::vector<unsigned char>& frame)
     {
-        // TCP 读循环：recv → 分帧 → 入队 tcpPayload；主线程 drainIncoming 解包（§8.2 对等）。
-        // PEER_CLOSED（对端关闭）/ IO_ERROR 即判定断线。
+        if (channelId != masterChannelId)
+            return;
+        std::lock_guard lock(_tcpPayloadMutex);
+        _tcpPayloadQueue.push_back(frame);
+    }
+
+    void HostSync::commandReadLoop(const std::shared_ptr<TcpSocket>& client, std::uint64_t clientId, int channelId)
+    {
+        // TCP 读循环：recv → 分帧；仅 master 入队。侧通道仍 recv，只靠 UDP SOF 保活。
+        // PEER_CLOSED / IO_ERROR → 断线。HELLO 已在 handleClient 消费，不进队列。
         cigi_wire::CigiFrameAssembler assembler(CIGI_SOF_PACKET_ID_V4);
         unsigned char cmdBuf[4096];
         for (;;)
@@ -340,9 +350,8 @@ namespace aerovista::sync
                 break;
             if (outcome.kind == RecvKind::TIMEOUT)
                 continue; // 读超时（SO_RCVTIMEO）≠ 断线
-            assembler.feed(cmdBuf, outcome.bytes, [this](const std::vector<unsigned char>& frame) {
-                std::lock_guard lock(_tcpPayloadMutex);
-                _tcpPayloadQueue.push_back(frame);
+            assembler.feed(cmdBuf, outcome.bytes, [this, channelId](const std::vector<unsigned char>& frame) {
+                enqueueIncomingTcp(channelId, frame);
             });
         }
         (void)clientId;
@@ -552,8 +561,8 @@ namespace aerovista::sync
             std::lock_guard lock(_tcpPayloadMutex);
             tcpFrames.swap(_tcpPayloadQueue);
         }
-        for (const auto& f : tcpFrames)
-            processIncomingTcpFrame(f.data(), static_cast<int>(f.size()));
+        for (const auto& frame : tcpFrames)
+            processIncomingTcpFrame(frame.data(), static_cast<int>(frame.size()));
     }
 
     void HostSync::flushTcp()

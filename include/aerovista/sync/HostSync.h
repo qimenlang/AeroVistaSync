@@ -158,8 +158,8 @@ namespace aerovista::sync
         /// 主线程解包入口：drain UDP/TCP 收包队列 → CCL 解包 → 触发订阅回调。
         /// 业务/测试在需要处理 IG 上报时调用（Host 收包为 push 模式，无独立帧循环）。
         void drainIncoming();
-        /// 中继回程：取走已按 SOF 切齐的 TCP 消息字节，不解包（平台同步设计.md §6.3 / §8）。
-        /// 与 `drainIncoming` 互斥消费同一 TCP 队列。
+        /// 中继回程：取走已按 SOF 切齐的 TCP 字节，不解包（平台同步设计.md §6.3 / §8）。
+        /// 握手后仅 master（`channelId==0`）入队；HELLO 不进队列。与 `drainIncoming` 互斥。
         std::vector<std::vector<unsigned char>> takeIncomingTcp() override;
         /// 取走 UDP 数据报字节，不解包（丢弃 fromIp/fromPort）。与 `drainIncoming` 互斥。
         /// 中继不得用本接口把真实 IG SOF 转给平台。
@@ -219,9 +219,11 @@ namespace aerovista::sync
         void acceptLoop();
         void udpLoop();
         void handleClient(std::shared_ptr<TcpSocket> client, std::string peerIp);
-        /// TCP 读循环（peer 线程）：recv → CigiFrameAssembler 分帧 → 入队 tcpPayload；主线程 drainIncoming 解包。
-        /// PEER_CLOSED/错误 → markPeerDisconnected（存活检测）。
-        void commandReadLoop(const std::shared_ptr<TcpSocket>& client, std::uint64_t clientId);
+        /// TCP 读循环：recv → 分帧；仅 master 入 `_tcpPayloadQueue`。侧通道仍 recv（保活），不入队。
+        /// HELLO 已在 handleClient 消费。PEER_CLOSED/错误 → 断线。
+        void commandReadLoop(const std::shared_ptr<TcpSocket>& client, std::uint64_t clientId, int channelId);
+        /// 仅 `channelId==0` 入 `_tcpPayloadQueue`。
+        void enqueueIncomingTcp(int channelId, const std::vector<unsigned char>& frame);
         void joinClientThreads();
         int countReadyUnlocked() const;
         /// I/O 线程处理一条 UDP 数据报：未 udpReady 的 SOF 当 UDP_SYNC 即时回 IGCtrl ACK；其余入队。
@@ -337,8 +339,9 @@ namespace aerovista::sync
         bool _udpMsgOpen = false; ///< 当前 UDP 消息已填 IGCtrl 帧头（去重；flushUdp 重置）
         std::uint64_t _nextClientId = 0;
 
-        // 收包 payload 队列：I/O 线程（udpLoop / commandReadLoop）入队，主线程 drainIncoming 解包。
-        // UDP 一条数据报 = 一条 CIGI 消息（无需分帧）；TCP 需分帧（§4.2）。
+        // 收包 payload 队列：I/O 线程入队，主线程取出。
+        // UDP 一条数据报 = 一条 CIGI 消息；TCP 需分帧（§4.2）。
+        // 握手后仅 master TCP 入队；侧通道只 UDP SOF 保活。take / drain 互斥。
         std::mutex _udpPayloadMutex;
         std::vector<UdpIngress> _udpPayloadQueue;
         std::mutex _tcpPayloadMutex;
