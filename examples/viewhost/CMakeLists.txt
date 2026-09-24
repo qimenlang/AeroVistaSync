@@ -56,10 +56,14 @@ if(CMAKE_GENERATOR MATCHES "Ninja")
 endif()
 
 # 运行时配置随 exe 一并输出（程序按 cwd/exe 目录读 viewhost.json）。
+# viewhost_relay.json 供中继模式；启动脚本按 -m 拷成 viewhost.json。
 add_custom_command(TARGET aerovistaViewHost POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/resources/viewhost.json
         $<TARGET_FILE_DIR:aerovistaViewHost>/viewhost.json
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/resources/viewhost_relay.json
+        $<TARGET_FILE_DIR:aerovistaViewHost>/viewhost_relay.json
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/resources/entities.json
         $<TARGET_FILE_DIR:aerovistaViewHost>/entities.json

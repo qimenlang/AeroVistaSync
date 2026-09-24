@@ -1,0 +1,16 @@
+{
+  "hostConfig": {
+    "udpPortRecv": 8000,
+    "tcpPort": 8100
+  },
+  "relay": {
+    "enable": true,
+    "expectedIgCount": 3
+  },
+  "igConfig": {
+    "udpPortRecv": 8002,
+    "targetAddr": "127.0.0.1",
+    "targetTcpPort": 7100,
+    "targetUdpPortRecv": 7000
+  }
+}
