@@ -155,6 +155,8 @@ namespace aerovista::sync
     {
         for (const auto& msg : _host.takeIncomingTcp())
             _virtualIg->sendTcpMessage(msg);
+        for (const auto& body : _host.takeMasterUdpRelayBodies())
+            _virtualIg->sendUdpAfterSof(body);
     }
 
     bool HostDriver::virtualIgLinked() const

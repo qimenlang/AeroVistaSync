@@ -219,6 +219,16 @@ namespace aerovista::sync
             return data != nullptr && n >= 4 && packetIdAt(data, n) == CIGI_IG_CTRL_PACKET_ID_V4;
         }
 
+        std::optional<std::vector<unsigned char>> packetsAfterSof(const unsigned char* data, int n)
+        {
+            if (!isSofPacket(data, n))
+                return std::nullopt;
+            const auto sofSize = static_cast<int>(data[0] | (data[1] << 8));
+            if (sofSize < 8 || sofSize >= n)
+                return std::nullopt;
+            return std::vector<unsigned char>(data + sofSize, data + n);
+        }
+
         namespace
         {
             // 从 offset 起，累积一条消息（首包 + 后续非 IGCtrl 包）的字节数。

@@ -162,8 +162,10 @@ namespace aerovista::sync
         /// 握手后仅 master（`channelId==0`）入队；HELLO 不进队列。与 `drainIncoming` 互斥。
         std::vector<std::vector<unsigned char>> takeIncomingTcp() override;
         /// 取走 UDP 数据报字节，不解包（丢弃 fromIp/fromPort）。与 `drainIncoming` 互斥。
-        /// 中继不得用本接口把真实 IG SOF 转给平台。
+        /// 中继不得用本接口抽空真实 IG UDP 或把真实 SOF 原样转给平台。
         std::vector<std::vector<unsigned char>> takeIncomingUdp() override;
+        /// 中继 §6.3：复制 master（`channelId==0`）且 SOF 后有业务包的后续字节；不消费 `_udpPayloadQueue`。
+        std::vector<std::vector<unsigned char>> takeMasterUdpRelayBodies();
 
         /// 注册某类 IG→Host 报文的到达回调：报文解包捕获时同步多播投递（状态同步设计初版.md §8.1）。
         /// 同一类型可注册多个回调（多播，对齐 CCL EventList 多 processor）；捕获时同步调用，
@@ -228,6 +230,8 @@ namespace aerovista::sync
         int countReadyUnlocked() const;
         /// I/O 线程处理一条 UDP 数据报：未 udpReady 的 SOF 当 UDP_SYNC 即时回 IGCtrl ACK；其余入队。
         void processUdpDatagram(const unsigned char* buf, int n, const char* fromIp, int fromPort);
+        void enqueueIncomingUdp(UdpIngress ingress);
+        int udpPeerChannelId(const std::string& fromIp, int fromPort) const;
         /// UDP_SYNC：记下 IG 发送源端口，供后续 SOF 按 peer 配对。命中已有 peer 时返回 ACK 目标 IP。
         std::optional<std::string> noteUdpSyncPeer(std::uint32_t udpRecvPort, const std::string& fromIp, int fromPort);
         void sendUdpSyncAck(const std::string& ip, int udpRecvPort);
@@ -344,6 +348,7 @@ namespace aerovista::sync
         // 握手后仅 master TCP 入队；侧通道只 UDP SOF 保活。take / drain 互斥。
         std::mutex _udpPayloadMutex;
         std::vector<UdpIngress> _udpPayloadQueue;
+        std::vector<std::vector<unsigned char>> _masterUdpRelayQueue;
         std::mutex _tcpPayloadMutex;
         std::vector<std::vector<unsigned char>> _tcpPayloadQueue;
 

@@ -78,6 +78,8 @@ namespace aerovista::sync
 
         bool isSofPacket(const unsigned char* data, int n);
         bool isIgCtrlPacket(const unsigned char* data, int n);
+        /// SOF 之后还有完整后续包则返回那些字节；纯 SOF / 非 SOF / 畸形头则空。
+        std::optional<std::vector<unsigned char>> packetsAfterSof(const unsigned char* data, int n);
 
         /// simTimeMs → CIGI TimeStamp（10 µs 步进）。
         /// 自然回绕：超出 uint32 上限后取模（时钟同步方案.md §3 决策——第一版直接跨 12h 自然回绕，

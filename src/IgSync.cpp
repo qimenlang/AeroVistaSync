@@ -360,7 +360,19 @@ namespace aerovista::sync
         CigiIGCtrlV4 ctrl;
         if (ctrl.Unpack(const_cast<unsigned char*>(igCtrlMessage.data()), false, nullptr) < 0)
             return;
-        sendSofPacket(ctrl.GetFrameCntr());
+        _lastFrameCntr = ctrl.GetFrameCntr();
+        sendSofPacket(_lastFrameCntr);
+    }
+
+    void IgSync::sendUdpAfterSof(const std::vector<unsigned char>& afterSof)
+    {
+        if (afterSof.empty())
+            return;
+        std::vector<unsigned char> message;
+        if (!cigi_wire::packSof(_lastFrameCntr, message))
+            return;
+        message.insert(message.end(), afterSof.begin(), afterSof.end());
+        sendUdpMessage(message);
     }
 
     void IgSync::waitForUdpFrames(std::vector<IncomingFrame>& out)

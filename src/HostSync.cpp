@@ -278,6 +278,7 @@ namespace aerovista::sync
         {
             std::lock_guard lock(_udpPayloadMutex);
             _udpPayloadQueue.clear();
+            _masterUdpRelayQueue.clear();
         }
         {
             std::lock_guard lock(_tcpPayloadMutex);
@@ -503,8 +504,29 @@ namespace aerovista::sync
         ingress.bytes.assign(buf, buf + n);
         ingress.fromIp = ip;
         ingress.fromPort = fromPort;
+        enqueueIncomingUdp(std::move(ingress));
+    }
+
+    void HostSync::enqueueIncomingUdp(UdpIngress ingress)
+    {
+        const auto trailing =
+            cigi_wire::packetsAfterSof(ingress.bytes.data(), static_cast<int>(ingress.bytes.size()));
+        const bool relayMaster = trailing.has_value() && udpPeerChannelId(ingress.fromIp, ingress.fromPort) == 0;
         std::lock_guard lock(_udpPayloadMutex);
+        if (relayMaster)
+            _masterUdpRelayQueue.push_back(*trailing);
         _udpPayloadQueue.push_back(std::move(ingress));
+    }
+
+    int HostSync::udpPeerChannelId(const std::string& fromIp, int fromPort) const
+    {
+        std::lock_guard lock(_peersMutex);
+        for (const auto& peer : _peers)
+        {
+            if (peer.udpFromPort == fromPort && peer.udpFromIp == fromIp)
+                return peer.channelId;
+        }
+        return -1;
     }
 
     void HostSync::udpLoop()
@@ -631,6 +653,16 @@ namespace aerovista::sync
         for (auto& frame : udpFrames)
             out.push_back(std::move(frame.bytes));
         return out;
+    }
+
+    std::vector<std::vector<unsigned char>> HostSync::takeMasterUdpRelayBodies()
+    {
+        std::vector<std::vector<unsigned char>> bodies;
+        {
+            std::lock_guard lock(_udpPayloadMutex);
+            bodies.swap(_masterUdpRelayQueue);
+        }
+        return bodies;
     }
 
     void HostSync::fanoutTcp(const unsigned char* buf, int len)

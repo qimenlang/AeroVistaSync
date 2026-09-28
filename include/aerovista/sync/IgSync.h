@@ -110,6 +110,8 @@ namespace aerovista::sync
         /// 中继：按已取出的数据面 UDP IGCtrl 头 FrameCntr `packSof` 回 Host。
         /// 不依赖 `sendto` 是否有 ready peer。非 IGCtrl 开头则跳过。
         void sendSofForIgCtrl(const std::vector<unsigned char>& igCtrlMessage);
+        /// 中继 §6.3：最近 `packSof` 的 FrameCntr 组 SOF'，后接已剥真实 SOF 的业务字节。
+        void sendUdpAfterSof(const std::vector<unsigned char>& afterSof);
         /// 帧级维护（不收包）：外推冻结检查 + RUNNING 状态判定。每帧都应调用。
         void update();
 
