@@ -58,6 +58,8 @@ namespace aerovista::sync
         _host.run();
         _relay = config.relay;
         _igConfig = config.igConfig;
+        _cachedOwnship.reset();
+        _relayForwarding = true;
         _initialized = true;
         return true;
     }
@@ -68,13 +70,15 @@ namespace aerovista::sync
         {
             _virtualIg.reset();
             _host.shutdown();
+            _cachedOwnship.reset();
+            _relayForwarding = true;
             _initialized = false;
         }
     }
 
     void HostDriver::update(const cigi_wire::EyePose* eye)
     {
-        if (_relay.enable)
+        if (_relay.enable && _relayForwarding)
             return;
         auto& omsg = _host.outMsgWithIgCtrlUdp();
         cigi_wire::appendEye(omsg, eye);
@@ -136,6 +140,11 @@ namespace aerovista::sync
             connectVirtualIg();
         if (!virtualIgLinked())
             return;
+        if (!_relayForwarding)
+        {
+            dropQueuedRelay();
+            return;
+        }
         forwardFromPlatform();
         forwardToPlatform();
     }
@@ -146,7 +155,10 @@ namespace aerovista::sync
             _host.sendTcpMessage(msg);
         for (const auto& dgram : _virtualIg->takeIncomingUdp())
         {
+            const bool delivered = _host.readyIgCount() > 0;
             _host.sendUdpMessage(dgram);
+            if (delivered)
+                rememberForwardedOwnship(dgram);
             _virtualIg->sendSofForIgCtrl(dgram);
         }
     }
@@ -157,6 +169,53 @@ namespace aerovista::sync
             _virtualIg->sendTcpMessage(msg);
         for (const auto& body : _host.takeMasterUdpRelayBodies())
             _virtualIg->sendUdpAfterSof(body);
+    }
+
+    bool HostDriver::setRelayForwarding(bool forwarding)
+    {
+        if (!_relay.enable)
+            return false;
+        if (forwarding)
+        {
+            if (!_relayForwarding)
+                dropQueuedRelay();
+            _relayForwarding = true;
+            return true;
+        }
+        if (!_cachedOwnship)
+            return false;
+        _relayForwarding = false;
+        dropQueuedRelay();
+        return true;
+    }
+
+    bool HostDriver::relayForwarding() const
+    {
+        return _relayForwarding;
+    }
+
+    std::optional<cigi_wire::EyePose> HostDriver::relayEye() const
+    {
+        if (_relayForwarding)
+            return std::nullopt;
+        return _cachedOwnship;
+    }
+
+    void HostDriver::dropQueuedRelay()
+    {
+        if (_virtualIg)
+        {
+            _virtualIg->takeIncomingTcp();
+            _virtualIg->takeIncomingUdp();
+        }
+        _host.takeIncomingTcp();
+        _host.takeMasterUdpRelayBodies();
+    }
+
+    void HostDriver::rememberForwardedOwnship(const std::vector<unsigned char>& dgram)
+    {
+        if (auto eye = cigi_wire::ownshipFromMessage(dgram.data(), static_cast<int>(dgram.size())))
+            _cachedOwnship = *eye;
     }
 
     bool HostDriver::virtualIgLinked() const

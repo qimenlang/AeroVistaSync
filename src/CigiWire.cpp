@@ -219,6 +219,49 @@ namespace aerovista::sync
             return data != nullptr && n >= 4 && packetIdAt(data, n) == CIGI_IG_CTRL_PACKET_ID_V4;
         }
 
+        namespace
+        {
+            std::optional<EyePose> ownshipAt(const unsigned char* packet)
+            {
+                CigiEntityPositionCtrlV4 ent;
+                if (ent.Unpack(const_cast<unsigned char*>(packet), false, nullptr) < 0)
+                    return std::nullopt;
+                if (ent.GetEntityID() != 0)
+                    return std::nullopt;
+                EyePose eye;
+                eye.x = ent.GetLat();
+                eye.y = ent.GetLon();
+                eye.z = ent.GetAlt();
+                eye.yawDeg = ent.GetYaw();
+                eye.pitchDeg = ent.GetPitch();
+                eye.rollDeg = ent.GetRoll();
+                eye.entityId = ent.GetEntityID();
+                eye.parentId = ent.GetParentID();
+                return eye;
+            }
+        } // namespace
+
+        std::optional<EyePose> ownshipFromMessage(const unsigned char* data, int n)
+        {
+            if (data == nullptr || n < 8)
+                return std::nullopt;
+            std::lock_guard lock(gCigiMutex);
+            int offset = 0;
+            while (n - offset >= 4)
+            {
+                const int size = data[offset] | (data[offset + 1] << 8);
+                if (size < 8 || offset + size > n)
+                    return std::nullopt;
+                if (packetIdAt(data + offset, size) == CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4)
+                {
+                    if (auto eye = ownshipAt(data + offset))
+                        return eye;
+                }
+                offset += size;
+            }
+            return std::nullopt;
+        }
+
         std::optional<std::vector<unsigned char>> packetsAfterSof(const unsigned char* data, int n)
         {
             if (!isSofPacket(data, n))

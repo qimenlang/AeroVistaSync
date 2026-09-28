@@ -35,7 +35,7 @@ namespace aerovista::sync
         void shutdown();
 
         /// 扇出一帧（IGCtrl 由 outMsgWithIgCtrlUdp() 自动前置）+ 可选眼点 → flushUdp。
-        /// `relay.enable` 时无操作（平台同步设计.md §6.1）。
+        /// 中继且转发开着时无操作。关掉转发后用调用方眼点自己组数据面 IGCtrl（平台同步设计.md §6.1）。
         void update(const cigi_wire::EyePose* eye);
 
         bool loadEntityCatalog(const std::string& path, std::string* error = nullptr);
@@ -57,6 +57,11 @@ namespace aerovista::sync
         /// 中继：起齐后门闩；已连平台则 UI 定时器取出切齐字节原样转发（平台同步设计.md §6.1 / §11.1）。
         /// 回程 TCP 队列只入 master，本类原样 take/send。master UDP 业务包经虚 IG `sendUdpAfterSof`。本地调试无操作。
         void pollRelay();
+        /// 运行期转发开关（≠ `relay.enable`）。缓存还没有时关失败并保持转发。
+        bool setRelayForwarding(bool forwarding);
+        bool relayForwarding() const;
+        /// 关成功后应写入 viewhost 当前眼点的那一拍缓存。未关成功时为空。
+        std::optional<cigi_wire::EyePose> relayEye() const;
         bool virtualIgLinked() const;
 
         template <typename PacketT>
@@ -83,12 +88,16 @@ namespace aerovista::sync
         void connectVirtualIg();
         void forwardFromPlatform();
         void forwardToPlatform();
+        void dropQueuedRelay();
+        void rememberForwardedOwnship(const std::vector<unsigned char>& dgram);
 
         HostSync _host;
         HostDataManager _data;
         RelayConfig _relay{};
         std::optional<IgConfig> _igConfig;
         std::unique_ptr<IgSync> _virtualIg;
+        std::optional<cigi_wire::EyePose> _cachedOwnship;
+        bool _relayForwarding = true;
         bool _initialized = false;
     };
 } // namespace aerovista::sync

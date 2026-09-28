@@ -78,6 +78,8 @@ namespace aerovista::sync
 
         bool isSofPacket(const unsigned char* data, int n);
         bool isIgCtrlPacket(const unsigned char* data, int n);
+        /// 数据面消息里 EntityID==0 的眼点。纯 IGCtrl 或没有 ownship 时为空。
+        std::optional<EyePose> ownshipFromMessage(const unsigned char* data, int n);
         /// SOF 之后还有完整后续包则返回那些字节；纯 SOF / 非 SOF / 畸形头则空。
         std::optional<std::vector<unsigned char>> packetsAfterSof(const unsigned char* data, int n);
 
