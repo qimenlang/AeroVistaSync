@@ -39,6 +39,7 @@ set(AEROVISTA_SYNC_PUBLIC_HEADERS
     include/aerovista/sync/HostDataManager.h
     include/aerovista/sync/HostDriver.h
     include/aerovista/sync/HostSync.h
+    include/aerovista/sync/PacketProbes.h
     include/aerovista/sync/SofRttTracker.h
     include/aerovista/sync/IgSync.h
     include/aerovista/sync/SyncConfig.h

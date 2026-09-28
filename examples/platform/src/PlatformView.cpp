@@ -4,9 +4,9 @@
 #include "PlatformFrame.h"
 
 #include <aerovista/sync/CigiWire.h>
+#include <aerovista/sync/PacketProbes.h>
 #include <aerovista/sync/SyncConfig.h>
 
-#include "CigiEntityPositionCtrlV4.h"
 #include "CigiSymbolTextDefV4.h"
 
 #include <atlconv.h>
@@ -293,20 +293,13 @@ LRESULT CPlatformView::OnRefreshEntityTree(WPARAM, LPARAM)
 
 void CPlatformView::testTcp()
 {
-    CigiSymbolTextDefV4 packet("testtcp");
-    _host.outMsgWithIgCtrlTcp() << packet;
-    _host.flushTcp();
-    _lastTestName = "TCP CigiSymbolTextDefV4";
+    _lastTestName = std::string("TCP ") + aerovista::sync::sendRandomTcpProbe(_host);
     updateStatusText(true);
 }
 
 void CPlatformView::testUdp()
 {
-    CigiEntityPositionCtrlV4 packet;
-    packet.SetEntityID(7);
-    _host.outMsgWithIgCtrlUdp() << packet;
-    _host.flushUdp();
-    _lastTestName = "UDP CigiEntityPositionCtrlV4";
+    _lastTestName = std::string("UDP ") + aerovista::sync::sendRandomUdpProbe(_host);
     updateStatusText(true);
 }
 

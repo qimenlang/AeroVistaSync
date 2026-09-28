@@ -1,4 +1,5 @@
 #include <aerovista/sync/HostDriver.h>
+#include <aerovista/sync/PacketProbes.h>
 
 // 命令面/数据面测试报文（cigi梳理.md 链路矩阵；viewhost 报文自检）。
 #include "CigiAccelerationCtrlV4.h"
@@ -119,22 +120,32 @@ namespace aerovista::sync
         }
     } // namespace
 
-    std::string HostDriver::sendRandomTcpPacket()
+    std::string sendRandomTcpProbe(HostSync& host)
     {
         const PacketProbe& probe = pickRandomProbe(kTcpProbes);
-        auto& omsg = _host.outMsgWithIgCtrlTcp();
+        auto& omsg = host.outMsgWithIgCtrlTcp();
         probe.send(omsg);
-        _host.flushTcp();
+        host.flushTcp();
         return probe.name;
+    }
+
+    std::string sendRandomUdpProbe(HostSync& host)
+    {
+        const PacketProbe& probe = pickRandomProbe(kUdpProbes);
+        auto& omsg = host.outMsgWithIgCtrlUdp();
+        probe.send(omsg);
+        host.flushUdp();
+        return probe.name;
+    }
+
+    std::string HostDriver::sendRandomTcpPacket()
+    {
+        return sendRandomTcpProbe(_host);
     }
 
     std::string HostDriver::sendRandomUdpPacket()
     {
-        const PacketProbe& probe = pickRandomProbe(kUdpProbes);
-        auto& omsg = _host.outMsgWithIgCtrlUdp();
-        probe.send(omsg);
-        _host.flushUdp();
-        return probe.name;
+        return sendRandomUdpProbe(_host);
     }
 
     bool HostDriver::sendSymbolText(const std::string& text, std::string* error)

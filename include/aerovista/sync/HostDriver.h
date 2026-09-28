@@ -71,9 +71,9 @@ namespace aerovista::sync
         std::uint32_t igCtrlSentCount() const;
         std::uint32_t sofReceivedCount() const;
 
-        /// 报文自检：随机构造一个命令面（TCP）测试报文并发送，返回报文类名。
+        /// 报文自检：转调 `sendRandomTcpProbe`（viewhost设计.md §4.7）。
         std::string sendRandomTcpPacket();
-        /// 报文自检：随机构造一个数据面（UDP）测试报文并发送，返回报文类名。
+        /// 报文自检：转调 `sendRandomUdpProbe`。
         std::string sendRandomUdpPacket();
         /// 命令面文本指令：组 `CigiSymbolTextDefV4` 经 TCP flush。空串失败。
         bool sendSymbolText(const std::string& text, std::string* error = nullptr);
