@@ -14,6 +14,7 @@
 BEGIN_MESSAGE_MAP(CViewHostView, CFormView)
     ON_WM_TIMER()
     ON_WM_DESTROY()
+    ON_BN_CLICKED(IDC_RELAY_FORWARD, &CViewHostView::OnRelayForward)
     ON_MESSAGE(wmRefreshEntityTree, &CViewHostView::OnRefreshEntityTree)
     ON_MESSAGE(wmOpenEntityProperties, &CViewHostView::OnOpenEntityProperties)
 END_MESSAGE_MAP()
@@ -69,6 +70,7 @@ void CViewHostView::DoDataExchange(CDataExchange* dx)
     CFormView::DoDataExchange(dx);
     DDX_Control(dx, IDC_STATUS_READY, _statusReady);
     DDX_Control(dx, IDC_EYE_LAT, _eyeLat);
+    DDX_Control(dx, IDC_RELAY_FORWARD, _relayForward);
 }
 
 CViewHostFrame* CViewHostView::hostFrame() const
@@ -126,6 +128,11 @@ void CViewHostView::OnInitialUpdate()
     _startTime = std::chrono::steady_clock::now();
     SetTimer(kTimerId, kTimerPeriodMs, nullptr);
 
+    if (_relayMode)
+        _relayForward.SetCheck(BST_CHECKED);
+    else
+        _relayForward.EnableWindow(FALSE);
+
     createFocusSink();
     refreshEntityTree();
 
@@ -141,6 +148,7 @@ bool CViewHostView::loadConfig()
         return false;
     if (!_driver.initialize(host, &error))
         return false;
+    _relayMode = host.relay.enable;
     if (!_driver.loadEntityCatalog("entities.json", &error))
         AfxMessageBox(_T("加载 entities.json 失败，实体树为空"));
     return true;
@@ -197,6 +205,24 @@ void CViewHostView::OnTimer(UINT_PTR nIDEvent)
     _driver.pollRelay();    // 中继：起齐后虚 IG 连平台；已连则取出切齐字节转发（须在 drain 前 take TCP）。
     _driver.pollIncoming(); // Host push 收包：drain 并解包 IG→Host 报文（中继时 TCP 回程已由 pollRelay take 走，此处主要解 UDP SOF）。
     updateStatusText();
+}
+
+void CViewHostView::OnRelayForward()
+{
+    const bool forwarding = _relayForward.GetCheck() == BST_CHECKED;
+    if (!_driver.setRelayForwarding(forwarding))
+    {
+        _relayForward.SetCheck(BST_CHECKED);
+        AfxMessageBox(_T("还没有平台眼点，不能关闭转发"));
+        return;
+    }
+    if (forwarding)
+        return;
+    if (const auto eye = _driver.relayEye())
+    {
+        _eye = *eye;
+        updateStatusText(true);
+    }
 }
 
 void CViewHostView::OnDestroy()

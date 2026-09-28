@@ -41,6 +41,7 @@ protected:
 
     afx_msg void OnTimer(UINT_PTR nIDEvent);
     afx_msg void OnDestroy();
+    afx_msg void OnRelayForward();
     afx_msg LRESULT OnRefreshEntityTree(WPARAM wparam, LPARAM lparam);
     afx_msg LRESULT OnOpenEntityProperties(WPARAM wparam, LPARAM lparam);
 
@@ -65,8 +66,10 @@ private:
     CEdit _focusSink;
     CHudLabel _statusReady;
     CHudLabel _eyeLat;
+    CButton _relayForward;
 
     bool _controlling = false;
+    bool _relayMode = false;
     std::chrono::steady_clock::time_point _startTime{};
     std::chrono::steady_clock::time_point _lastStatusHud{};
     int _lastReadyIgShown = -1;

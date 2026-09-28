@@ -11,6 +11,7 @@
 
 #define IDC_STATUS_READY   1003
 #define IDC_EYE_LAT        1006
+#define IDC_RELAY_FORWARD  1007
 
 #define IDC_ENTITY_TREE    1021
 #define IDC_IG_LIST        1023
