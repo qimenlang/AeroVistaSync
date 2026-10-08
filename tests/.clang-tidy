@@ -1,0 +1,5 @@
+---
+# Catch2 macros (REQUIRE / SECTION / ...) inflate cognitive complexity via
+# do/while + try/catch expansion. Keep parent naming rules; skip that check here.
+InheritParentConfig: true
+Checks: '-readability-function-cognitive-complexity'

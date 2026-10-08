@@ -49,4 +49,6 @@ sync->initialize(std::optional<IgConfig>{ig}, syncSystem);
 
 ## 测试
 
-sync 库的行为测试目前在本项目的 `engine/Tests`（`[viewhost]` / `[standalone]` / `[clock]` 等标签）。
+`tests/` 里的 Catch2 用例只链 `aerovistaSync`（不依赖 vsg / 引擎）。默认 `AEROVISTA_SYNC_BUILD_TESTS=ON`，`ctest` 目标名 `aerovistaSyncTests`。单跑：`aerovistaSyncTests.exe "[TCP-loopback-connect]"`。
+
+仍要引擎场景、相机或实体显隐才能判定的用例留在本仓库 `engine/Tests`（`vsgEngineTests`）。
