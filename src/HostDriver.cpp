@@ -178,7 +178,7 @@ namespace aerovista::sync
         // 如果没有缓存眼点数据，则拒绝关闭转发
         if (!forwarding && !_cachedOwnship)
             return false;
-            
+
         dropQueuedRelay();
         _relayForwarding = forwarding;
         return true;

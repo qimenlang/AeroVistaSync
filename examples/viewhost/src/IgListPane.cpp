@@ -6,8 +6,8 @@
 #include <string>
 
 BEGIN_MESSAGE_MAP(CIgListPane, CDockablePane)
-    ON_WM_CREATE()
-    ON_WM_SIZE()
+ON_WM_CREATE()
+ON_WM_SIZE()
 END_MESSAGE_MAP()
 
 namespace

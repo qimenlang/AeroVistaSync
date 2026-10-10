@@ -121,7 +121,7 @@ namespace aerovista::sync
         /// 命令实体），业务回调按 EntityID 分流（状态同步设计初版.md §4.1）。
         /// 回调可同步做翻译/合成（如 Engine `CameraDriver::compose`）；回调体捕获对象须存活至
         /// sync 会话结束。可在任何时机调用（先于收包）：内部确保会话已创建。
-        template <typename PacketT>
+        template<typename PacketT>
         void addCallback(std::function<void(const PacketT&)> callback)
         {
             ensureTcpSession();

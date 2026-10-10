@@ -55,15 +55,13 @@ namespace aerovista::sync
             void (*send)(CigiOutgoingMsg&);
         };
 
-#define PACKET_PROBE(PacketT, ...)                                                                                     \
-    {                                                                                                                  \
-        #PacketT, [](CigiOutgoingMsg& omsg)                                                                            \
-        {                                                                                                              \
-            PacketT packet;                                                                                            \
-            __VA_ARGS__;                                                                                               \
-            omsg << packet;                                                                                            \
-        }                                                                                                              \
-    }
+#define PACKET_PROBE(PacketT, ...)            \
+    {                                         \
+        #PacketT, [](CigiOutgoingMsg& omsg) { \
+            PacketT packet;                   \
+            __VA_ARGS__;                      \
+            omsg << packet;                   \
+        }}
 
         const PacketProbe kTcpProbes[] = {
             PACKET_PROBE(CigiEntityCtrlV4),
@@ -111,7 +109,7 @@ namespace aerovista::sync
 
 #undef PACKET_PROBE
 
-        template <std::size_t probeCount>
+        template<std::size_t probeCount>
         const PacketProbe& pickRandomProbe(const PacketProbe (&probes)[probeCount])
         {
             static std::mt19937 rng{std::random_device{}()};

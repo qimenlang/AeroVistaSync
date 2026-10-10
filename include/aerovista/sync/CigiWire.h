@@ -40,8 +40,8 @@ namespace aerovista::sync
         class CigiFrameAssembler
         {
         public:
-            explicit CigiFrameAssembler(std::uint16_t startPacketId = 0)
-                : _startPacketId(startPacketId)
+            explicit CigiFrameAssembler(std::uint16_t startPacketId = 0) :
+                _startPacketId(startPacketId)
             {
             }
 

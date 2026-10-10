@@ -56,7 +56,6 @@ namespace cigi_wire = aerovista::sync::cigi_wire;
 // - 数据面（帧节拍 / 眼点 / SOF）：CIGI V4 CCL —— IGCtrl (+ 可选 EntityPositionCtrl) / SOF。
 //   数据面契约走 HostSync/IgSync 可观察收发（[wire-contract]）；CCL 首包约束仍为 session 反向用例单测。
 
-
 namespace
 {
     // 默认端口见 doc/design/多通道同步/多通道同步模块设计.md
@@ -265,7 +264,6 @@ namespace
         cigi_wire::appendEye(omsg, &eye);
         host.flushUdp();
     }
-
 
     bool linkHostIg(HostSync& host, IgSync& ig, int base)
     {
@@ -2605,7 +2603,6 @@ SCENARIO("IG last received CIGI FrameCntr matches Host frame numbers",
         }
     }
 }
-
 
 // =============================================================================
 // 独立 IG 配置 E2E：host 与 IG 双侧都走 sync 库独立配置文件

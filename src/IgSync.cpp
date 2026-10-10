@@ -1,5 +1,5 @@
-#include <aerovista/sync/IgSync.h>
 #include <aerovista/sync/CigiWire.h>
+#include <aerovista/sync/IgSync.h>
 
 #include "CigiIGCtrlV4.h"
 
@@ -384,7 +384,7 @@ namespace aerovista::sync
         //  收进队列。空队列最多再等两个 I/O 轮询周期（2ms），覆盖该缝与调度抖动；有包则立即返回。
         //  不再等 5ms：空闲/仅 TCP 时每帧白睡会占满约 30% 帧预算。漏一帧数据面可由 UDP 周期覆盖。
         constexpr int kMaxUdpDrainWaitMs = 2;
-        for (int waited = 0; ; waited += 1)
+        for (int waited = 0;; waited += 1)
         {
             {
                 std::lock_guard lock(_udpPayloadMutex);
@@ -489,8 +489,8 @@ namespace aerovista::sync
         _udpSynced = false;
         _local.target = target;
 
-    // TCP 重试：Host 可能仍在启动（重连 BDD）。
-    // 握手重试（少量）：罕见的 UDP 丢包——错误 UDP 端口快速失败。
+        // TCP 重试：Host 可能仍在启动（重连 BDD）。
+        // 握手重试（少量）：罕见的 UDP 丢包——错误 UDP 端口快速失败。
         int handshakeFails = 0;
         for (int attempt = 0; attempt < tcpRetryAttempts; ++attempt)
         {

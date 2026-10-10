@@ -6,8 +6,8 @@
 #pragma comment(lib, "uxtheme.lib")
 
 BEGIN_MESSAGE_MAP(CHudLabel, CStatic)
-    ON_WM_ERASEBKGND()
-    ON_WM_PAINT()
+ON_WM_ERASEBKGND()
+ON_WM_PAINT()
 END_MESSAGE_MAP()
 
 void CHudLabel::PreSubclassWindow()

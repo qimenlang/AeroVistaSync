@@ -8,8 +8,8 @@
 #include <string>
 
 BEGIN_MESSAGE_MAP(CEntityPropDlg, CDialog)
-    ON_BN_CLICKED(IDC_PROP_APPLY, &CEntityPropDlg::OnApply)
-    ON_BN_CLICKED(IDC_PROP_RESET, &CEntityPropDlg::OnReset)
+ON_BN_CLICKED(IDC_PROP_APPLY, &CEntityPropDlg::OnApply)
+ON_BN_CLICKED(IDC_PROP_RESET, &CEntityPropDlg::OnReset)
 END_MESSAGE_MAP()
 
 namespace
@@ -49,8 +49,8 @@ namespace
     }
 } // namespace
 
-CEntityPropDlg::CEntityPropDlg(aerovista::sync::HostDriver& driver, std::uint16_t entityId, CWnd* pParent)
-    : CDialog(IDD_ENTITY_PROP, pParent), _driver(driver), _entityId(entityId)
+CEntityPropDlg::CEntityPropDlg(aerovista::sync::HostDriver& driver, std::uint16_t entityId, CWnd* pParent) :
+    CDialog(IDD_ENTITY_PROP, pParent), _driver(driver), _entityId(entityId)
 {
 }
 

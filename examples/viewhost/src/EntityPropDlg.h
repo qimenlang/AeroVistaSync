@@ -14,7 +14,10 @@ class CEntityPropDlg : public CDialog
 public:
     CEntityPropDlg(aerovista::sync::HostDriver& driver, std::uint16_t entityId, CWnd* pParent);
 
-    enum { IDD = IDD_ENTITY_PROP };
+    enum
+    {
+        IDD = IDD_ENTITY_PROP
+    };
 
 protected:
     BOOL OnInitDialog() override;

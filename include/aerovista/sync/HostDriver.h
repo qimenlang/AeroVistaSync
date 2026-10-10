@@ -64,7 +64,7 @@ namespace aerovista::sync
         std::optional<cigi_wire::EyePose> relayEye() const;
         bool virtualIgHandshakeDone() const;
 
-        template <typename PacketT>
+        template<typename PacketT>
         void addCallback(std::function<void(const PacketT&)> callback)
         {
             _host.addCallback<PacketT>(std::move(callback));

@@ -10,7 +10,8 @@ namespace aerovista::sync
     }
 
     TcpSocket::TcpSocket(TcpSocket&& other) noexcept
-        : _sock(other._sock), _listening(other._listening), _wsaAcquired(other._wsaAcquired.exchange(false))
+        :
+        _sock(other._sock), _listening(other._listening), _wsaAcquired(other._wsaAcquired.exchange(false))
     {
         other._sock = kInvalid;
         other._listening = false;

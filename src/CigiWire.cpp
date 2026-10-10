@@ -53,7 +53,8 @@ namespace aerovista::sync
             /// packSof / packHello 用的一次性 CCL 会话（IG 出站：SOF 开头）。
             struct IgPackRuntime
             {
-                IgPackRuntime() : ig(kCigiBufCount, kCigiBufLen, kCigiBufCount, kCigiBufLen)
+                IgPackRuntime() :
+                    ig(kCigiBufCount, kCigiBufLen, kCigiBufCount, kCigiBufLen)
                 {
                     ig.SetCigiVersion(4, 0);
                     ig.SetSynchronous(false);
@@ -65,7 +66,8 @@ namespace aerovista::sync
             /// packIgCtrl 用的一次性 CCL 会话（Host 出站：IGCtrl 开头）。
             struct HostPackRuntime
             {
-                HostPackRuntime() : host(kCigiBufCount, kCigiBufLen, kCigiBufCount, kCigiBufLen)
+                HostPackRuntime() :
+                    host(kCigiBufCount, kCigiBufLen, kCigiBufCount, kCigiBufLen)
                 {
                     host.SetCigiVersion(4, 0);
                     host.SetSynchronous(false);

@@ -4,10 +4,10 @@
 #include "resource.h"
 
 BEGIN_MESSAGE_MAP(CPacketProbePane, CDockablePane)
-    ON_WM_CREATE()
-    ON_WM_SIZE()
-    ON_BN_CLICKED(IDC_TEST_TCP, &CPacketProbePane::OnTestTcp)
-    ON_BN_CLICKED(IDC_TEST_UDP, &CPacketProbePane::OnTestUdp)
+ON_WM_CREATE()
+ON_WM_SIZE()
+ON_BN_CLICKED(IDC_TEST_TCP, &CPacketProbePane::OnTestTcp)
+ON_BN_CLICKED(IDC_TEST_UDP, &CPacketProbePane::OnTestUdp)
 END_MESSAGE_MAP()
 
 int CPacketProbePane::OnCreate(LPCREATESTRUCT createStruct)

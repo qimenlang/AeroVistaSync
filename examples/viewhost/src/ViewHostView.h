@@ -1,8 +1,8 @@
 ﻿#pragma once
 
+#include <afxcontrolbars.h>
 #include <afxext.h>
 #include <afxwin.h>
-#include <afxcontrolbars.h>
 
 #include <chrono>
 #include <cstdint>
@@ -22,7 +22,10 @@ class CViewHostView : public CFormView
     DECLARE_DYNCREATE(CViewHostView)
 
 public:
-    enum { IDD = IDD_VIEWHOST_DIALOG };
+    enum
+    {
+        IDD = IDD_VIEWHOST_DIALOG
+    };
 
     void refreshEntityTree();
     void setEyeControlling(bool controlling);
@@ -83,7 +86,7 @@ private:
     std::string _lastTestName;
 
     static constexpr UINT_PTR kTimerId = 1;
-    static constexpr UINT kTimerPeriodMs = 16; // ~60 fps，viewhost设计.md §4.3
+    static constexpr UINT kTimerPeriodMs = 16;      // ~60 fps，viewhost设计.md §4.3
     static constexpr UINT kStatusHudPeriodMs = 100; // 仪表盘文案 ~10Hz，不跟数据面绑死
 };
 

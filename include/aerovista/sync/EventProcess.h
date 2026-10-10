@@ -22,7 +22,7 @@ namespace aerovista::sync
     /// `addCallback` 追加；**不提供取消**（初始化时一次性注册，回调体捕获对象须存活至
     /// sync 会话结束）。现行通用捕获投递 CCL 原类型；若需投递翻译后的语义类型，可对
     /// `Sinkable<语义类型>` 自行 `notify`。
-    template <typename PacketT>
+    template<typename PacketT>
     class Sinkable
     {
     public:
@@ -74,7 +74,7 @@ namespace aerovista::sync
     /// 注册按发送源（IgSync/HostSync）与链路（UDP 持续 / TCP 一次性）（cigi梳理.md 链路矩阵）。
     /// 业务翻译/过滤/合成统一在订阅回调内完成；同一报文类型跨链路多 processor 时各链路的
     /// `PacketCaptureProc<PacketT>` 均向同一回调多播（addCallback 按类型定位）。
-    template <typename PacketT>
+    template<typename PacketT>
     class PacketCaptureProc : public CigiBaseEventProcessor, public Sinkable<PacketT>
     {
     public:

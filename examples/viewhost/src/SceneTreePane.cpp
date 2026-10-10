@@ -7,9 +7,9 @@
 #include <atlconv.h>
 
 BEGIN_MESSAGE_MAP(CSceneTreePane, CDockablePane)
-    ON_WM_CREATE()
-    ON_WM_SIZE()
-    ON_NOTIFY(NM_DBLCLK, IDC_ENTITY_TREE, &CSceneTreePane::OnTreeDblClk)
+ON_WM_CREATE()
+ON_WM_SIZE()
+ON_NOTIFY(NM_DBLCLK, IDC_ENTITY_TREE, &CSceneTreePane::OnTreeDblClk)
 END_MESSAGE_MAP()
 
 namespace
@@ -18,7 +18,7 @@ namespace
     constexpr UINT kEmptyTreeHit = TVHT_NOWHERE | TVHT_ABOVE | TVHT_BELOW | TVHT_TOLEFT | TVHT_TORIGHT;
     constexpr DWORD kTreeStyle = WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | TVS_HASBUTTONS | TVS_HASLINES |
                                  TVS_LINESATROOT | TVS_SHOWSELALWAYS;
-}
+} // namespace
 
 int CSceneTreePane::OnCreate(LPCREATESTRUCT createStruct)
 {

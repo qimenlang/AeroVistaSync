@@ -3,8 +3,8 @@
 #include "resource.h"
 
 BEGIN_MESSAGE_MAP(CCommandPane, CDockablePane)
-    ON_WM_CREATE()
-    ON_WM_SIZE()
+ON_WM_CREATE()
+ON_WM_SIZE()
 END_MESSAGE_MAP()
 
 int CCommandPane::OnCreate(LPCREATESTRUCT createStruct)

@@ -16,10 +16,10 @@
 #include <string>
 
 BEGIN_MESSAGE_MAP(CPlatformView, CFormView)
-    ON_WM_TIMER()
-    ON_WM_DESTROY()
-    ON_MESSAGE(wmRefreshEntityTree, &CPlatformView::OnRefreshEntityTree)
-    ON_MESSAGE(wmOpenEntityProperties, &CPlatformView::OnOpenEntityProperties)
+ON_WM_TIMER()
+ON_WM_DESTROY()
+ON_MESSAGE(wmRefreshEntityTree, &CPlatformView::OnRefreshEntityTree)
+ON_MESSAGE(wmOpenEntityProperties, &CPlatformView::OnOpenEntityProperties)
 END_MESSAGE_MAP()
 
 IMPLEMENT_DYNCREATE(CPlatformView, CFormView)
@@ -64,7 +64,8 @@ namespace
     }
 } // namespace
 
-CPlatformView::CPlatformView() : CFormView(IDD_PLATFORM_DIALOG)
+CPlatformView::CPlatformView() :
+    CFormView(IDD_PLATFORM_DIALOG)
 {
 }
 
@@ -120,7 +121,7 @@ void CPlatformView::OnInitialUpdate()
 
     // 初始眼点：alt=3m，位于模型群中心南 25m，朝北（yaw=0）水平看模型群。
     // 模型群（engine viewhost_ig_*.json）：center + 东西南北各 3m（alt=0）。
-    _eye.x = 39.908475; // lat：center(39.9087) 南 25m
+    _eye.x = 39.908475;  // lat：center(39.9087) 南 25m
     _eye.y = 116.397500; // lon：与 center 同经度
     _eye.z = 3.0;        // alt=3m
     _eye.yawDeg = 0.0;   // 朝北

@@ -16,7 +16,10 @@ public:
     CEntityPropDlg(aerovista::sync::HostSync& host, aerovista::sync::HostDataManager& data, std::uint16_t entityId,
                    CWnd* pParent);
 
-    enum { IDD = IDD_ENTITY_PROP };
+    enum
+    {
+        IDD = IDD_ENTITY_PROP
+    };
 
 protected:
     BOOL OnInitDialog() override;

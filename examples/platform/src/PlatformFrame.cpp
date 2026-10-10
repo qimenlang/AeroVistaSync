@@ -6,7 +6,7 @@
 #include <afxcontrolbars.h>
 
 BEGIN_MESSAGE_MAP(CPlatformFrame, CFrameWndEx)
-    ON_WM_CREATE()
+ON_WM_CREATE()
 END_MESSAGE_MAP()
 
 namespace
@@ -21,7 +21,7 @@ namespace
     constexpr DWORD kChildBar = WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
     /// 钉在预定边：可拉分隔条改厚度，不能撕成浮动窗、不能关。
     constexpr DWORD kPinnedPane = AFX_CBRS_RESIZE;
-}
+} // namespace
 
 BOOL CPlatformFrame::PreCreateWindow(CREATESTRUCT& cs)
 {

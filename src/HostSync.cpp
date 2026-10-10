@@ -1,5 +1,5 @@
-﻿#include <aerovista/sync/HostSync.h>
-#include <aerovista/sync/CigiWire.h>
+﻿#include <aerovista/sync/CigiWire.h>
+#include <aerovista/sync/HostSync.h>
 
 #include "CigiBaseSOF.h"
 
@@ -14,7 +14,7 @@ namespace
     constexpr int masterChannelId = 0;
 
     std::optional<std::chrono::microseconds> ageSince(const std::optional<std::chrono::steady_clock::time_point>& then,
-                                                     std::chrono::steady_clock::time_point now)
+                                                      std::chrono::steady_clock::time_point now)
     {
         if (!then)
             return std::nullopt;

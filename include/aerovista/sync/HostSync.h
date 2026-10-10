@@ -171,7 +171,7 @@ namespace aerovista::sync
         /// 同一类型可注册多个回调（多播，对齐 CCL EventList 多 processor）；捕获时同步调用，
         /// 回调可同步做翻译/合成；回调体捕获对象须存活至 sync 会话结束。
         /// 可在任何时机调用（先于收包）：内部确保会话已创建。
-        template <typename PacketT>
+        template<typename PacketT>
         void addCallback(std::function<void(const PacketT&)> callback)
         {
             ensureTcpSession();
@@ -336,11 +336,11 @@ namespace aerovista::sync
 
         mutable std::mutex _udpMutex;
 
-        std::uint32_t _dataFrameCounter = 0; ///< 数据面帧号（outMsgWithIgCtrlUdp 自动递增）
-        std::uint32_t _cmdFrameCounter = 0;  ///< 命令面帧号（outMsgWithIgCtrlTcp 自动递增，与数据面解耦）
+        std::uint32_t _dataFrameCounter = 0;                ///< 数据面帧号（outMsgWithIgCtrlUdp 自动递增）
+        std::uint32_t _cmdFrameCounter = 0;                 ///< 命令面帧号（outMsgWithIgCtrlTcp 自动递增，与数据面解耦）
         std::chrono::steady_clock::time_point _startTime{}; ///< 自计时起点（initialize 时记录）
-        bool _tcpMsgOpen = false; ///< 当前 TCP 消息已填 IGCtrl 帧头（去重；flushTcp 重置）
-        bool _udpMsgOpen = false; ///< 当前 UDP 消息已填 IGCtrl 帧头（去重；flushUdp 重置）
+        bool _tcpMsgOpen = false;                           ///< 当前 TCP 消息已填 IGCtrl 帧头（去重；flushTcp 重置）
+        bool _udpMsgOpen = false;                           ///< 当前 UDP 消息已填 IGCtrl 帧头（去重；flushUdp 重置）
         std::uint64_t _nextClientId = 0;
 
         // 收包 payload 队列：I/O 线程入队，主线程取出。
