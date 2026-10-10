@@ -137,8 +137,8 @@ namespace aerovista::sync
         if (!_relay.enable)
             return;
         if (shouldConnectVirtualIg())
-            connectVirtualIg();
-        if (!virtualIgLinked())
+            connectVirtualIgToPlatform();
+        if (!virtualIgHandshakeDone())
             return;
         if (!_relayForwarding)
         {
@@ -175,17 +175,12 @@ namespace aerovista::sync
     {
         if (!_relay.enable)
             return false;
-        if (forwarding)
-        {
-            if (!_relayForwarding)
-                dropQueuedRelay();
-            _relayForwarding = true;
-            return true;
-        }
-        if (!_cachedOwnship)
+        // 如果没有缓存眼点数据，则拒绝关闭转发
+        if (!forwarding && !_cachedOwnship)
             return false;
-        _relayForwarding = false;
+            
         dropQueuedRelay();
+        _relayForwarding = forwarding;
         return true;
     }
 
@@ -218,7 +213,7 @@ namespace aerovista::sync
             _cachedOwnship = *eye;
     }
 
-    bool HostDriver::virtualIgLinked() const
+    bool HostDriver::virtualIgHandshakeDone() const
     {
         return _virtualIg && _virtualIg->tcpConnected() && _virtualIg->udpSynced();
     }
@@ -227,12 +222,12 @@ namespace aerovista::sync
     {
         if (!_initialized || !_relay.enable || !_igConfig)
             return false;
-        if (virtualIgLinked())
+        if (virtualIgHandshakeDone())
             return false;
         return _host.readyIgCount() >= _relay.expectedIgCount;
     }
 
-    void HostDriver::connectVirtualIg()
+    void HostDriver::connectVirtualIgToPlatform()
     {
         if (!_virtualIg)
             _virtualIg = std::make_unique<IgSync>();

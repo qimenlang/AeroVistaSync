@@ -132,16 +132,16 @@ namespace
         return true;
     }
 
-    bool waitVirtualIgLinked(HostDriver& viewhost, HostSync& platform)
+    bool waitVirtualIgHandshakeDone(HostDriver& viewhost, HostSync& platform)
     {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
-        while ((!viewhost.virtualIgLinked() || platform.readyIgCount() != 1) &&
+        while ((!viewhost.virtualIgHandshakeDone() || platform.readyIgCount() != 1) &&
                std::chrono::steady_clock::now() < deadline)
         {
             viewhost.pollRelay();
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
-        return viewhost.virtualIgLinked() && platform.readyIgCount() == 1;
+        return viewhost.virtualIgHandshakeDone() && platform.readyIgCount() == 1;
     }
 
     bool startHostDriverRelay(HostSync& platform, HostDriver& viewhost, IgSync& realIg, int platformBase,
@@ -157,7 +157,7 @@ namespace
             return false;
         if (!realIg.connect(realCfg.target))
             return false;
-        return waitVirtualIgLinked(viewhost, platform);
+        return waitVirtualIgHandshakeDone(viewhost, platform);
     }
 
     bool startHostDriverRelayTwoIgs(HostSync& platform, HostDriver& viewhost, IgSync& master, IgSync& side,
@@ -178,7 +178,7 @@ namespace
             return false;
         if (!side.connect(sideCfg.target))
             return false;
-        return waitVirtualIgLinked(viewhost, platform);
+        return waitVirtualIgHandshakeDone(viewhost, platform);
     }
 
     bool startHostTwoIgs(HostSync& host, IgSync& master, IgSync& side, int base)
@@ -999,7 +999,7 @@ SCENARIO("virtual IG does not join the platform before real IGs have gathered",
 
                 THEN("the virtual IG has not connected and the platform has no ready IG")
                 {
-                    REQUIRE_FALSE(viewhost.virtualIgLinked());
+                    REQUIRE_FALSE(viewhost.virtualIgHandshakeDone());
                     REQUIRE(platform.readyIgCount() == 0);
                 }
             }
@@ -1036,7 +1036,7 @@ SCENARIO("gathered real IGs let the virtual IG join the platform without becomin
             WHEN("the relay ticks after gather")
             {
                 const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
-                while ((!viewhost.virtualIgLinked() || platform.readyIgCount() != 1) &&
+                while ((!viewhost.virtualIgHandshakeDone() || platform.readyIgCount() != 1) &&
                        std::chrono::steady_clock::now() < deadline)
                 {
                     viewhost.pollRelay();
@@ -1045,7 +1045,7 @@ SCENARIO("gathered real IGs let the virtual IG join the platform without becomin
 
                 THEN("the platform has one ready IG on channel 0, and viewhost snapshot lists only the real IGs")
                 {
-                    REQUIRE(viewhost.virtualIgLinked());
+                    REQUIRE(viewhost.virtualIgHandshakeDone());
                     REQUIRE(platform.readyIgCount() == 1);
                     const auto platformPeers = platform.igSnapshot();
                     REQUIRE(platformPeers.size() == 1);
@@ -1431,7 +1431,7 @@ SCENARIO("HostDriver relay packSof even when no real IG is ready",
         for (int i = 0; i < 40 && viewhost.readyIgCount() != 0; ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         REQUIRE(viewhost.readyIgCount() == 0);
-        REQUIRE(viewhost.virtualIgLinked());
+        REQUIRE(viewhost.virtualIgHandshakeDone());
 
         std::uint32_t platformSof = 0xffffffffu;
         platform.addCallback<CigiSOFV4>([&](const CigiSOFV4& sof) { platformSof = sof.GetFrameCntr(); });

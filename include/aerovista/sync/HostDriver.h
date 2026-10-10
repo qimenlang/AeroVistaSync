@@ -62,7 +62,7 @@ namespace aerovista::sync
         bool relayForwarding() const;
         /// 关成功后应写入 viewhost 当前眼点的那一拍缓存。未关成功时为空。
         std::optional<cigi_wire::EyePose> relayEye() const;
-        bool virtualIgLinked() const;
+        bool virtualIgHandshakeDone() const;
 
         template <typename PacketT>
         void addCallback(std::function<void(const PacketT&)> callback)
@@ -85,7 +85,7 @@ namespace aerovista::sync
 
     private:
         bool shouldConnectVirtualIg() const;
-        void connectVirtualIg();
+        void connectVirtualIgToPlatform();
         void forwardFromPlatform();
         void forwardToPlatform();
         void dropQueuedRelay();
