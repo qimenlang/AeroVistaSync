@@ -83,7 +83,7 @@ namespace
         for (int i = 0; i < ticks; ++i)
         {
             viewhost.pollRelay();
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
     }
 
@@ -382,7 +382,7 @@ namespace
         ig.flushTcp();
     }
 
-    bool seedPlatformOwnship(HostSync& platform, HostDriver& viewhost, IgSync& ig, const cigi_wire::EyePose& eye)
+    bool relayPlatformOwnship(HostSync& platform, HostDriver& viewhost, IgSync& ig, const cigi_wire::EyePose& eye)
     {
         // 回调留在 IgSync 上；捕获放堆上，函数返回后后续眼点包不会写到已销毁的栈对象。
         auto cap = std::make_shared<OwnshipEyeCapture>();
@@ -420,19 +420,6 @@ namespace
         }
     }
 
-    // 独立 Host 端点（测试用）：持 HostSync，RAII 生命周期。
-    // 端口语义 = makeTestHostConfig（Common.h），与 makeTestIgConfig 的 target 对齐。
-    struct TestHost
-    {
-        HostSync sync;
-        bool init(int base)
-        {
-            if (!sync.initialize(makeTestHostConfig(base)))
-                return false;
-            sync.run();
-            return true;
-        }
-    };
 } // namespace
 
 SCENARIO("linked IG receives Host ownship eye as Detach LLA EntityID 0",
@@ -2185,7 +2172,7 @@ SCENARIO("stopped forwarding blocks both directions and repeats the last platfor
         const auto platformEye = makeEye(31.2, 121.5, 80.0, 45.0, 5.0);
         const auto laterEye = makeEye(40.0, 116.0, 200.0, 90.0, 0.0);
         REQUIRE(startHostDriverRelay(platform, viewhost, realIg, 51600, 51800));
-        if (!seedPlatformOwnship(platform, viewhost, realIg, platformEye))
+        if (!relayPlatformOwnship(platform, viewhost, realIg, platformEye))
             SKIP("UDP datagram dropped");
 
         WHEN("the operator turns off forwarding")
@@ -2280,7 +2267,7 @@ SCENARIO("resumed forwarding drops paused traffic and applies the next platform 
         const auto keyboard = makeEye(32.0, 122.0, 90.0, 12.0, 3.0);
         const auto jumpEye = makeEye(40.0, 116.0, 200.0, 90.0, 0.0);
         REQUIRE(startHostDriverRelay(platform, viewhost, realIg, 52000, 52200));
-        if (!seedPlatformOwnship(platform, viewhost, realIg, platformEye))
+        if (!relayPlatformOwnship(platform, viewhost, realIg, platformEye))
             SKIP("UDP datagram dropped");
         REQUIRE(viewhost.setRelayForwarding(false));
         sendTcpSymbol(platform, "queued");

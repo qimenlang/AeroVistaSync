@@ -10,7 +10,7 @@ add_executable(${TARGET_NAME}
     SyncConfigTests.cpp
     SyncClockInjectTests.cpp
     SyncWireTests.cpp
-    HostIGLinkTests.cpp
+    HostIGTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../examples/viewhost/src/ViewHostMath.cpp
 )
 

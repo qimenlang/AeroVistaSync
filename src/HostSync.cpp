@@ -667,6 +667,7 @@ namespace aerovista::sync
 
     void HostSync::fanoutTcp(const unsigned char* buf, int len)
     {
+        //TODO:需要尝试重构掉选socket发送的过程；
         std::vector<std::shared_ptr<TcpSocket>> targets;
         {
             std::lock_guard lock(_peersMutex);
@@ -682,6 +683,7 @@ namespace aerovista::sync
 
     std::size_t HostSync::fanoutUdp(const unsigned char* buf, int len)
     {
+        //TODO:需要尝试重构掉选socket发送的过程；
         std::vector<std::pair<std::string, uint32_t>> targets;
         {
             std::lock_guard lock(_peersMutex);
