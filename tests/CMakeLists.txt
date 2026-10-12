@@ -4,13 +4,14 @@ add_executable(${TARGET_NAME}
     Common.h
     TcpSocketTests.cpp
     UdpSocketTests.cpp
-    SofRttTrackerTests.cpp
+    AppRttTrackerTests.cpp
     HostDataManagerTests.cpp
     ViewHostMathTests.cpp
     SyncConfigTests.cpp
     SyncClockInjectTests.cpp
     SyncWireTests.cpp
-    HostIGTests.cpp
+    HostIGLinkTests.cpp
+    HostDriverTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../examples/viewhost/src/ViewHostMath.cpp
 )
 

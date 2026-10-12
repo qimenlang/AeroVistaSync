@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <chrono>
 #include <cstddef>
@@ -9,9 +9,10 @@
 
 namespace aerovista::sync
 {
-    /// 单 peer 的 IGCtrl↔SOF 应用 RTT 配对器（多通道同步验收测量设计.md §4.5）。
-    /// 时钟由调用方注入；Host 接线后 t_recv 为主线程 drain 见到 SOF 的时刻。
-    class SofRttTracker
+    /// 单 peer 的应用 RTT 配对器（多通道同步验收测量设计.md §4.5，码 MEAS-rtt）。
+    /// 时钟由调用方注入；Host 接线后 t_recv 为主线程 drain 见到回显帧的时刻。
+    /// 与 §4.8 网络 RTT 不是同一张表。
+    class AppRttTracker
     {
     public:
         static constexpr std::chrono::milliseconds matchTimeout{100};
@@ -23,7 +24,7 @@ namespace aerovista::sync
         /// 按回显的 Host Frame Number 配对。先按 tRecv 做超时淘汰，再匹配。
         void onSofReceived(std::uint32_t echoedHostFrameNumber, std::chrono::steady_clock::time_point tRecv);
         /// 把 now - tSend >= matchTimeout 且仍未匹配的帧记为丢失（不进 RTT）。
-        void expire(std::chrono::steady_clock::time_point now);
+        void expireInFlightAt(std::chrono::steady_clock::time_point now);
 
         std::optional<std::chrono::microseconds> lastRtt() const;
         /// 最近 avgWindow 次完成里，匹配样本的算术平均；其中匹配数 < avgMinSamples 时为空。
@@ -33,14 +34,16 @@ namespace aerovista::sync
 
         std::size_t matchCount() const;
         std::size_t lossCount() const;
-        std::size_t pendingCount() const;
+        /// 已发出、尚未匹配或超时的帧数。不进 avgRtt / lossRate。
+        std::size_t inFlightCount() const;
 
     private:
         void recordMatch(std::chrono::microseconds rtt);
         void recordTimeout();
         void pushCompletion(std::optional<std::chrono::microseconds> sample);
 
-        std::unordered_map<std::uint32_t, std::chrono::steady_clock::time_point> _pending;
+        /// 在途：Host Frame Number → t_send。回显帧按帧号取这一时刻；未匹配且未满 matchTimeout 的既不进 RTT，也不算丢失。
+        std::unordered_map<std::uint32_t, std::chrono::steady_clock::time_point> _inFlight;
         /// 最近完成：有值 = 匹配 RTT，空 = 超时。与 avgRtt / lossRate 同一时间轴。
         std::deque<std::optional<std::chrono::microseconds>> _completions;
         std::optional<std::chrono::microseconds> _lastRtt;

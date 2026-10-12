@@ -1,35 +1,35 @@
-﻿#include <aerovista/sync/SofRttTracker.h>
+#include <aerovista/sync/AppRttTracker.h>
 
 namespace aerovista::sync
 {
-    void SofRttTracker::pushCompletion(std::optional<std::chrono::microseconds> sample)
+    void AppRttTracker::pushCompletion(std::optional<std::chrono::microseconds> sample)
     {
         _completions.push_back(sample);
         if (_completions.size() > avgWindow)
             _completions.pop_front();
     }
 
-    void SofRttTracker::recordMatch(std::chrono::microseconds rtt)
+    void AppRttTracker::recordMatch(std::chrono::microseconds rtt)
     {
         _lastRtt = rtt;
         ++_matchCount;
         pushCompletion(rtt);
     }
 
-    void SofRttTracker::recordTimeout()
+    void AppRttTracker::recordTimeout()
     {
         ++_lossCount;
         pushCompletion(std::nullopt);
     }
 
-    void SofRttTracker::expire(std::chrono::steady_clock::time_point now)
+    void AppRttTracker::expireInFlightAt(std::chrono::steady_clock::time_point now)
     {
-        for (auto it = _pending.begin(); it != _pending.end();)
+        for (auto it = _inFlight.begin(); it != _inFlight.end();)
         {
             if (now - it->second >= matchTimeout)
             {
                 recordTimeout();
-                it = _pending.erase(it);
+                it = _inFlight.erase(it);
             }
             else
             {
@@ -38,31 +38,31 @@ namespace aerovista::sync
         }
     }
 
-    void SofRttTracker::onIgCtrlSent(std::uint32_t hostFrameNumber, std::chrono::steady_clock::time_point tSend)
+    void AppRttTracker::onIgCtrlSent(std::uint32_t hostFrameNumber, std::chrono::steady_clock::time_point tSend)
     {
-        expire(tSend);
-        if (_pending.find(hostFrameNumber) != _pending.end())
+        expireInFlightAt(tSend);
+        if (_inFlight.find(hostFrameNumber) != _inFlight.end())
             return;
-        _pending.emplace(hostFrameNumber, tSend);
+        _inFlight.emplace(hostFrameNumber, tSend);
     }
 
-    void SofRttTracker::onSofReceived(std::uint32_t echoedHostFrameNumber, std::chrono::steady_clock::time_point tRecv)
+    void AppRttTracker::onSofReceived(std::uint32_t echoedHostFrameNumber, std::chrono::steady_clock::time_point tRecv)
     {
-        expire(tRecv);
-        const auto it = _pending.find(echoedHostFrameNumber);
-        if (it == _pending.end())
+        expireInFlightAt(tRecv);
+        const auto it = _inFlight.find(echoedHostFrameNumber);
+        if (it == _inFlight.end())
             return;
         const auto rtt = std::chrono::duration_cast<std::chrono::microseconds>(tRecv - it->second);
-        _pending.erase(it);
+        _inFlight.erase(it);
         recordMatch(rtt);
     }
 
-    std::optional<std::chrono::microseconds> SofRttTracker::lastRtt() const
+    std::optional<std::chrono::microseconds> AppRttTracker::lastRtt() const
     {
         return _lastRtt;
     }
 
-    std::optional<std::chrono::microseconds> SofRttTracker::avgRtt() const
+    std::optional<std::chrono::microseconds> AppRttTracker::avgRtt() const
     {
         std::size_t matches = 0;
         std::int64_t sumUs = 0;
@@ -78,7 +78,7 @@ namespace aerovista::sync
         return std::chrono::microseconds{sumUs / static_cast<std::int64_t>(matches)};
     }
 
-    std::optional<double> SofRttTracker::lossRate() const
+    std::optional<double> AppRttTracker::lossRate() const
     {
         if (_completions.size() < avgMinSamples)
             return std::nullopt;
@@ -92,18 +92,18 @@ namespace aerovista::sync
         return static_cast<double>(timeouts) / static_cast<double>(_completions.size());
     }
 
-    std::size_t SofRttTracker::matchCount() const
+    std::size_t AppRttTracker::matchCount() const
     {
         return _matchCount;
     }
 
-    std::size_t SofRttTracker::lossCount() const
+    std::size_t AppRttTracker::lossCount() const
     {
         return _lossCount;
     }
 
-    std::size_t SofRttTracker::pendingCount() const
+    std::size_t AppRttTracker::inFlightCount() const
     {
-        return _pending.size();
+        return _inFlight.size();
     }
 } // namespace aerovista::sync

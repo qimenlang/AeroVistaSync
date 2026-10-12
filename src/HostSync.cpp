@@ -146,9 +146,9 @@ namespace aerovista::sync
             row.channelId = peer.channelId;
             row.tcpReady = peer.tcpReady;
             row.udpReady = peer.udpReady;
-            row.avgRtt = peer.sofRtt.avgRtt();
-            row.lastRtt = peer.sofRtt.lastRtt();
-            row.lossRate = peer.sofRtt.lossRate();
+            row.avgRtt = peer.rtt.avgRtt();
+            row.lastRtt = peer.rtt.lastRtt();
+            row.lossRate = peer.rtt.lossRate();
             row.sofAge = ageSince(peer.lastSofAt, now);
             rows.push_back(row);
         }
@@ -170,13 +170,13 @@ namespace aerovista::sync
         return _sofProc.count.load();
     }
 
-    std::optional<std::chrono::microseconds> HostSync::sofRttLast(std::uint64_t clientId) const
+    std::optional<std::chrono::microseconds> HostSync::rttLast(std::uint64_t clientId) const
     {
         std::lock_guard lock(_peersMutex);
         for (const auto& peer : _peers)
         {
             if (peer.clientId == clientId)
-                return peer.sofRtt.lastRtt();
+                return peer.rtt.lastRtt();
         }
         return std::nullopt;
     }
@@ -454,15 +454,15 @@ namespace aerovista::sync
         for (auto& peer : _peers)
         {
             if (peer.tcpReady && peer.udpReady)
-                peer.sofRtt.onIgCtrlSent(hostFrameNumber, tSend);
+                peer.rtt.onIgCtrlSent(hostFrameNumber, tSend);
         }
     }
 
-    void HostSync::expireSofRtt(std::chrono::steady_clock::time_point now)
+    void HostSync::expireRtt(std::chrono::steady_clock::time_point now)
     {
         std::lock_guard lock(_peersMutex);
         for (auto& peer : _peers)
-            peer.sofRtt.expire(now);
+            peer.rtt.expireInFlightAt(now);
     }
 
     void HostSync::ingestUdpSof(const UdpIngress& frame, std::chrono::steady_clock::time_point now)
@@ -479,7 +479,7 @@ namespace aerovista::sync
             if (peer.udpFromPort == frame.fromPort && peer.udpFromIp == frame.fromIp)
             {
                 peer.lastSofAt = now;
-                peer.sofRtt.onSofReceived(frameCntr, now);
+                peer.rtt.onSofReceived(frameCntr, now);
                 return;
             }
         }
@@ -567,7 +567,7 @@ namespace aerovista::sync
     void HostSync::drainIncoming()
     {
         const auto now = std::chrono::steady_clock::now();
-        expireSofRtt(now);
+        expireRtt(now);
 
         // 按链路喂各 session 解包（§5.1 双 session）：UDP 队列 → _udpSession，TCP 队列 → _tcpSession。
         std::vector<UdpIngress> udpFrames;

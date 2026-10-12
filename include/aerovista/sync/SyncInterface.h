@@ -23,7 +23,7 @@ namespace aerovista::sync
         /// 取走已切齐 TCP 消息字节，不解包。与 `drainIncoming` 互斥消费同一 TCP 队列。
         virtual std::vector<std::vector<unsigned char>> takeIncomingTcp() = 0;
         /// 取走 UDP 数据报字节，不解包。与 `drainIncoming` 互斥消费同一 UDP 队列。
-        /// Host 侧丢弃 `fromIp`/`fromPort`（无法再做 SOF RTT 配对）。中继不得用 viewhost Host
+        /// Host 侧丢弃 `fromIp`/`fromPort`（无法再做应用 RTT 配对）。中继不得用 viewhost Host
         /// 的本接口把真实 IG SOF 转给平台。
         virtual std::vector<std::vector<unsigned char>> takeIncomingUdp() = 0;
     };

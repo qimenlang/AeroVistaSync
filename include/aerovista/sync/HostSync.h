@@ -4,7 +4,7 @@
 
 #include <aerovista/sync/CigiWire.h>
 #include <aerovista/sync/EventProcess.h>
-#include <aerovista/sync/SofRttTracker.h>
+#include <aerovista/sync/AppRttTracker.h>
 #include <aerovista/sync/SyncConfig.h>
 #include <aerovista/sync/SyncInterface.h>
 #include <aerovista/sync/TcpSocket.h>
@@ -54,11 +54,11 @@ namespace aerovista::sync
         int channelId = 0; ///< HELLO 学到的 IG syncSystem.channelId
         bool tcpReady = false;
         bool udpReady = false;
-        /// 滚动平均应用 RTT；不满 10 个匹配样本时为空（SofRttTracker::avgRtt）。
+        /// 滚动平均应用 RTT；不满 10 个匹配样本时为空（AppRttTracker::avgRtt）。
         std::optional<std::chrono::microseconds> avgRtt;
-        /// 最近一次匹配的应用 RTT；尚无匹配时为空（SofRttTracker::lastRtt）。
+        /// 最近一次匹配的应用 RTT；尚无匹配时为空（AppRttTracker::lastRtt）。
         std::optional<std::chrono::microseconds> lastRtt;
-        /// 最近 60 次完成中的超时占比；不满 10 次完成时为空（SofRttTracker::lossRate）。
+        /// 最近 60 次完成中的超时占比；不满 10 次完成时为空（AppRttTracker::lossRate）。
         std::optional<double> lossRate;
         /// 距上次 UDP SOF 的墙钟间隔；本会话尚未收到该 peer 的 UDP SOF 时为空。
         std::optional<std::chrono::microseconds> sofAge;
@@ -98,9 +98,9 @@ namespace aerovista::sync
         std::uint32_t igCtrlSentCount() const;
         /// 本会话已解包的 SOF 数（观测无副作用；调用方须先 drainIncoming）。
         std::uint32_t sofReceivedCount() const;
-        /// 该 peer 最近一次匹配的 IGCtrl↔SOF 应用 RTT（主线程 drain 见到 SOF 的时刻）。
+        /// 该 peer 最近一次匹配的应用 RTT（主线程 drain 见到回显帧的时刻）。
         /// 无匹配样本或未知 clientId 为空。规则见 多通道同步验收测量设计.md §4.5。
-        std::optional<std::chrono::microseconds> sofRttLast(std::uint64_t clientId) const;
+        std::optional<std::chrono::microseconds> rttLast(std::uint64_t clientId) const;
 
         // ---- 命令面 / 数据面发送（状态同步设计初版.md §7）：引用式发送接口 ----
 
@@ -200,7 +200,7 @@ namespace aerovista::sync
             int udpFromPort = 0;
             bool tcpReady = false;
             bool udpReady = false;
-            SofRttTracker sofRtt;
+            AppRttTracker rtt;
             /// 主线程 drain 见到该 peer UDP SOF 的时刻；未收到过则为空。
             std::optional<std::chrono::steady_clock::time_point> lastSofAt;
         };
@@ -242,7 +242,7 @@ namespace aerovista::sync
             const std::shared_ptr<TcpSocket>& client, const std::string& peerIp,
             std::uint32_t udpRecvPort, int channelId);
         void recordIgCtrlFanout(std::uint32_t hostFrameNumber, std::chrono::steady_clock::time_point tSend);
-        void expireSofRtt(std::chrono::steady_clock::time_point now);
+        void expireRtt(std::chrono::steady_clock::time_point now);
         void ingestUdpSof(const UdpIngress& frame, std::chrono::steady_clock::time_point now);
         void pollUdp();
         /// 快照 ready peer，逐个 `sendAll`（`flushTcp` 与中继 `sendTcpMessage` 共用）。
