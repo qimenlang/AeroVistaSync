@@ -380,7 +380,7 @@ namespace aerovista::sync
     {
         // 为什么 IG 侧必须等待（区别于 HostSync::drainIncoming 的不等待）：
         //  Host 侧是 push 模式——调用方（业务/测试）自己决定何时 drain，包未到就不处理；
-        //  IG 侧是帧循环主动 drain——`drainIncoming` 由 SynchronSystem::preFrame 每帧调用一次。
+        //  IG 侧是帧循环主动 drain——`drainIncoming` 由 Engine::preFrame 每帧调用一次。
         //  而 UDP I/O 线程是 1ms 轮询（udpLoop），Host 刚发来的数据报可能仍在 0~1ms 窗口内没被
         //  收进队列。空队列最多再等两个 I/O 轮询周期（2ms），覆盖该缝与调度抖动；有包则立即返回。
         //  不再等 5ms：空闲/仅 TCP 时每帧白睡会占满约 30% 帧预算。漏一帧数据面可由 UDP 周期覆盖。

@@ -7,7 +7,6 @@
 #include <aerovista/sync/IgSync.h>
 #include <aerovista/sync/SyncConfig.h>
 #include <aerovista/sync/SyncInterface.h>
-#include <aerovista/sync/SynchronSystem.h>
 
 #include "CigiBaseEntityPositionCtrl.h"
 #include "CigiEntityPositionCtrlV4.h"
@@ -34,10 +33,7 @@ using aerovista::sync::HostSync;
 using aerovista::sync::IgConfig;
 using aerovista::sync::IgStatus;
 using aerovista::sync::IgSync;
-using aerovista::sync::OffsetDeg;
-using aerovista::sync::SynchronSystem;
 using aerovista::sync::SyncInterface;
-using aerovista::sync::SyncSystemConfig;
 using aerovista::sync::TcpSocket;
 namespace cigi_wire = aerovista::sync::cigi_wire;
 
@@ -928,16 +924,17 @@ SCENARIO("IG received CIGI FrameCntr values follow Host frame numbers",
 
 // =============================================================================
 // Host 与 IG 各自载入独立配置并连上后交换 CIGI，核对脱离引擎整体配置仍能走通 sync
-// （sync模块化设计.md §4.1/§4.2，码 CIGI-standalone）。
-// Host：loadHostConfig → HostSync；IG：loadIgConfig → SynchronSystem。
-// channelId / offsetDeg 属 syncSystem 装配，程序化注入，不写进这两份传输配置。
+// （sync模块化设计.md §4.1，码 CIGI-standalone）。
+// Host：loadHostConfig → HostSync；IG：loadIgConfig → IgSync。
+// channelId 程序化传入 IgSync::initialize（HELLO），不写进这两份传输配置。
+// offsetDeg 由 Engine CameraDriver 消费，本用例不覆盖。
 // 报文 Then 只要求发送数、IG 收到数、Host 的 SOF 数较交换前增加，不钉条数或帧号。
 // =============================================================================
 
 SCENARIO("host and IG both load standalone sync configs and exchange CIGI",
          "[acceptance][bdd][sync][standalone][cigi][CIGI-standalone]")
 {
-    GIVEN("host HostSync from hostConfig file, and IG SynchronSystem from igConfig file")
+    GIVEN("host HostSync from hostConfig file, and IG IgSync from igConfig file")
     {
         constexpr int kBase = 22000;
 
@@ -958,45 +955,42 @@ SCENARIO("host and IG both load standalone sync configs and exchange CIGI",
         std::string igError;
         REQUIRE(loadIgConfig(igFile.path(), ig, &igError));
 
-        // 两侧：host 用 HostSync 直发；IG 用 SynchronSystem（IG 决策器）。
         auto hostSync = std::make_unique<HostSync>();
         REQUIRE(hostSync->initialize(host));
         hostSync->run();
 
-        auto igSync = SynchronSystem::create();
-        // 装配参数程序化注入（外部 engine 不经 syncSystem 配置文件时的路径）。
-        SyncSystemConfig igSystem;
-        igSystem.channelId = 2;
-        igSystem.offsetDeg = OffsetDeg{5.0, 0.0, 0.0};
-        REQUIRE(igSync->initialize(ig, igSystem));
+        IgSync igSync;
+        REQUIRE(igSync.initialize(ig.udpPortRecv, /*channelId=*/2));
+        REQUIRE(igSync.connect(ig.target));
 
         WHEN("IG connects to host and both link")
         {
-            connectUntil([&] { return hostSync->readyIgCount() >= 1 && igSync->igLinked(); });
+            connectUntil([&] { return hostSync->readyIgCount() >= 1 && igSync.linked(); });
 
             THEN("host sees the standalone IG and IG is linked")
             {
                 REQUIRE(hostSync->readyIgCount() == 1);
-                REQUIRE(igSync->igLinked());
+                REQUIRE(igSync.linked());
             }
 
             THEN("CIGI IGCtrl and SOF flow both ways over TCP/UDP")
             {
                 hostSync->drainIncoming();
                 const std::uint32_t sentBefore = hostSync->igCtrlSentCount();
-                const std::uint32_t recvBefore = igSync->igSync().igCtrlReceivedCount();
+                const std::uint32_t recvBefore = igSync.igCtrlReceivedCount();
                 const std::uint32_t sofBefore = hostSync->sofReceivedCount();
 
                 constexpr int kTicks = 5;
                 for (int i = 0; i < kTicks; ++i)
                 {
                     hostSendFrame(*hostSync); // 业务侧扇出 IGCtrl
-                    igSync->preFrame();       // IG 收 IGCtrl + 回 SOF
+                    igSync.drainIncoming(true);
+                    igSync.update();
                 }
 
                 hostSync->drainIncoming();
                 REQUIRE(hostSync->igCtrlSentCount() > sentBefore);
-                REQUIRE(igSync->igSync().igCtrlReceivedCount() > recvBefore);
+                REQUIRE(igSync.igCtrlReceivedCount() > recvBefore);
                 REQUIRE(hostSync->sofReceivedCount() > sofBefore);
             }
         }

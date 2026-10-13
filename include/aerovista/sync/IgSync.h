@@ -92,7 +92,7 @@ namespace aerovista::sync
         bool connect(const HostTarget& target);
         void shutdown() override;
 
-        // ---- 帧循环收包（SynchronSystem::preFrame 每帧驱动）----
+        // ---- 帧循环收包（Engine::preFrame 每帧驱动）----
         /// 主线程收包入口（对等 HostSync::drainIncoming）：统一 drain TCP+UDP 收包队列 → CCL 解包。
         /// 无条件 drain（不检查连接状态，与 Host 对等）；收到新 IGCtrl 时回 SOF（sendSof）。
         void drainIncoming(bool sendSof = true);
@@ -136,6 +136,8 @@ namespace aerovista::sync
         // ---- 状态观测 ----
         bool tcpConnected() const;
         bool udpSynced() const;
+        /// TCP 与 UDP 都已就绪。
+        bool linked() const { return tcpConnected() && udpSynced(); }
         std::uint32_t igCtrlReceivedCount() const;
         /// 最近处理的 Host IGCtrl 的 FrameCntr（无则 0）。
         std::uint32_t lastIgCtrlFrameCntr() const;

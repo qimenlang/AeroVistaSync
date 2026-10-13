@@ -31,21 +31,21 @@ target_link_libraries(your_target PRIVATE aerovista::aerovistaSync)
 所有类型在 `namespace aerovista::sync`：
 
 ```cpp
-#include <aerovista/sync/SynchronSystem.h>
+#include <aerovista/sync/IgSync.h>
 #include <aerovista/sync/HostDriver.h>
 #include <aerovista/sync/SyncConfig.h>
 
 IgConfig ig;
-SyncSystemConfig syncSystem;
 loadIgConfig("ig.json", ig, &error);
-auto sync = aerovista::sync::SynchronSystem::create();
-sync->initialize(std::optional<IgConfig>{ig}, syncSystem);
+aerovista::sync::IgSync igSync;
+igSync.initialize(ig.udpPortRecv, /*channelId=*/0);
+igSync.connect(ig.target);
 ```
 
 ## 快速开始
 
 - viewhost（Host-only）：持 `aerovista::sync::HostDriver`（`HostSync` + `HostDataManager`；中继时另持虚 `IgSync`）。最小接入也可直接持 `HostSync`（`examples/minimal_viewhost.cpp`：`initialize(HostConfig)` + `run`）。
-- 独立 IG：用 `loadIgConfig(path, igConfig, err)` 读配置后 `SynchronSystem::create()->initialize(igConfig)`。
+- 独立 IG：用 `loadIgConfig(path, igConfig, err)` 读配置后 `IgSync::initialize(udpPortRecv, channelId)` + `connect(target)`。每帧 `drainIncoming(true)` + `update()`。
 
 ## 测试
 

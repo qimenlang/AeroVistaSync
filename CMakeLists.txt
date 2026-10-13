@@ -45,7 +45,6 @@ set(AEROVISTA_SYNC_PUBLIC_HEADERS
     include/aerovista/sync/IgSync.h
     include/aerovista/sync/SyncConfig.h
     include/aerovista/sync/SyncInterface.h
-    include/aerovista/sync/SynchronSystem.h
     include/aerovista/sync/TcpSocket.h
     include/aerovista/sync/UdpSocket.h
 )
@@ -62,7 +61,6 @@ add_library(aerovistaSync STATIC
     src/IgSync.cpp
     src/SocketCommon.cpp
     src/SyncConfig.cpp
-    src/SynchronSystem.cpp
     src/TcpSocket.cpp
     src/UdpSocket.cpp
 )

@@ -61,8 +61,9 @@ namespace aerovista::sync
         RUNNING
     };
 
-    /// SynchronSystem 装配属性（sync模块化设计.md §4.2）。
-    /// `channelId` / `requireConnectedIg` 由 SynchronSystem 消费；`offsetDeg` 由 Engine CameraDriver 消费。
+    /// 通道装配（sync模块化设计.md §4.2）。
+    /// `channelId` 写入 IgSync HELLO；`requireConnectedIg` 由 Engine::initSync 消费；
+    /// `offsetDeg` 由 Engine CameraDriver 消费。
     struct SyncSystemConfig
     {
         int channelId = 0;

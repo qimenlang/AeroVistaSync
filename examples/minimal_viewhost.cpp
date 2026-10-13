@@ -5,7 +5,7 @@
 //   2. 直接持 HostSync（传输层），initialize + run；
 //   3. 按目标 fps 驱动 update 扇出（无渲染节拍）。
 //
-// Host 采样/扇出不经过 SynchronSystem（那是 IG 决策器）；纯 Host 直发走 HostSync。
+// 纯 Host 直发走 HostSync。IG 收发由持有 IgSync 的 Engine 完成。
 // 构建：add_subdirectory(aerovistaSync) 后链接。
 
 #include <chrono>
