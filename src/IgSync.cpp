@@ -1,5 +1,6 @@
 #include <aerovista/sync/CigiWire.h>
 #include <aerovista/sync/IgSync.h>
+#include <aerovista/sync/NetProbe.h>
 
 #include "CigiIGCtrlV4.h"
 
@@ -555,7 +556,14 @@ namespace aerovista::sync
         unsigned char buf[4096];
         while (_udpThreadRunning)
         {
+            _udp.waitReadable(udpIdleWait);
             const int n = _udp.recv(buf, sizeof(buf));
+            if (n > 0 && isNetProbe(buf, n))
+            {
+                // 网络探测在收包线程立刻回显，不入业务队列（多通道同步验收测量设计.md §4.8）。
+                _udp.sendTo(_local.target.addr, _local.target.udpPortRecv, buf, n);
+                continue;
+            }
             if (n > 0)
             {
                 // 握手 ACK 已在 waitUdpAck 吃掉；此后 UDP 全是数据面。
@@ -565,7 +573,6 @@ namespace aerovista::sync
                 std::lock_guard lock(_udpPayloadMutex);
                 _udpPayloadQueue.push_back(std::move(frame));
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
 

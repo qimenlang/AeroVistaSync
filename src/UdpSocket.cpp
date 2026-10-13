@@ -6,6 +6,10 @@
 #include <cstring>
 #include <string>
 
+#ifndef WIN32
+#    include <sys/select.h>
+#endif
+
 namespace aerovista::sync
 {
     UdpSocket::~UdpSocket()
@@ -119,6 +123,26 @@ namespace aerovista::sync
 
         return sendto(_recvSock, reinterpret_cast<const char*>(buf), size, 0,
                       reinterpret_cast<const sockaddr*>(&dest), sizeof(dest));
+    }
+
+    bool UdpSocket::waitReadable(std::chrono::milliseconds timeout)
+    {
+        if (!_valid || _recvSock == kInvalid)
+            return false;
+
+        fd_set readSet;
+        FD_ZERO(&readSet);
+        FD_SET(_recvSock, &readSet);
+
+        const auto ms = timeout.count();
+        timeval tv{static_cast<long>(ms / 1000), static_cast<long>(ms % 1000 * 1000)};
+
+        // Windows 忽略 nfds；数据报到达立即返回，超时只约束空闲等待。
+#ifdef WIN32
+        return ::select(0, &readSet, nullptr, nullptr, &tv) > 0;
+#else
+        return ::select(static_cast<int>(_recvSock) + 1, &readSet, nullptr, nullptr, &tv) > 0;
+#endif
     }
 
     int UdpSocket::localPort() const

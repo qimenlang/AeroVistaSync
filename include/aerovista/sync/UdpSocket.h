@@ -1,6 +1,7 @@
-﻿#pragma once
+#pragma once
 
 #include <atomic>
+#include <chrono>
 #include <string>
 
 #ifdef WIN32
@@ -43,6 +44,10 @@ namespace aerovista::sync
 
         /// 向显式 IPv4 目标发送数据报。返回发送字节数或 -1。
         int sendTo(const std::string& ip, int port, const void* buf, int size);
+
+        /// 等到可读或超时。有数据报立即返回 true，不跟着系统计时器粒度睡满超时。
+        /// `recv` 仍是非阻塞；本函数只负责把 I/O 线程从空转里叫醒。
+        bool waitReadable(std::chrono::milliseconds timeout);
 
         /// 接收 socket 实际绑定的本地端口（`rcvPort=0` 时由 OS 分配）。无效返回 0。
         int localPort() const;

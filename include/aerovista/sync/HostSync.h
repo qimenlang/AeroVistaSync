@@ -4,7 +4,8 @@
 
 #include <aerovista/sync/CigiWire.h>
 #include <aerovista/sync/EventProcess.h>
-#include <aerovista/sync/AppRttTracker.h>
+#include <aerovista/sync/NetProbe.h>
+#include <aerovista/sync/RttTracker.h>
 #include <aerovista/sync/SyncConfig.h>
 #include <aerovista/sync/SyncInterface.h>
 #include <aerovista/sync/TcpSocket.h>
@@ -54,12 +55,18 @@ namespace aerovista::sync
         int channelId = 0; ///< HELLO 学到的 IG syncSystem.channelId
         bool tcpReady = false;
         bool udpReady = false;
-        /// 滚动平均应用 RTT；不满 10 个匹配样本时为空（AppRttTracker::avgRtt）。
+        /// 滚动平均应用 RTT；不满 10 个匹配样本时为空（时限 appRttMatchTimeout）。
         std::optional<std::chrono::microseconds> avgRtt;
-        /// 最近一次匹配的应用 RTT；尚无匹配时为空（AppRttTracker::lastRtt）。
+        /// 最近一次匹配的应用 RTT；尚无匹配时为空（时限 appRttMatchTimeout）。
         std::optional<std::chrono::microseconds> lastRtt;
-        /// 最近 60 次完成中的超时占比；不满 10 次完成时为空（AppRttTracker::lossRate）。
+        /// 最近 60 次完成中的超时占比；不满 10 次完成时为空（应用 RTT，时限 appRttMatchTimeout）。
         std::optional<double> lossRate;
+        /// 滚动平均网络 RTT；不满 10 个匹配样本时为空（时限 netRttMatchTimeout）。
+        std::optional<std::chrono::microseconds> netAvgRtt;
+        /// 最近一次匹配的网络 RTT；尚无匹配时为空（时限 netRttMatchTimeout）。
+        std::optional<std::chrono::microseconds> netRtt;
+        /// 最近 60 次完成中的超时占比；不满 10 次完成时为空（网络 RTT）。
+        std::optional<double> netLossRate;
         /// 距上次 UDP SOF 的墙钟间隔；本会话尚未收到该 peer 的 UDP SOF 时为空。
         std::optional<std::chrono::microseconds> sofAge;
     };
@@ -67,8 +74,8 @@ namespace aerovista::sync
     inline bool operator==(const IgConnection& a, const IgConnection& b)
     {
         return a.id == b.id && a.channelId == b.channelId && a.tcpReady == b.tcpReady && a.udpReady == b.udpReady &&
-               a.avgRtt == b.avgRtt &&
-               a.lastRtt == b.lastRtt && a.lossRate == b.lossRate && a.sofAge == b.sofAge;
+               a.avgRtt == b.avgRtt && a.lastRtt == b.lastRtt && a.lossRate == b.lossRate && a.netAvgRtt == b.netAvgRtt &&
+               a.netRtt == b.netRtt && a.netLossRate == b.netLossRate && a.sofAge == b.sofAge;
     }
 
     /// Host 侧同步端点：UDP 同步面 + TCP 命令监听。
@@ -101,6 +108,9 @@ namespace aerovista::sync
         /// 该 peer 最近一次匹配的应用 RTT（主线程 drain 见到回显帧的时刻）。
         /// 无匹配样本或未知 clientId 为空。规则见 多通道同步验收测量设计.md §4.5。
         std::optional<std::chrono::microseconds> rttLast(std::uint64_t clientId) const;
+        /// 该 peer 最近一次匹配的网络 RTT（探测回显到达套接字的时刻）。
+        /// 无匹配样本或未知 clientId 为空。规则见 多通道同步验收测量设计.md §4.8。
+        std::optional<std::chrono::microseconds> netRttLast(std::uint64_t clientId) const;
 
         // ---- 命令面 / 数据面发送（状态同步设计初版.md §7）：引用式发送接口 ----
 
@@ -200,7 +210,12 @@ namespace aerovista::sync
             int udpFromPort = 0;
             bool tcpReady = false;
             bool udpReady = false;
-            AppRttTracker rtt;
+            /// 应用 RTT 配对（§4.5，时限 appRttMatchTimeout）。
+            RttTracker rtt{appRttMatchTimeout};
+            /// 网络探测配对（§4.8，时限 netRttMatchTimeout）。与 rtt 分表。
+            RttTracker netRtt{netRttMatchTimeout};
+            /// 下一发探测序号，按 peer 从 1 递增。
+            std::uint32_t nextProbeSequence = 1;
             /// 主线程 drain 见到该 peer UDP SOF 的时刻；未收到过则为空。
             std::optional<std::chrono::steady_clock::time_point> lastSofAt;
         };
@@ -242,8 +257,12 @@ namespace aerovista::sync
             const std::shared_ptr<TcpSocket>& client, const std::string& peerIp,
             std::uint32_t udpRecvPort, int channelId);
         void recordIgCtrlFanout(std::uint32_t hostFrameNumber, std::chrono::steady_clock::time_point tSend);
+        /// IGCtrl 扇出之后，对每个 udpReady peer 另发一报探测。序号在 sendTo 之前写入 netRtt。
+        void sendNetProbes();
+        void onNetProbeReceived(std::uint32_t sequence, const std::string& fromIp, int fromPort,
+                                std::chrono::steady_clock::time_point tRecv);
         void expireRtt(std::chrono::steady_clock::time_point now);
-        void ingestUdpSof(const UdpIngress& frame, std::chrono::steady_clock::time_point now);
+        void onUdpSofReceived(const UdpIngress& frame, std::chrono::steady_clock::time_point now);
         void pollUdp();
         /// 快照 ready peer，逐个 `sendAll`（`flushTcp` 与中继 `sendTcpMessage` 共用）。
         void fanoutTcp(const unsigned char* buf, int len);

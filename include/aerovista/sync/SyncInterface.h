@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <vector>
 
 namespace aerovista::sync
@@ -11,6 +12,10 @@ namespace aerovista::sync
     class SyncInterface
     {
     public:
+        /// UDP I/O 线程空闲等待上限。数据报到达时 waitReadable 立即返回；
+        /// 无数据时最多睡此时长再回来做一次在途淘汰。Host/IG 共用同一值。
+        static constexpr auto udpIdleWait = std::chrono::milliseconds{1};
+
         virtual ~SyncInterface() = default;
 
         virtual void shutdown() = 0;

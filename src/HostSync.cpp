@@ -149,6 +149,9 @@ namespace aerovista::sync
             row.avgRtt = peer.rtt.avgRtt();
             row.lastRtt = peer.rtt.lastRtt();
             row.lossRate = peer.rtt.lossRate();
+            row.netAvgRtt = peer.netRtt.avgRtt();
+            row.netRtt = peer.netRtt.lastRtt();
+            row.netLossRate = peer.netRtt.lossRate();
             row.sofAge = ageSince(peer.lastSofAt, now);
             rows.push_back(row);
         }
@@ -177,6 +180,17 @@ namespace aerovista::sync
         {
             if (peer.clientId == clientId)
                 return peer.rtt.lastRtt();
+        }
+        return std::nullopt;
+    }
+
+    std::optional<std::chrono::microseconds> HostSync::netRttLast(std::uint64_t clientId) const
+    {
+        std::lock_guard lock(_peersMutex);
+        for (const auto& peer : _peers)
+        {
+            if (peer.clientId == clientId)
+                return peer.netRtt.lastRtt();
         }
         return std::nullopt;
     }
@@ -454,7 +468,7 @@ namespace aerovista::sync
         for (auto& peer : _peers)
         {
             if (peer.tcpReady && peer.udpReady)
-                peer.rtt.onIgCtrlSent(hostFrameNumber, tSend);
+                peer.rtt.onSent(hostFrameNumber, tSend);
         }
     }
 
@@ -465,7 +479,7 @@ namespace aerovista::sync
             peer.rtt.expireInFlightAt(now);
     }
 
-    void HostSync::ingestUdpSof(const UdpIngress& frame, std::chrono::steady_clock::time_point now)
+    void HostSync::onUdpSofReceived(const UdpIngress& frame, std::chrono::steady_clock::time_point now)
     {
         const auto countBefore = _sofProc.count.load();
         processIncomingUdpFrame(frame.bytes.data(), static_cast<int>(frame.bytes.size()));
@@ -479,7 +493,7 @@ namespace aerovista::sync
             if (peer.udpFromPort == frame.fromPort && peer.udpFromIp == frame.fromIp)
             {
                 peer.lastSofAt = now;
-                peer.rtt.onSofReceived(frameCntr, now);
+                peer.rtt.onReceived(frameCntr, now);
                 return;
             }
         }
@@ -491,6 +505,11 @@ namespace aerovista::sync
             return;
 
         const std::string ip = fromIp ? fromIp : "";
+        if (isNetProbe(buf, n))
+        {
+            onNetProbeReceived(netProbeSequence(buf), ip, fromPort, std::chrono::steady_clock::now());
+            return;
+        }
         if (cigi_wire::isSofPacket(buf, n) && !hasUdpReadyPeer(ip, fromPort))
         {
             const auto replyIp = noteUdpSyncPeer(static_cast<std::uint32_t>(fromPort), ip, fromPort);
@@ -533,8 +552,15 @@ namespace aerovista::sync
     {
         while (_threadsRunning)
         {
+            // 探测回显和业务数据报都走这里：到达即读，空闲才等到 udpIdleWait 再淘汰在途探测。
+            _udp.waitReadable(udpIdleWait);
             pollUdp();
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            {
+                std::lock_guard lock(_peersMutex);
+                const auto now = std::chrono::steady_clock::now();
+                for (auto& peer : _peers)
+                    peer.netRtt.expireInFlightAt(now);
+            }
         }
     }
 
@@ -576,7 +602,7 @@ namespace aerovista::sync
             udpFrames.swap(_udpPayloadQueue);
         }
         for (const auto& frame : udpFrames)
-            ingestUdpSof(frame, now);
+            onUdpSofReceived(frame, now);
 
         std::vector<std::vector<unsigned char>> tcpFrames;
         {
@@ -729,7 +755,56 @@ namespace aerovista::sync
         const std::size_t sent = fanoutUdp(buf, len);
         if (sent > 0 && _dataFrameCounter > 0)
             recordIgCtrlFanout(_dataFrameCounter - 1, std::chrono::steady_clock::now());
+        if (sent > 0)
+            sendNetProbes();
 
         omsg.FreeMsg();
+    }
+
+    void HostSync::sendNetProbes()
+    {
+        struct Probe
+        {
+            std::string ip;
+            int port = 0;
+            std::uint32_t sequence = 0;
+        };
+        std::vector<Probe> probes;
+        const auto tSend = std::chrono::steady_clock::now();
+        {
+            std::lock_guard lock(_peersMutex);
+            for (auto& peer : _peers)
+            {
+                if (!peer.tcpReady || !peer.udpReady)
+                    continue;
+                const auto sequence = peer.nextProbeSequence++;
+                peer.netRtt.onSent(sequence, tSend);
+                probes.push_back(Probe{peer.ip, static_cast<int>(peer.udpRecvPort), sequence});
+            }
+        }
+        if (probes.empty())
+            return;
+
+        unsigned char packet[netProbeSize];
+        std::lock_guard lock(_udpMutex);
+        for (const auto& probe : probes)
+        {
+            packNetProbe(probe.sequence, packet);
+            _udp.sendTo(probe.ip, probe.port, packet, netProbeSize);
+        }
+    }
+
+    void HostSync::onNetProbeReceived(std::uint32_t sequence, const std::string& fromIp, int fromPort,
+                                      std::chrono::steady_clock::time_point tRecv)
+    {
+        std::lock_guard lock(_peersMutex);
+        for (auto& peer : _peers)
+        {
+            if (peer.udpFromPort == fromPort && peer.udpFromIp == fromIp)
+            {
+                peer.netRtt.onReceived(sequence, tRecv);
+                return;
+            }
+        }
     }
 } // namespace aerovista::sync

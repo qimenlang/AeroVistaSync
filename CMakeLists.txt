@@ -40,7 +40,8 @@ set(AEROVISTA_SYNC_PUBLIC_HEADERS
     include/aerovista/sync/HostDriver.h
     include/aerovista/sync/HostSync.h
     include/aerovista/sync/PacketProbes.h
-    include/aerovista/sync/AppRttTracker.h
+    include/aerovista/sync/RttTracker.h
+    include/aerovista/sync/NetProbe.h
     include/aerovista/sync/IgSync.h
     include/aerovista/sync/SyncConfig.h
     include/aerovista/sync/SyncInterface.h
@@ -57,7 +58,7 @@ add_library(aerovistaSync STATIC
     src/HostDriver.cpp
     src/HostDriverProbes.cpp
     src/HostSync.cpp
-    src/AppRttTracker.cpp
+    src/RttTracker.cpp
     src/IgSync.cpp
     src/SocketCommon.cpp
     src/SyncConfig.cpp

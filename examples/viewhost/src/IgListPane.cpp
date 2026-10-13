@@ -32,6 +32,16 @@ namespace
         return text;
     }
 
+    // 网络路径 RTT 量级常在个位毫秒以下，按整数微秒显示，便于看抖动（多通道同步验收测量设计.md §4.8）。
+    CString formatNetRttUs(const std::optional<std::chrono::microseconds>& duration)
+    {
+        if (!duration)
+            return _T("--");
+        CString text;
+        text.Format(_T("%lld us"), static_cast<long long>(duration->count()));
+        return text;
+    }
+
     CString formatLossRate(const std::optional<double>& loss)
     {
         if (!loss)
@@ -50,7 +60,10 @@ namespace
         list.SetItemText(index, 2, formatDurationMs(row.avgRtt));
         list.SetItemText(index, 3, formatDurationMs(row.lastRtt));
         list.SetItemText(index, 4, formatLossRate(row.lossRate));
-        list.SetItemText(index, 5, formatDurationMs(row.sofAge));
+        list.SetItemText(index, 5, formatNetRttUs(row.netAvgRtt));
+        list.SetItemText(index, 6, formatNetRttUs(row.netRtt));
+        list.SetItemText(index, 7, formatLossRate(row.netLossRate));
+        list.SetItemText(index, 8, formatDurationMs(row.sofAge));
     }
 } // namespace
 
@@ -96,12 +109,16 @@ void CIgListPane::setupColumns()
     if (width <= 0)
         return;
 
-    const int idWidth = width * 10 / 100;
-    const int statusWidth = width * 14 / 100;
-    const int avgWidth = width * 16 / 100;
-    const int lastWidth = width * 16 / 100;
-    const int lossWidth = width * 14 / 100;
-    const int sofWidth = width - idWidth - statusWidth - avgWidth - lastWidth - lossWidth - 4;
+    const int idWidth = width * 6 / 100;
+    const int statusWidth = width * 8 / 100;
+    const int avgWidth = width * 10 / 100;
+    const int lastWidth = width * 10 / 100;
+    const int lossWidth = width * 8 / 100;
+    const int netAvgWidth = width * 12 / 100;
+    const int netLastWidth = width * 12 / 100;
+    const int netLossWidth = width * 9 / 100;
+    const int sofWidth = width - idWidth - statusWidth - avgWidth - lastWidth - lossWidth - netAvgWidth - netLastWidth -
+                         netLossWidth - 4;
     if (!_columnsReady)
     {
         _list.InsertColumn(0, _T("id"), LVCFMT_LEFT, idWidth);
@@ -109,7 +126,10 @@ void CIgListPane::setupColumns()
         _list.InsertColumn(2, _T("平均RTT"), LVCFMT_LEFT, avgWidth);
         _list.InsertColumn(3, _T("最近RTT"), LVCFMT_LEFT, lastWidth);
         _list.InsertColumn(4, _T("丢包率"), LVCFMT_LEFT, lossWidth);
-        _list.InsertColumn(5, _T("距上次SOF"), LVCFMT_LEFT, sofWidth);
+        _list.InsertColumn(5, _T("网络平均"), LVCFMT_LEFT, netAvgWidth);
+        _list.InsertColumn(6, _T("网络最近"), LVCFMT_LEFT, netLastWidth);
+        _list.InsertColumn(7, _T("网络丢包"), LVCFMT_LEFT, netLossWidth);
+        _list.InsertColumn(8, _T("距上次SOF"), LVCFMT_LEFT, sofWidth);
         _columnsReady = true;
         return;
     }
@@ -119,7 +139,10 @@ void CIgListPane::setupColumns()
     _list.SetColumnWidth(2, avgWidth);
     _list.SetColumnWidth(3, lastWidth);
     _list.SetColumnWidth(4, lossWidth);
-    _list.SetColumnWidth(5, sofWidth);
+    _list.SetColumnWidth(5, netAvgWidth);
+    _list.SetColumnWidth(6, netLastWidth);
+    _list.SetColumnWidth(7, netLossWidth);
+    _list.SetColumnWidth(8, sofWidth);
 }
 
 void CIgListPane::refresh(const std::vector<aerovista::sync::IgConnection>& rows)

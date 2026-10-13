@@ -4,7 +4,7 @@ add_executable(${TARGET_NAME}
     Common.h
     TcpSocketTests.cpp
     UdpSocketTests.cpp
-    AppRttTrackerTests.cpp
+    RttTrackerTests.cpp
     HostDataManagerTests.cpp
     ViewHostMathTests.cpp
     SyncConfigTests.cpp
