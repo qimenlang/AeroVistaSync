@@ -22,16 +22,16 @@ add_executable(aerovistaPlatform WIN32
     src/PlatformFrame.cpp
     src/PlatformView.cpp
     src/SceneTreePane.cpp
-    src/IgListPane.cpp
     src/PacketProbePane.cpp
-    src/CommandPane.cpp
     src/EntityPropDlg.cpp
     src/PlatformMath.cpp
-    src/HudLabel.cpp
+    ../common/src/CommandPane.cpp
+    ../common/src/HudLabel.cpp
+    ../common/src/IgListPane.cpp
     resources/Platform.rc
 )
 
-target_include_directories(aerovistaPlatform PRIVATE src resources)
+target_include_directories(aerovistaPlatform PRIVATE src resources ../common/src)
 
 # MFC 程序标准 Unicode 构建。
 target_compile_definitions(aerovistaPlatform PRIVATE

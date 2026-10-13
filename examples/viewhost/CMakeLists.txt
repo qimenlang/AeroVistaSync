@@ -22,16 +22,16 @@ add_executable(aerovistaViewHost WIN32
     src/ViewHostFrame.cpp
     src/ViewHostView.cpp
     src/SceneTreePane.cpp
-    src/IgListPane.cpp
     src/PacketProbePane.cpp
-    src/CommandPane.cpp
     src/EntityPropDlg.cpp
     src/ViewHostMath.cpp
-    src/HudLabel.cpp
+    ../common/src/CommandPane.cpp
+    ../common/src/HudLabel.cpp
+    ../common/src/IgListPane.cpp
     resources/ViewHost.rc
 )
 
-target_include_directories(aerovistaViewHost PRIVATE src resources)
+target_include_directories(aerovistaViewHost PRIVATE src resources ../common/src)
 
 # MFC 程序标准 Unicode 构建。
 target_compile_definitions(aerovistaViewHost PRIVATE

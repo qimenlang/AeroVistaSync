@@ -193,10 +193,6 @@ namespace aerovista::sync
             }
         }
 
-        // ===== 测试接口 =====
-
-        const HostConfig& addressConfig() const { return _local; }
-
     private:
         struct IgPeer
         {

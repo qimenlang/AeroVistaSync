@@ -110,37 +110,8 @@ namespace
         return actual >= minOk && actual <= exp;
     }
 
-    /// IGCtrl 由 outMsgWithIgCtrlUdp() 自动前置（帧号/自计时时间戳）；hostSendFrame 只发无眼点帧。
-    void hostSendFrame(HostSync& host)
-    {
-        host.outMsgWithIgCtrlUdp();
-        host.flushUdp();
-    }
-
-    bool linkHostIg(HostSync& host, IgSync& ig, int base)
-    {
-        if (!host.initialize(makeTestHostConfig(base)))
-            return false;
-        const IgConfig igConfig = makeTestIgConfig(base + 1, base);
-        if (!ig.initialize(igConfig.udpPortRecv) || !ig.connect(igConfig.target))
-            return false;
-        host.run();
-        return true;
-    }
-
-    std::vector<std::vector<unsigned char>> collectFrames(
-        const std::function<std::vector<std::vector<unsigned char>>()>& take, std::size_t minCount)
-    {
-        std::vector<std::vector<unsigned char>> frames;
-        for (int i = 0; i < 40 && frames.size() < minCount; ++i)
-        {
-            auto more = take();
-            frames.insert(frames.end(), more.begin(), more.end());
-            if (frames.size() < minCount)
-                std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        }
-        return frames;
-    }
+    /// IGCtrl 由 outMsgWithIgCtrlUdp() 自动前置（帧号/自计时时间戳）。
+    // hostSendFrame 已抽到 SyncTestHelpers.h，这里不再重复定义。
 
     struct OwnshipEyeCapture
     {

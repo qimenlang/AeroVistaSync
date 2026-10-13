@@ -36,23 +36,6 @@ namespace
         return std::chrono::steady_clock::time_point{} + std::chrono::microseconds{us};
     }
 
-    void hostSendFrame(HostSync& host)
-    {
-        host.outMsgWithIgCtrlUdp();
-        host.flushUdp();
-    }
-
-    bool linkHostIg(HostSync& host, IgSync& ig, int base)
-    {
-        if (!host.initialize(makeTestHostConfig(base)))
-            return false;
-        const auto igConfig = makeTestIgConfig(base + 1, base);
-        if (!ig.initialize(igConfig.udpPortRecv) || !ig.connect(igConfig.target))
-            return false;
-        host.run();
-        return host.readyIgCount() == 1;
-    }
-
     std::optional<std::chrono::microseconds> waitNetRtt(HostSync& host)
     {
         for (int i = 0; i < 40; ++i)
@@ -409,6 +392,7 @@ SCENARIO("A network probe does not count as a CIGI business packet",
         HostSync host;
         IgSync ig;
         REQUIRE(linkHostIg(host, ig, 18680));
+        REQUIRE(host.readyIgCount() == 1);
 
         WHEN("Host sends one data-plane frame and both sides unpack business packets")
         {
@@ -441,6 +425,7 @@ SCENARIO("Network probe echoes and CIGI SOF update separate RTT samples",
         HostSync host;
         IgSync ig;
         REQUIRE(linkHostIg(host, ig, 18720));
+        REQUIRE(host.readyIgCount() == 1);
 
         WHEN("the probe echo arrives and only afterwards the Host unpacks SOF")
         {
