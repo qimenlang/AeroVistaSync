@@ -285,7 +285,7 @@ namespace aerovista::sync
                                                      std::uint16_t startPacketId)
             {
                 std::size_t msgLen = firstSize;
-                for (;;)
+                while (true)
                 {
                     if (buf.size() - offset < msgLen + 4)
                         return msgLen; // 读不到下一个包头：乐观认为消息到此结束
@@ -314,7 +314,7 @@ namespace aerovista::sync
             // 消息级分帧：一条消息 = startPacketId 开头 + 后续非起点包。
             // Host→IG 起点 IGCtrl；IG→Host TCP 起点 SOF。必须按完整消息切，而非单包。
             std::size_t offset = 0;
-            for (;;)
+            while (true)
             {
                 if (_buf.size() - offset < 4)
                     break; // 头不够（PacketSize 2B + PacketID 2B），等更多数据

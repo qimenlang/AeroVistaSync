@@ -142,7 +142,6 @@ namespace aerovista::sync
         for (const auto& peer : _peers)
         {
             IgConnection row;
-            row.id = peer.clientId;
             row.channelId = peer.channelId;
             row.tcpReady = peer.tcpReady;
             row.udpReady = peer.udpReady;
@@ -173,23 +172,23 @@ namespace aerovista::sync
         return _sofProc.count.load();
     }
 
-    std::optional<std::chrono::microseconds> HostSync::rttLast(std::uint64_t clientId) const
+    std::optional<std::chrono::microseconds> HostSync::rttLast(int channelId) const
     {
         std::lock_guard lock(_peersMutex);
         for (const auto& peer : _peers)
         {
-            if (peer.clientId == clientId)
+            if (peer.channelId == channelId)
                 return peer.rtt.lastRtt();
         }
         return std::nullopt;
     }
 
-    std::optional<std::chrono::microseconds> HostSync::netRttLast(std::uint64_t clientId) const
+    std::optional<std::chrono::microseconds> HostSync::netRttLast(int channelId) const
     {
         std::lock_guard lock(_peersMutex);
         for (const auto& peer : _peers)
         {
-            if (peer.clientId == clientId)
+            if (peer.channelId == channelId)
                 return peer.netRtt.lastRtt();
         }
         return std::nullopt;
@@ -216,7 +215,7 @@ namespace aerovista::sync
             if (!_udp.valid())
                 return;
 
-            for (;;)
+            while (true)
             {
                 Packet p{};
                 p.n = _udp.recvFrom(p.buf, sizeof(p.buf), p.fromIp, sizeof(p.fromIp), &p.fromPort);
@@ -323,67 +322,67 @@ namespace aerovista::sync
         }
     }
 
-    void HostSync::handleClient(std::shared_ptr<TcpSocket> client, std::string peerIp)
+    std::optional<int> HostSync::completeHello(const std::shared_ptr<TcpSocket>& client, const std::string& peerIp)
     {
         std::vector<unsigned char> helloFrame;
         if (!recvCigiHello(*client, helloFrame))
-            return;
+            return std::nullopt;
 
         const auto hello = cigi_wire::parseHello(helloFrame.data(), static_cast<int>(helloFrame.size()));
         if (!hello)
-            return;
+            return std::nullopt;
 
-        const auto accepted = tryAddHelloPeer(client, peerIp, hello->udpRecvPort, hello->channelId);
-        if (!accepted)
-            return;
+        const auto udpAlready = tryAddHelloPeer(client, peerIp, hello->udpRecvPort, hello->channelId);
+        if (!udpAlready)
+            return std::nullopt;
 
-        if (accepted->second)
+        if (*udpAlready)
             sendUdpSyncAck(peerIp, static_cast<int>(hello->udpRecvPort));
-
-        commandReadLoop(client, accepted->first, hello->channelId);
-        markPeerDisconnected(accepted->first);
+        return hello->channelId;
     }
 
-    void HostSync::enqueueIncomingTcp(int channelId, const std::vector<unsigned char>& frame)
+    void HostSync::handleClient(std::shared_ptr<TcpSocket> client, std::string peerIp)
     {
-        if (channelId != masterChannelId)
+        const auto channelId = completeHello(client, peerIp);
+
+        // 侧通道 TCP 留在 peer 上供扇出；只有 master 读业务帧。
+        if (!channelId || *channelId != masterChannelId)
             return;
-        std::lock_guard lock(_tcpPayloadMutex);
-        _tcpPayloadQueue.push_back(frame);
+
+        commandReadLoop(client);
+        markPeerDisconnected(*channelId);
     }
 
-    void HostSync::commandReadLoop(const std::shared_ptr<TcpSocket>& client, std::uint64_t clientId, int channelId)
+    void HostSync::commandReadLoop(const std::shared_ptr<TcpSocket>& client)
     {
-        // TCP 读循环：recv → 分帧；仅 master 入队。侧通道仍 recv，只靠 UDP SOF 保活。
-        // PEER_CLOSED / IO_ERROR → 断线。HELLO 已在 handleClient 消费，不进队列。
+        // HELLO 已在 handleClient 消费。PEER_CLOSED / IO_ERROR → 返回，由调用方摘 peer。
         cigi_wire::CigiFrameAssembler assembler(CIGI_SOF_PACKET_ID_V4);
         unsigned char cmdBuf[4096];
-        for (;;)
+        while (true)
         {
             const RecvOutcome outcome = client->recv(cmdBuf, sizeof(cmdBuf));
             if (outcome.kind == RecvKind::PEER_CLOSED || outcome.kind == RecvKind::IO_ERROR)
                 break;
             if (outcome.kind == RecvKind::TIMEOUT)
                 continue; // 读超时（SO_RCVTIMEO）≠ 断线
-            assembler.feed(cmdBuf, outcome.bytes, [this, channelId](const std::vector<unsigned char>& frame) {
-                enqueueIncomingTcp(channelId, frame);
+            assembler.feed(cmdBuf, outcome.bytes, [this](const std::vector<unsigned char>& frame) {
+                std::lock_guard lock(_tcpPayloadMutex);
+                _tcpPayloadQueue.push_back(frame);
             });
         }
-        (void)clientId;
     }
 
-    void HostSync::markPeerDisconnected(std::uint64_t clientId)
+    void HostSync::markPeerDisconnected(int channelId)
     {
         std::lock_guard lock(_peersMutex);
         for (auto it = _peers.begin(); it != _peers.end(); ++it)
         {
-            if (it->clientId == clientId)
-            {
-                if (it->tcp)
-                    it->tcp->close();
-                _peers.erase(it);
-                return;
-            }
+            if (it->channelId != channelId)
+                continue;
+            if (it->tcp)
+                it->tcp->close();
+            _peers.erase(it);
+            return;
         }
     }
 
@@ -397,16 +396,14 @@ namespace aerovista::sync
         return false;
     }
 
-    std::optional<std::pair<std::uint64_t, bool>> HostSync::tryAddHelloPeer(
+    std::optional<bool> HostSync::tryAddHelloPeer(
         const std::shared_ptr<TcpSocket>& client, const std::string& peerIp, std::uint32_t udpRecvPort, int channelId)
     {
         std::lock_guard lock(_peersMutex);
         if (channelIdInUseUnlocked(channelId))
             return std::nullopt;
 
-        const std::uint64_t clientId = ++_nextClientId;
         IgPeer peer;
-        peer.clientId = clientId;
         peer.tcp = client;
         peer.ip = peerIp;
         peer.udpRecvPort = udpRecvPort;
@@ -422,7 +419,7 @@ namespace aerovista::sync
         }
         peer.udpReady = udpAlready;
         _peers.push_back(std::move(peer));
-        return std::make_pair(clientId, udpAlready);
+        return udpAlready;
     }
 
     std::optional<std::string> HostSync::noteUdpSyncPeer(std::uint32_t udpRecvPort, const std::string& fromIp, int fromPort)

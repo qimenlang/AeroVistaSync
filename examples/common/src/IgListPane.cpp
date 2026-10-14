@@ -53,9 +53,9 @@ namespace
 
     void writeIgListRow(CListCtrl& list, int index, const aerovista::sync::IgConnection& row)
     {
-        CString id;
-        id.Format(_T("%llu"), static_cast<unsigned long long>(row.id));
-        list.SetItemText(index, 0, id);
+        CString channelId;
+        channelId.Format(_T("%d"), row.channelId);
+        list.SetItemText(index, 0, channelId);
         list.SetItemText(index, 1, igLinkStatus(row));
         list.SetItemText(index, 2, formatDurationMs(row.avgRtt));
         list.SetItemText(index, 3, formatDurationMs(row.lastRtt));
@@ -121,7 +121,7 @@ void CIgListPane::setupColumns()
                          netLossWidth - 4;
     if (!_columnsReady)
     {
-        _list.InsertColumn(0, _T("id"), LVCFMT_LEFT, idWidth);
+        _list.InsertColumn(0, _T("channelId"), LVCFMT_LEFT, idWidth);
         _list.InsertColumn(1, _T("状态"), LVCFMT_LEFT, statusWidth);
         _list.InsertColumn(2, _T("平均RTT"), LVCFMT_LEFT, avgWidth);
         _list.InsertColumn(3, _T("最近RTT"), LVCFMT_LEFT, lastWidth);

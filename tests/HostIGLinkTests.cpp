@@ -533,6 +533,11 @@ SCENARIO("Host rejects a later IG HELLO that reuses channelId",
     }
 }
 
+// =============================================================================
+// 两台 IG 都经 TCP 上报时，Host 只解出 master 的 IGMsg
+// （平台同步设计.md §6.3，码 PLT-hello-ch）。
+// 侧通道完成 HELLO 后不再 recv。断言只看 Host 回调里没有侧通道正文，不验套接字缓冲。
+// =============================================================================
 SCENARIO("Host unpacks only the master IG TCP report when both IGs send",
          "[acceptance][bdd][platform][PLT-hello-ch]")
 {
@@ -550,7 +555,7 @@ SCENARIO("Host unpacks only the master IG TCP report when both IGs send",
 
         WHEN("both IGs send distinct TCP reports")
         {
-            // 握手后仅 master TCP 入队；侧通道仍 recv，不入队。
+            // 握手后仅 master 进入读循环；侧通道不再 recv。
             {
                 auto& tcp = master.outMsgWithSofTcp();
                 CigiIGMsgV4 report;
@@ -748,6 +753,11 @@ SCENARIO("connected Host and IG enter RUNNING and exchange CIGI IGCtrl each upda
     }
 }
 
+// =============================================================================
+// 握手完成后 Host 连发数据面 IGCtrl，IG 回 SOF，核对应用 RTT 为正
+// （多通道同步验收测量设计.md §4.5，码 MEAS-rtt）。
+// 按 channelId 取 rttLast，并与快照里的 lastRtt 一致。
+// =============================================================================
 SCENARIO("Host records a positive application RTT sample",
          "[integration][sync][meas][MEAS-rtt]")
 {
@@ -775,7 +785,7 @@ SCENARIO("Host records a positive application RTT sample",
                 host.drainIncoming();
                 const auto peers = host.igSnapshot();
                 REQUIRE_FALSE(peers.empty());
-                const auto last = host.rttLast(peers.front().id);
+                const auto last = host.rttLast(peers.front().channelId);
                 REQUIRE(last.has_value());
                 REQUIRE(*last > std::chrono::microseconds{0});
                 REQUIRE(peers.front().lastRtt == last);

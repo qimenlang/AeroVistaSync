@@ -43,7 +43,7 @@ namespace
             const auto peers = host.igSnapshot();
             if (!peers.empty())
             {
-                if (auto sample = host.netRttLast(peers.front().id))
+                if (auto sample = host.netRttLast(peers.front().channelId))
                     return sample;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds{2});
@@ -51,7 +51,7 @@ namespace
         const auto peers = host.igSnapshot();
         if (peers.empty())
             return std::nullopt;
-        return host.netRttLast(peers.front().id);
+        return host.netRttLast(peers.front().channelId);
     }
 
     std::uint32_t waitSofReceived(HostSync& host)
@@ -433,7 +433,7 @@ SCENARIO("Network probe echoes and CIGI SOF update separate RTT samples",
             const auto netBefore = waitNetRtt(host);
             const auto peers = host.igSnapshot();
             REQUIRE_FALSE(peers.empty());
-            const auto appBefore = host.rttLast(peers.front().id);
+            const auto appBefore = host.rttLast(peers.front().channelId);
 
             ig.drainIncoming(/*sendSof=*/true);
             std::optional<std::chrono::microseconds> netAfter;
@@ -441,8 +441,8 @@ SCENARIO("Network probe echoes and CIGI SOF update separate RTT samples",
             for (int i = 0; i < 40; ++i)
             {
                 host.drainIncoming();
-                netAfter = host.netRttLast(peers.front().id);
-                appAfter = host.rttLast(peers.front().id);
+                netAfter = host.netRttLast(peers.front().channelId);
+                appAfter = host.rttLast(peers.front().channelId);
                 if (appAfter)
                     break;
                 std::this_thread::sleep_for(std::chrono::milliseconds{2});

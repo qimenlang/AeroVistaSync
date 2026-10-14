@@ -48,10 +48,9 @@
 
 namespace aerovista::sync
 {
-    /// Host 侧一条 IG 连接的观测快照（id = Host 分配的 clientId，不是 IG channelId）。
+    /// Host 侧一条 IG 连接的观测快照。身份是 HELLO 学到的 `channelId`。
     struct IgConnection
     {
-        std::uint64_t id = 0;
         int channelId = 0; ///< HELLO 学到的 IG syncSystem.channelId
         bool tcpReady = false;
         bool udpReady = false;
@@ -73,7 +72,7 @@ namespace aerovista::sync
 
     inline bool operator==(const IgConnection& a, const IgConnection& b)
     {
-        return a.id == b.id && a.channelId == b.channelId && a.tcpReady == b.tcpReady && a.udpReady == b.udpReady &&
+        return a.channelId == b.channelId && a.tcpReady == b.tcpReady && a.udpReady == b.udpReady &&
                a.avgRtt == b.avgRtt && a.lastRtt == b.lastRtt && a.lossRate == b.lossRate && a.netAvgRtt == b.netAvgRtt &&
                a.netRtt == b.netRtt && a.netLossRate == b.netLossRate && a.sofAge == b.sofAge;
     }
@@ -106,11 +105,11 @@ namespace aerovista::sync
         /// 本会话已解包的 SOF 数（观测无副作用；调用方须先 drainIncoming）。
         std::uint32_t sofReceivedCount() const;
         /// 该 peer 最近一次匹配的应用 RTT（主线程 drain 见到回显帧的时刻）。
-        /// 无匹配样本或未知 clientId 为空。规则见 多通道同步验收测量设计.md §4.5。
-        std::optional<std::chrono::microseconds> rttLast(std::uint64_t clientId) const;
+        /// 无匹配样本或未知 channelId 为空。规则见 多通道同步验收测量设计.md §4.5。
+        std::optional<std::chrono::microseconds> rttLast(int channelId) const;
         /// 该 peer 最近一次匹配的网络 RTT（探测回显到达套接字的时刻）。
-        /// 无匹配样本或未知 clientId 为空。规则见 多通道同步验收测量设计.md §4.8。
-        std::optional<std::chrono::microseconds> netRttLast(std::uint64_t clientId) const;
+        /// 无匹配样本或未知 channelId 为空。规则见 多通道同步验收测量设计.md §4.8。
+        std::optional<std::chrono::microseconds> netRttLast(int channelId) const;
 
         // ---- 命令面 / 数据面发送（状态同步设计初版.md §7）：引用式发送接口 ----
 
@@ -196,7 +195,6 @@ namespace aerovista::sync
     private:
         struct IgPeer
         {
-            std::uint64_t clientId = 0;
             std::shared_ptr<TcpSocket> tcp;
             std::string ip;
             uint32_t udpRecvPort = 0;
@@ -232,11 +230,13 @@ namespace aerovista::sync
         void acceptLoop();
         void udpLoop();
         void handleClient(std::shared_ptr<TcpSocket> client, std::string peerIp);
-        /// TCP 读循环：recv → 分帧；仅 master 入 `_tcpPayloadQueue`。侧通道仍 recv（保活），不入队。
-        /// HELLO 已在 handleClient 消费。PEER_CLOSED/错误 → 断线。
-        void commandReadLoop(const std::shared_ptr<TcpSocket>& client, std::uint64_t clientId, int channelId);
-        /// 仅 `channelId==0` 入 `_tcpPayloadQueue`。
-        void enqueueIncomingTcp(int channelId, const std::vector<unsigned char>& frame);
+        /// 读一条 HELLO 并登记 peer。UDP 探测已先到时补发 IGCtrl ACK。失败或重复 channelId 返回空。
+        std::optional<int> completeHello(const std::shared_ptr<TcpSocket>& client, const std::string& peerIp);
+        /// master 的 TCP 读循环：recv → 分帧 → 入 `_tcpPayloadQueue`。
+        /// HELLO 已在 handleClient 消费。PEER_CLOSED/错误 → 返回。
+        void commandReadLoop(const std::shared_ptr<TcpSocket>& client);
+        /// master 读循环结束后按 channelId 关 TCP 并从表里删除，readyIgCount 随之下降。
+        void markPeerDisconnected(int channelId);
         void joinClientThreads();
         int countReadyUnlocked() const;
         /// I/O 线程处理一条 UDP 数据报：未 udpReady 的 SOF 当 UDP_SYNC 即时回 IGCtrl ACK；其余入队。
@@ -248,8 +248,8 @@ namespace aerovista::sync
         void sendUdpSyncAck(const std::string& ip, int udpRecvPort);
         bool channelIdInUseUnlocked(int channelId) const;
         bool hasUdpReadyPeer(const std::string& fromIp, int fromPort) const;
-        /// HELLO 验收：重复 channelId 拒绝；成功则返回 {clientId, udpAlready}。
-        std::optional<std::pair<std::uint64_t, bool>> tryAddHelloPeer(
+        /// HELLO 验收：重复 channelId 拒绝。成功时返回 UDP 探测是否已先到。
+        std::optional<bool> tryAddHelloPeer(
             const std::shared_ptr<TcpSocket>& client, const std::string& peerIp,
             std::uint32_t udpRecvPort, int channelId);
         void recordIgCtrlFanout(std::uint32_t hostFrameNumber, std::chrono::steady_clock::time_point tSend);
@@ -296,8 +296,6 @@ namespace aerovista::sync
         void registerTcpProcessors(CigiHostSession& session);
         /// 把命令面捕获绑到指定 session。`outRecord` 非空时同时写入 `_captureProcs`（只在 TCP 注册时记一次）。
         void attachCommandCaptures(CigiHostSession& session, std::vector<CigiBaseEventProcessor*>* outRecord);
-
-        void markPeerDisconnected(std::uint64_t clientId);
 
         /// 当前自计时模拟时间 ms（steady_clock 从 _startTime 起流逝，状态同步设计初版.md §7.1）。
         double currentSimTimeMs() const
@@ -356,7 +354,6 @@ namespace aerovista::sync
         std::chrono::steady_clock::time_point _startTime{}; ///< 自计时起点（initialize 时记录）
         bool _tcpMsgOpen = false;                           ///< 当前 TCP 消息已填 IGCtrl 帧头（去重；flushTcp 重置）
         bool _udpMsgOpen = false;                           ///< 当前 UDP 消息已填 IGCtrl 帧头（去重；flushUdp 重置）
-        std::uint64_t _nextClientId = 0;
 
         // 收包 payload 队列：I/O 线程入队，主线程取出。
         // UDP 一条数据报 = 一条 CIGI 消息；TCP 需分帧（§4.2）。
