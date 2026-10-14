@@ -52,7 +52,7 @@ namespace
 
     IgConfig makeIgLocal(int udpRecvPort = 8001)
     {
-        return IgConfig{udpRecvPort, {"127.0.0.1", 8100, 8000}};
+        return IgConfig{udpRecvPort, "127.0.0.1", 8100, 8000};
     }
 
     bool startHostTwoIgs(HostSync& host, IgSync& master, IgSync& side, int base)
@@ -61,13 +61,13 @@ namespace
             return false;
         const IgConfig masterCfg = makeTestIgConfig(base + 1, base);
         const IgConfig sideCfg = makeTestIgConfig(base + 3, base);
-        if (!master.initialize(masterCfg.udpPortRecv, 0))
+        if (!master.initialize(masterCfg.udpRecvPort, 0))
             return false;
-        if (!side.initialize(sideCfg.udpPortRecv, 1))
+        if (!side.initialize(sideCfg.udpRecvPort, 1))
             return false;
-        if (!master.connect(masterCfg.target))
+        if (!master.connect(masterCfg))
             return false;
-        if (!side.connect(sideCfg.target))
+        if (!side.connect(sideCfg))
             return false;
         return host.readyIgCount() == 2;
     }
@@ -323,7 +323,7 @@ SCENARIO("IG initializes disconnected from any Host", "[integration][sync][initi
 
         WHEN("it is initialized")
         {
-            const bool ok = ig.initialize(makeIgLocal().udpPortRecv);
+            const bool ok = ig.initialize(makeIgLocal().udpRecvPort);
 
             THEN("initialization succeeds and it is not connected to a Host yet")
             {
@@ -340,11 +340,11 @@ SCENARIO("IG connect fails when Host is not running", "[integration][sync][conne
     GIVEN("an IG initialized without a running Host")
     {
         IgSync ig;
-        REQUIRE(ig.initialize(makeIgLocal().udpPortRecv));
+        REQUIRE(ig.initialize(makeIgLocal().udpRecvPort));
 
         WHEN("the IG connects to a Host endpoint")
         {
-            const bool connected = ig.connect(makeIgLocal().target);
+            const bool connected = ig.connect(makeIgLocal());
 
             THEN("connect fails and neither plane reports connected")
             {
@@ -367,11 +367,11 @@ SCENARIO("IG connects successfully when Host is already waiting", "[integration]
         AND_GIVEN("an IG that has been initialized")
         {
             IgSync ig;
-            REQUIRE(ig.initialize(makeIgLocal().udpPortRecv));
+            REQUIRE(ig.initialize(makeIgLocal().udpRecvPort));
 
             WHEN("the IG connects to the Host endpoint")
             {
-                const bool connected = ig.connect(makeIgLocal().target);
+                const bool connected = ig.connect(makeIgLocal());
 
                 THEN("both planes are synced and Host has one ready IG")
                 {
@@ -393,8 +393,8 @@ SCENARIO("IG disconnects when Host goes offline", "[integration][sync][connect][
         HostSync host;
         IgSync ig;
         REQUIRE(host.initialize(makeHostLocal()));
-        REQUIRE(ig.initialize(makeIgLocal().udpPortRecv));
-        REQUIRE(ig.connect(makeIgLocal().target));
+        REQUIRE(ig.initialize(makeIgLocal().udpRecvPort));
+        REQUIRE(ig.connect(makeIgLocal()));
         REQUIRE(ig.tcpConnected());
         REQUIRE(ig.udpSynced());
 
@@ -422,13 +422,13 @@ SCENARIO("IG connect fails when UDP peer ports are wrong but TCP port is valid",
         AND_GIVEN("an IG initialized with correct local ports")
         {
             IgSync ig;
-            REQUIRE(ig.initialize(makeIgLocal().udpPortRecv));
+            REQUIRE(ig.initialize(makeIgLocal().udpRecvPort));
 
             WHEN("the IG connects using a Host target with wrong UDP ports")
             {
-                // Connect 使用 HostTarget::udpPortRecv 作为 Host UDP 收端口。
-                IgConfig badUdpConfig{8001, {"127.0.0.1", 8100, 9999}};
-                const bool connected = ig.connect(badUdpConfig.target);
+                // Connect 使用 IgConfig::hostUdpRecvPort 作为 Host UDP 收端口。
+                IgConfig badUdpConfig{8001, "127.0.0.1", 8100, 9999};
+                const bool connected = ig.connect(badUdpConfig);
 
                 THEN("overall connect fails and neither plane is ready")
                 {
@@ -453,11 +453,11 @@ SCENARIO("Host accepts multiple co-located IG connections", "[integration][sync]
         {
             IgSync ig1;
             IgSync ig2;
-            REQUIRE(ig1.initialize(makeIgLocal(8001).udpPortRecv, 0));
-            REQUIRE(ig2.initialize(makeIgLocal(8003).udpPortRecv, 1));
+            REQUIRE(ig1.initialize(makeIgLocal(8001).udpRecvPort, 0));
+            REQUIRE(ig2.initialize(makeIgLocal(8003).udpRecvPort, 1));
 
-            REQUIRE(ig1.connect(makeIgLocal(8001).target));
-            REQUIRE(ig2.connect(makeIgLocal(8003).target));
+            REQUIRE(ig1.connect(makeIgLocal(8001)));
+            REQUIRE(ig2.connect(makeIgLocal(8003)));
 
             THEN("both IGs are synced and Host reports two ready IGs")
             {
@@ -482,11 +482,11 @@ SCENARIO("Host snapshot records the channelId from IG HELLO",
         AND_GIVEN("an IG initialized as channel 2")
         {
             IgSync ig;
-            REQUIRE(ig.initialize(makeIgLocal().udpPortRecv, 2));
+            REQUIRE(ig.initialize(makeIgLocal().udpRecvPort, 2));
 
             WHEN("the IG connects")
             {
-                REQUIRE(ig.connect(makeIgLocal().target));
+                REQUIRE(ig.connect(makeIgLocal()));
 
                 THEN("igSnapshot carries channelId 2")
                 {
@@ -508,15 +508,15 @@ SCENARIO("Host rejects a later IG HELLO that reuses channelId",
         HostSync host;
         IgSync first;
         REQUIRE(host.initialize(makeHostLocal()));
-        REQUIRE(first.initialize(makeIgLocal(8001).udpPortRecv, 1));
-        REQUIRE(first.connect(makeIgLocal(8001).target));
+        REQUIRE(first.initialize(makeIgLocal(8001).udpRecvPort, 1));
+        REQUIRE(first.connect(makeIgLocal(8001)));
         REQUIRE(host.readyIgCount() == 1);
 
         WHEN("a second IG connects with the same channelId")
         {
             IgSync second;
-            REQUIRE(second.initialize(makeIgLocal(8003).udpPortRecv, 1));
-            const bool connected = second.connect(makeIgLocal(8003).target);
+            REQUIRE(second.initialize(makeIgLocal(8003).udpRecvPort, 1));
+            const bool connected = second.connect(makeIgLocal(8003));
 
             THEN("the later HELLO is refused and the first peer stays")
             {
@@ -627,7 +627,7 @@ TEST_CASE("IG HELLO on TCP starts with CIGI SOF", "[unit][sync][wire-contract][H
     IgSync ig;
     REQUIRE(ig.initialize(19117, 2));
 
-    std::thread connecting([&] { ig.connect({"127.0.0.1", tcpPort, 19118}); });
+    std::thread connecting([&] { ig.connect(IgConfig{19117, "127.0.0.1", tcpPort, 19118}); });
 
     TcpSocket accepted;
     for (int i = 0; i < 100 && !listener.accept(accepted); ++i)
@@ -723,8 +723,8 @@ SCENARIO("connected Host and IG enter RUNNING and exchange CIGI IGCtrl each upda
         HostSync host;
         IgSync ig;
         REQUIRE(host.initialize(makeHostLocal()));
-        REQUIRE(ig.initialize(makeIgLocal().udpPortRecv));
-        REQUIRE(ig.connect(makeIgLocal().target));
+        REQUIRE(ig.initialize(makeIgLocal().udpRecvPort));
+        REQUIRE(ig.connect(makeIgLocal()));
 
         WHEN("Host runs and sends 10 CIGI IGCtrl frames while IG updates")
         {
@@ -756,8 +756,8 @@ SCENARIO("Host records a positive application RTT sample",
         HostSync host;
         IgSync ig;
         REQUIRE(host.initialize(makeHostLocal()));
-        REQUIRE(ig.initialize(makeIgLocal().udpPortRecv));
-        REQUIRE(ig.connect(makeIgLocal().target));
+        REQUIRE(ig.initialize(makeIgLocal().udpRecvPort));
+        REQUIRE(ig.connect(makeIgLocal()));
 
         WHEN("Host sends IGCtrl frames and the IG echoes each one")
         {
@@ -798,8 +798,8 @@ SCENARIO("IG replies with one CIGI SOF per received IGCtrl", "[integration][sync
         HostSync host;
         IgSync ig;
         REQUIRE(host.initialize(makeHostLocal()));
-        REQUIRE(ig.initialize(makeIgLocal().udpPortRecv));
-        REQUIRE(ig.connect(makeIgLocal().target));
+        REQUIRE(ig.initialize(makeIgLocal().udpRecvPort));
+        REQUIRE(ig.connect(makeIgLocal()));
 
         WHEN("Host sends 10 CIGI IGCtrl and IG updates each frame (reply SOF)")
         {
@@ -840,8 +840,8 @@ SCENARIO("Host keeps sending CIGI IGCtrl when IG never replies SOF",
         HostSync host;
         IgSync ig;
         REQUIRE(host.initialize(makeHostLocal()));
-        REQUIRE(ig.initialize(makeIgLocal().udpPortRecv));
-        REQUIRE(ig.connect(makeIgLocal().target));
+        REQUIRE(ig.initialize(makeIgLocal().udpRecvPort));
+        REQUIRE(ig.connect(makeIgLocal()));
 
         WHEN("Host sends 10 CIGI IGCtrl while IG receives but never replies SOF")
         {
@@ -882,8 +882,8 @@ SCENARIO("IG received CIGI FrameCntr values follow Host frame numbers",
         HostSync host;
         IgSync ig;
         REQUIRE(host.initialize(makeHostLocal()));
-        REQUIRE(ig.initialize(makeIgLocal().udpPortRecv));
-        REQUIRE(ig.connect(makeIgLocal().target));
+        REQUIRE(ig.initialize(makeIgLocal().udpRecvPort));
+        REQUIRE(ig.connect(makeIgLocal()));
 
         // 回调只记下解出的 FrameCntr，供 Then 核对。
         std::vector<std::uint32_t> frames;
@@ -944,9 +944,9 @@ SCENARIO("host and IG both load standalone sync configs and exchange CIGI",
             R"(, "tcpPort": )" + std::to_string(kBase + 100) + R"( } })");
         // IG 独立配置（本地 udpRecv=base+3，target 指向 host 的 tcp=base+100 / udpRecv=base）。
         const TempConfigFile igFile(
-            std::string(R"({ "igConfig": { "udpPortRecv": )") + std::to_string(kBase + 3) +
-            R"(, "targetAddr": "127.0.0.1", "targetTcpPort": )" + std::to_string(kBase + 100) +
-            R"(, "targetUdpPortRecv": )" + std::to_string(kBase) + R"( } })");
+            std::string(R"({ "igConfig": { "udpRecvPort": )") + std::to_string(kBase + 3) +
+            R"(, "hostAddr": "127.0.0.1", "hostTcpPort": )" + std::to_string(kBase + 100) +
+            R"(, "hostUdpRecvPort": )" + std::to_string(kBase) + R"( } })");
 
         HostConfig host;
         std::string hostError;
@@ -960,8 +960,8 @@ SCENARIO("host and IG both load standalone sync configs and exchange CIGI",
         hostSync->run();
 
         IgSync igSync;
-        REQUIRE(igSync.initialize(ig.udpPortRecv, /*channelId=*/2));
-        REQUIRE(igSync.connect(ig.target));
+        REQUIRE(igSync.initialize(ig.udpRecvPort, /*channelId=*/2));
+        REQUIRE(igSync.connect(ig));
 
         WHEN("IG connects to host and both link")
         {

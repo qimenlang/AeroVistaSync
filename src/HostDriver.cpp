@@ -232,9 +232,9 @@ namespace aerovista::sync
         if (!_virtualIg)
             _virtualIg = std::make_unique<IgSync>();
         // 虚 IG 对平台 HELLO 恒 channelId=0（平台同步设计.md §6.3）。
-        if (!_virtualIg->initialize(_igConfig->udpPortRecv, 0))
+        if (!_virtualIg->initialize(_igConfig->udpRecvPort, 0))
             return;
-        _virtualIg->connect(_igConfig->target);
+        _virtualIg->connect(*_igConfig);
     }
 
     bool HostDriver::isRunning() const

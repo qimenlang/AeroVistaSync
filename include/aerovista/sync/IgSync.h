@@ -87,9 +87,9 @@ namespace aerovista::sync
 
         // ---- 生命周期 ----
         /// 本端 UDP bind；未连接。`channelId` 写入随后 HELLO（缺省 0）。
-        bool initialize(int udpPortRecv, int channelId = 0);
-        /// TCP CIGI HELLO + UDP_SYNC。可换 Host、可重连（不改本端 UDP 端口）。无 TCP ACK。
-        bool connect(const HostTarget& target);
+        bool initialize(int udpRecvPort, int channelId = 0);
+        /// TCP CIGI HELLO + UDP_SYNC。可换 Host、可重连（不改本端 `udpRecvPort`）。无 TCP ACK。
+        bool connect(const IgConfig& igConfig);
         void shutdown() override;
 
         // ---- 帧循环收包（Engine::preFrame 每帧驱动）----
@@ -105,7 +105,7 @@ namespace aerovista::sync
         /// 中继：已切齐 IG→Host TCP 消息原样 `sendAll`（平台同步设计.md §6.3 / §8）。
         /// 不加 SOF。空消息跳过。
         void sendTcpMessage(const std::vector<unsigned char>& message) override;
-        /// 中继：已切齐 UDP 数据报原样 `sendto` Host（`HostTarget::udpPortRecv`）。不加 SOF。空消息跳过。
+        /// 中继：已切齐 UDP 数据报原样 `sendto` Host（`IgConfig::hostUdpRecvPort`）。不加 SOF。空消息跳过。
         void sendUdpMessage(const std::vector<unsigned char>& message) override;
         /// 中继：按已取出的数据面 UDP IGCtrl 头 FrameCntr `packSof` 回 Host。
         /// 不依赖 `sendto` 是否有 ready peer。非 IGCtrl 开头则跳过。
@@ -166,7 +166,7 @@ namespace aerovista::sync
         void flushTcp() override;
 
         /// UDP 出站 OutgoingMsg：业务侧 << 报文后调 flushUdp 发送（IG→Host UDP 上报/回传）。
-        /// 以 CigiSOFV4 帧头开消息（CCL 要求 IG 消息以 SOF 开头）；目标 = `_local.target.udpPortRecv`。
+        /// 以 CigiSOFV4 帧头开消息（CCL 要求 IG 消息以 SOF 开头）；目标 = `_local.hostUdpRecvPort`。
         /// 绑定 _udpSession（状态同步设计初版.md §5.1 双 session）。单次 flush 周期内可多次调用填充报文——
         /// 帧头只填一次（去重），flushUdp 后重置（状态同步设计初版.md §8.1）。
         CigiOutgoingMsg& outMsgWithSofUdp()
@@ -228,7 +228,7 @@ namespace aerovista::sync
 
         void drainUdp();
         bool waitUdpAck(int timeoutMs);
-        bool connectOnce(const HostTarget& target);
+        bool connectOnce(const IgConfig& igConfig);
         void sendSofPacket(std::uint32_t frameCntr);
         void markDisconnected();
         /// UDP 生产-消费等待：I/O 线程 1ms 轮询，drain 空队列时最多再等 2ms（两个 poll 周期），

@@ -18,7 +18,7 @@ using aerovista::sync::HostConfig;
 using aerovista::sync::HostSync;
 using aerovista::sync::IgConfig;
 using aerovista::sync::IgSync;
-using aerovista::sync::SyncSystemConfig;
+using aerovista::sync::SyncSystem;
 
 // =============================================================================
 // Host/IG 网络角色配置辅助。各测试文件传不同 base 隔离端口，避免并行冲突。
@@ -31,12 +31,12 @@ inline HostConfig makeTestHostConfig(int base)
 
 inline IgConfig makeTestIgConfig(int udpRecvPort, int base)
 {
-    return IgConfig{udpRecvPort, {"127.0.0.1", base + 100, base}};
+    return IgConfig{udpRecvPort, "127.0.0.1", base + 100, base};
 }
 
-inline SyncSystemConfig makeTestSyncSystem(int channelId, bool requireConnectedIg = true)
+inline SyncSystem makeTestSyncSystem(int channelId, bool requireConnectedIg = true)
 {
-    SyncSystemConfig syncSystem;
+    SyncSystem syncSystem;
     syncSystem.channelId = channelId;
     syncSystem.requireConnectedIg = requireConnectedIg;
     return syncSystem;
@@ -60,7 +60,7 @@ inline bool linkHostIg(HostSync& host, IgSync& ig, int base)
     if (!host.initialize(makeTestHostConfig(base)))
         return false;
     const IgConfig igConfig = makeTestIgConfig(base + 1, base);
-    if (!ig.initialize(igConfig.udpPortRecv) || !ig.connect(igConfig.target))
+    if (!ig.initialize(igConfig.udpRecvPort) || !ig.connect(igConfig))
         return false;
     host.run();
     return true;

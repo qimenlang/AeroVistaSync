@@ -93,7 +93,7 @@ namespace aerovista::sync
 
         HostSync _host;
         HostDataManager _data;
-        RelayConfig _relay{};
+        Relay _relay{};
         std::optional<IgConfig> _igConfig;
         std::unique_ptr<IgSync> _virtualIg;
         std::optional<cigi_wire::EyePose> _cachedOwnship;

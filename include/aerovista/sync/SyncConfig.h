@@ -16,24 +16,17 @@ namespace aerovista::sync
         double roll = 0.0;
     };
 
-    /// IG 连 Host 的远端目标（TCP connect + UDP 发送）。
-    /// JSON 仍扁平：`targetAddr` / `targetTcpPort` / `targetUdpPortRecv` → 本结构。
-    struct HostTarget
-    {
-        std::string addr;    ///< Host IP
-        int tcpPort = 0;     ///< Host TCP 监听端口
-        int udpPortRecv = 0; ///< Host UDP 接收端口
-    };
-
-    /// IG 侧配置 = 本地 UDP 接收端口 + 远端 Host 目标。
+    /// IG 侧配置。成员名与 `igConfig` JSON 键相同。
     struct IgConfig
     {
-        int udpPortRecv = 0; ///< 本地 UDP 接收端口
-        HostTarget target;   ///< 远端 Host
+        int udpRecvPort = 0;
+        std::string hostAddr;
+        int hostTcpPort = 0;
+        int hostUdpRecvPort = 0;
     };
 
     /// viewhost 中继开关（平台同步设计.md §9）。仅 `enable=true` 时消费 `HostConfig::igConfig`。
-    struct RelayConfig
+    struct Relay
     {
         bool enable = false;
         int expectedIgCount = 0;
@@ -44,7 +37,7 @@ namespace aerovista::sync
     {
         int udpPortRecv = 0;
         int tcpPort = 0;
-        RelayConfig relay{};
+        Relay relay{};
         /// 虚 IG；`relay.enable=false` 时为空（JSON 有也忽略）。
         std::optional<IgConfig> igConfig;
     };
@@ -64,7 +57,7 @@ namespace aerovista::sync
     /// 通道装配（sync模块化设计.md §4.2）。
     /// `channelId` 写入 IgSync HELLO；`requireConnectedIg` 由 Engine::initSync 消费；
     /// `offsetDeg` 由 Engine CameraDriver 消费。
-    struct SyncSystemConfig
+    struct SyncSystem
     {
         int channelId = 0;
         OffsetDeg offsetDeg{};

@@ -8,9 +8,9 @@
     "expectedIgCount": 3
   },
   "igConfig": {
-    "udpPortRecv": 8002,
-    "targetAddr": "127.0.0.1",
-    "targetTcpPort": 7100,
-    "targetUdpPortRecv": 7000
+    "udpRecvPort": 8002,
+    "hostAddr": "127.0.0.1",
+    "hostTcpPort": 7100,
+    "hostUdpRecvPort": 7000
   }
 }

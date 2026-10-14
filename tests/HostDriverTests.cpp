@@ -125,9 +125,9 @@ namespace
         if (!viewhost.initialize(makeRelayViewhostConfig(viewhostBase, platformBase, 1)))
             return false;
         const IgConfig realCfg = makeTestIgConfig(viewhostBase + 1, viewhostBase);
-        if (!realIg.initialize(realCfg.udpPortRecv, 0))
+        if (!realIg.initialize(realCfg.udpRecvPort, 0))
             return false;
-        if (!realIg.connect(realCfg.target))
+        if (!realIg.connect(realCfg))
             return false;
         return waitVirtualIgHandshakeDone(viewhost, platform);
     }
@@ -142,13 +142,13 @@ namespace
             return false;
         const IgConfig masterCfg = makeTestIgConfig(viewhostBase + 1, viewhostBase);
         const IgConfig sideCfg = makeTestIgConfig(viewhostBase + 3, viewhostBase);
-        if (!master.initialize(masterCfg.udpPortRecv, 0))
+        if (!master.initialize(masterCfg.udpRecvPort, 0))
             return false;
-        if (!side.initialize(sideCfg.udpPortRecv, 1))
+        if (!side.initialize(sideCfg.udpRecvPort, 1))
             return false;
-        if (!master.connect(masterCfg.target))
+        if (!master.connect(masterCfg))
             return false;
-        if (!side.connect(sideCfg.target))
+        if (!side.connect(sideCfg))
             return false;
         return waitVirtualIgHandshakeDone(viewhost, platform);
     }
@@ -424,8 +424,8 @@ SCENARIO("virtual IG does not join the platform before real IGs have gathered",
         {
             IgSync realIg;
             const IgConfig realCfg = makeTestIgConfig(kViewhost + 1, kViewhost);
-            REQUIRE(realIg.initialize(realCfg.udpPortRecv, 0));
-            REQUIRE(realIg.connect(realCfg.target));
+            REQUIRE(realIg.initialize(realCfg.udpRecvPort, 0));
+            REQUIRE(realIg.connect(realCfg));
             REQUIRE(viewhost.readyIgCount() == 1);
 
             WHEN("the relay keeps ticking")
@@ -462,10 +462,10 @@ SCENARIO("gathered real IGs let the virtual IG join the platform without becomin
             IgSync real1;
             const IgConfig cfg0 = makeTestIgConfig(kViewhost + 1, kViewhost);
             const IgConfig cfg1 = makeTestIgConfig(kViewhost + 3, kViewhost);
-            REQUIRE(real0.initialize(cfg0.udpPortRecv, 0));
-            REQUIRE(real1.initialize(cfg1.udpPortRecv, 1));
-            REQUIRE(real0.connect(cfg0.target));
-            REQUIRE(real1.connect(cfg1.target));
+            REQUIRE(real0.initialize(cfg0.udpRecvPort, 0));
+            REQUIRE(real1.initialize(cfg1.udpRecvPort, 1));
+            REQUIRE(real0.connect(cfg0));
+            REQUIRE(real1.connect(cfg1));
             REQUIRE(viewhost.readyIgCount() == 2);
 
             WHEN("the relay ticks after gather")

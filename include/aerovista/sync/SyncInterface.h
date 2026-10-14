@@ -23,7 +23,7 @@ namespace aerovista::sync
         virtual void flushUdp() = 0;
         /// 已切齐消息原样发送：Host 扇出全体 ready IG；IG 对已连 Host `sendAll`。不加 IGCtrl/SOF。
         virtual void sendTcpMessage(const std::vector<unsigned char>& message) = 0;
-        /// 已切齐 UDP 数据报原样 `sendto`：Host 扇出全体 ready IG；IG 发往 `HostTarget::udpPortRecv`。不加帧头。
+        /// 已切齐 UDP 数据报原样 `sendto`：Host 扇出全体 ready IG；IG 发往 `IgConfig::hostUdpRecvPort`。不加帧头。
         virtual void sendUdpMessage(const std::vector<unsigned char>& message) = 0;
         /// 取走已切齐 TCP 消息字节，不解包。与 `drainIncoming` 互斥消费同一 TCP 队列。
         virtual std::vector<std::vector<unsigned char>> takeIncomingTcp() = 0;

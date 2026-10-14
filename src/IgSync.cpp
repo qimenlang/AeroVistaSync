@@ -117,11 +117,11 @@ namespace aerovista::sync
         return _udpSynced;
     }
 
-    bool IgSync::initialize(int udpPortRecv, int channelId)
+    bool IgSync::initialize(int udpRecvPort, int channelId)
     {
         shutdown();
         _local = {};
-        _local.udpPortRecv = udpPortRecv;
+        _local.udpRecvPort = udpRecvPort;
         _channelId = channelId;
         _tcpConnected = false;
         _udpSynced = false;
@@ -134,7 +134,7 @@ namespace aerovista::sync
         resetHostSession();
 
         std::string udpError;
-        if (!_udp.initialize(_local.udpPortRecv, &udpError))
+        if (!_udp.initialize(_local.udpRecvPort, &udpError))
         {
             std::cerr << "IgSync: UDP open failed: " << udpError << "\n";
             return false;
@@ -261,7 +261,7 @@ namespace aerovista::sync
 
     void IgSync::sendSofPacket(std::uint32_t frameCntr)
     {
-        if (_local.target.addr.empty())
+        if (_local.hostAddr.empty())
             return;
 
         std::vector<unsigned char> sof;
@@ -270,7 +270,7 @@ namespace aerovista::sync
             std::cerr << "IgSync: CIGI packSof failed\n";
             return;
         }
-        _udp.sendTo(_local.target.addr, _local.target.udpPortRecv, sof.data(),
+        _udp.sendTo(_local.hostAddr, _local.hostUdpRecvPort, sof.data(),
                     static_cast<int>(sof.size()));
         _sofSentCount.fetch_add(1);
     }
@@ -348,9 +348,9 @@ namespace aerovista::sync
 
     void IgSync::sendUdpMessage(const std::vector<unsigned char>& message)
     {
-        if (message.empty() || _local.target.addr.empty())
+        if (message.empty() || _local.hostAddr.empty())
             return;
-        _udp.sendTo(_local.target.addr, _local.target.udpPortRecv, message.data(),
+        _udp.sendTo(_local.hostAddr, _local.hostUdpRecvPort, message.data(),
                     static_cast<int>(message.size()));
     }
 
@@ -458,11 +458,11 @@ namespace aerovista::sync
         return false;
     }
 
-    bool IgSync::connectOnce(const HostTarget& target)
+    bool IgSync::connectOnce(const IgConfig& igConfig)
     {
         // 假定 _tcp 上已连接 TCP。无 TCP ACK：发 HELLO 后立刻 UDP_SYNC。
         std::vector<unsigned char> hello;
-        if (!cigi_wire::packHello(static_cast<std::uint32_t>(_local.udpPortRecv), _channelId, hello))
+        if (!cigi_wire::packHello(static_cast<std::uint32_t>(_local.udpRecvPort), _channelId, hello))
             return false;
         if (!_tcp.sendAll(hello.data(), static_cast<int>(hello.size())))
             return false;
@@ -474,21 +474,23 @@ namespace aerovista::sync
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(handshakeTimeoutMs);
         while (std::chrono::steady_clock::now() < deadline)
         {
-            _udp.sendTo(target.addr, target.udpPortRecv, probe.data(), static_cast<int>(probe.size()));
+            _udp.sendTo(igConfig.hostAddr, igConfig.hostUdpRecvPort, probe.data(), static_cast<int>(probe.size()));
             if (waitUdpAck(50))
                 return true;
         }
         return false;
     }
 
-    bool IgSync::connect(const HostTarget& target)
+    bool IgSync::connect(const IgConfig& igConfig)
     {
         if (!_initialized)
             return false;
 
         _tcpConnected = false;
         _udpSynced = false;
-        _local.target = target;
+        _local.hostAddr = igConfig.hostAddr;
+        _local.hostTcpPort = igConfig.hostTcpPort;
+        _local.hostUdpRecvPort = igConfig.hostUdpRecvPort;
 
         // TCP 重试：Host 可能仍在启动（重连 BDD）。
         // 握手重试（少量）：罕见的 UDP 丢包——错误 UDP 端口快速失败。
@@ -500,13 +502,13 @@ namespace aerovista::sync
             _tcp.close();
             drainUdp();
 
-            if (!_tcp.connect(target.addr, target.tcpPort, tcpConnectTimeoutMs))
+            if (!_tcp.connect(igConfig.hostAddr, igConfig.hostTcpPort, tcpConnectTimeoutMs))
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(25));
                 continue;
             }
 
-            if (connectOnce(target))
+            if (connectOnce(igConfig))
             {
                 _tcpConnected = true;
                 _udpSynced = true;
@@ -561,7 +563,7 @@ namespace aerovista::sync
             if (n > 0 && isNetProbe(buf, n))
             {
                 // 网络探测在收包线程立刻回显，不入业务队列（多通道同步验收测量设计.md §4.8）。
-                _udp.sendTo(_local.target.addr, _local.target.udpPortRecv, buf, n);
+                _udp.sendTo(_local.hostAddr, _local.hostUdpRecvPort, buf, n);
                 continue;
             }
             if (n > 0)
@@ -663,7 +665,7 @@ namespace aerovista::sync
         // 只打包 UDP 数据面 session（§5.1 双 session）：该链路无待发内容时 PackageMsg 失败 → 不发。
         if (!_udpSession)
             return;
-        if (_local.target.addr.empty())
+        if (_local.hostAddr.empty())
             return;
         CigiOutgoingMsg& omsg = _udpSession->GetOutgoingMsgMgr();
         Cigi_uint8* buf = nullptr;
@@ -684,7 +686,7 @@ namespace aerovista::sync
             return;
         }
         _udpMsgOpen = false; // 消息已打包：下一轮 outMsgWithSofUdp 重新填帧头（§8.1 去重）
-        _udp.sendTo(_local.target.addr, _local.target.udpPortRecv, buf, len);
+        _udp.sendTo(_local.hostAddr, _local.hostUdpRecvPort, buf, len);
         omsg.FreeMsg();
     }
 } // namespace aerovista::sync

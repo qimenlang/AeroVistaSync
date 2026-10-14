@@ -18,12 +18,12 @@ namespace aerovista::sync
 
     IgConfig parseIgConfig(const nlohmann::json& obj)
     {
-        config::rejectUnknownKeys(obj, {"udpPortRecv", "targetAddr", "targetTcpPort", "targetUdpPortRecv"});
+        config::rejectUnknownKeys(obj, {"udpRecvPort", "hostAddr", "hostTcpPort", "hostUdpRecvPort"});
         IgConfig cfg;
-        cfg.udpPortRecv = config::requireInt(obj, "udpPortRecv");
-        cfg.target.addr = config::requireString(obj, "targetAddr");
-        cfg.target.tcpPort = config::requireInt(obj, "targetTcpPort");
-        cfg.target.udpPortRecv = config::requireInt(obj, "targetUdpPortRecv");
+        cfg.udpRecvPort = config::requireInt(obj, "udpRecvPort");
+        cfg.hostAddr = config::requireString(obj, "hostAddr");
+        cfg.hostTcpPort = config::requireInt(obj, "hostTcpPort");
+        cfg.hostUdpRecvPort = config::requireInt(obj, "hostUdpRecvPort");
         return cfg;
     }
 
@@ -77,8 +77,8 @@ namespace aerovista::sync
             if (!config::find(root, "igConfig"))
                 throw std::runtime_error("relay.enable requires igConfig");
             out.igConfig = parseIgConfig(config::requireObjectValue(root, "igConfig"));
-            if (out.igConfig->udpPortRecv == out.udpPortRecv)
-                throw std::runtime_error("igConfig.udpPortRecv must differ from hostConfig.udpPortRecv");
+            if (out.igConfig->udpRecvPort == out.udpPortRecv)
+                throw std::runtime_error("igConfig.udpRecvPort must differ from hostConfig.udpPortRecv");
         }
     } // namespace
 
