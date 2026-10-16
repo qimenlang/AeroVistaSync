@@ -293,6 +293,11 @@ TEST_CASE("CIGI Host rejects a message whose first packet is not SOF",
 // 1. 连接面（集成；握手为 CIGI HELLO + UDP_SYNC）
 // =============================================================================
 
+// =============================================================================
+// Host 刚 initialize 时还没有 ready IG，核对 ready 台数为 0
+// （多通道同步模块设计.md §11，码 HS-host-init-empty）。
+// 只断言 readyIgCount()。initialize 成功与台数为 0 是两件事，都要过。
+// =============================================================================
 SCENARIO("Host initializes with no ready IG", "[integration][sync][initialize][HS-host-init-empty]")
 {
     GIVEN("a new HostSync")
@@ -306,7 +311,6 @@ SCENARIO("Host initializes with no ready IG", "[integration][sync][initialize][H
             THEN("initialization succeeds and no IG is ready yet")
             {
                 REQUIRE(ok);
-                REQUIRE_FALSE(host.hasReadyIg());
                 REQUIRE(host.readyIgCount() == 0);
             }
         }
@@ -354,13 +358,18 @@ SCENARIO("IG connect fails when Host is not running", "[integration][sync][conne
     }
 }
 
+// =============================================================================
+// Host 已在等待时 IG connect 成功，Host 看到 1 台 ready IG
+// （多通道同步模块设计.md §11，码 HS-connect-ok）。
+// 连接前台数为 0，成功后台数为 1。TCP 与 UDP 都要已同步。
+// =============================================================================
 SCENARIO("IG connects successfully when Host is already waiting", "[integration][sync][connect][HS-connect-ok]")
 {
     GIVEN("a Host that has been initialized and is waiting for IGs")
     {
         HostSync host;
         REQUIRE(host.initialize(makeHostLocal()));
-        REQUIRE_FALSE(host.hasReadyIg());
+        REQUIRE(host.readyIgCount() == 0);
 
         AND_GIVEN("an IG that has been initialized")
         {
@@ -376,7 +385,6 @@ SCENARIO("IG connects successfully when Host is already waiting", "[integration]
                     REQUIRE(connected);
                     REQUIRE(ig.tcpConnected());
                     REQUIRE(ig.udpSynced());
-                    REQUIRE(host.hasReadyIg());
                     REQUIRE(host.readyIgCount() == 1);
                 }
             }
@@ -409,6 +417,11 @@ SCENARIO("IG disconnects when Host goes offline", "[integration][sync][connect][
     }
 }
 
+// =============================================================================
+// TCP 端口正确、UDP 端口错误时 IG connect 失败，Host 仍然没有 ready IG
+// （多通道同步模块设计.md §11，码 HS-connect-fail-udp-port）。
+// 失败后 IG 两侧都未同步，Host 台数为 0。错的是 hostUdpRecvPort。
+// =============================================================================
 SCENARIO("IG connect fails when UDP peer ports are wrong but TCP port is valid",
          "[integration][sync][connect][failure][HS-connect-fail-udp-port]")
 {
@@ -433,7 +446,7 @@ SCENARIO("IG connect fails when UDP peer ports are wrong but TCP port is valid",
                     REQUIRE_FALSE(connected);
                     REQUIRE_FALSE(ig.tcpConnected());
                     REQUIRE_FALSE(ig.udpSynced());
-                    REQUIRE_FALSE(host.hasReadyIg());
+                    REQUIRE(host.readyIgCount() == 0);
                 }
             }
         }

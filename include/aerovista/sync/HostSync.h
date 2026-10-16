@@ -94,7 +94,6 @@ namespace aerovista::sync
         void shutdown() override;
 
         // ---- 状态观测 ----
-        bool hasReadyIg() const;
         int readyIgCount() const;
         /// 当前 peer 表拷贝（含尚未两端 ready 的连接；已摘除的不出现）。
         std::vector<IgConnection> igSnapshot() const;

@@ -121,12 +121,6 @@ namespace aerovista::sync
         return n;
     }
 
-    bool HostSync::hasReadyIg() const
-    {
-        std::lock_guard lock(_peersMutex);
-        return countReadyUnlocked() > 0;
-    }
-
     int HostSync::readyIgCount() const
     {
         std::lock_guard lock(_peersMutex);
