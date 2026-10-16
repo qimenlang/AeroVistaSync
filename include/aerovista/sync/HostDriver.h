@@ -29,7 +29,7 @@ namespace aerovista::sync
         HostDriver(HostDriver&&) = delete;
         HostDriver& operator=(HostDriver&&) = delete;
 
-        /// initialize + run（置 RUNNING）。失败时 error 带上下文。
+        /// initialize。失败时 error 带上下文。
         /// `relay.enable=true` 时只 listen 真实 IG，不在此时连平台。
         bool initialize(const HostConfig& config, std::string* error = nullptr);
         void shutdown();
@@ -70,7 +70,6 @@ namespace aerovista::sync
             _host.addCallback<PacketT>(std::move(callback));
         }
 
-        bool isRunning() const;
         int readyIgCount() const;
         std::vector<IgConnection> igSnapshot() const;
         std::uint32_t igCtrlSentCount() const;

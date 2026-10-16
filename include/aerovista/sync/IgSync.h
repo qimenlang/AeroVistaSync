@@ -207,7 +207,6 @@ namespace aerovista::sync
         bool frozen() const;
 
         // ---- 观测辅助 ----
-        IgStatus status() const;
         std::uint32_t sofSentCount() const;
         const IgConfig& addressConfig() const { return _local; }
 
@@ -289,7 +288,6 @@ namespace aerovista::sync
         std::atomic<bool> _initialized{false};
         std::atomic<bool> _tcpConnected{false};
         std::atomic<bool> _udpSynced{false};
-        std::atomic<IgStatus> _status{IgStatus::IDLE};
 
         std::atomic<std::uint32_t> _igCtrlReceivedCount{0};
         std::atomic<std::uint32_t> _sofSentCount{0};

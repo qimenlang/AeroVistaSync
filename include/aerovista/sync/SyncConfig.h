@@ -42,18 +42,6 @@ namespace aerovista::sync
         std::optional<IgConfig> igConfig;
     };
 
-    enum class HostStatus
-    {
-        IDLE,
-        RUNNING
-    };
-
-    enum class IgStatus
-    {
-        IDLE,
-        RUNNING
-    };
-
     /// 通道装配（sync模块化设计.md §4.2）。
     /// `channelId` 写入 IgSync HELLO；`requireConnectedIg` 由 Engine::initSync 消费；
     /// `offsetDeg` 由 Engine CameraDriver 消费。

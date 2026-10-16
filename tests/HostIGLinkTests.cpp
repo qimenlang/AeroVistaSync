@@ -28,10 +28,8 @@
 #include "Common.h"
 
 using aerovista::sync::HostConfig;
-using aerovista::sync::HostStatus;
 using aerovista::sync::HostSync;
 using aerovista::sync::IgConfig;
-using aerovista::sync::IgStatus;
 using aerovista::sync::IgSync;
 using aerovista::sync::SyncInterface;
 using aerovista::sync::TcpSocket;
@@ -716,12 +714,12 @@ TEST_CASE("HostSync takeIncomingUdp consumes the UDP queue without drainIncoming
 }
 
 // =============================================================================
-// 2. 帧节拍：CIGI IGCtrl / SOF / FreeRun（集成；握手为 CIGI HELLO + UDP_SYNC）
-// 数据面线格式契约：IGCtrlV4 (+ 可选 EntityPositionCtrlV4) / SOFV4 —— 见 [wire-contract]。
+// 握手完成后 Host 连发数据面 IGCtrl，IG 每帧收包，核对双方是否按帧交换
+// （状态同步设计.md §10，码 CIGI-running-igctrl）。
+// 不看状态枚举。到达条数允许少 3 条：UDP 可丢，不要求 10 条全到。
 // =============================================================================
-
-SCENARIO("connected Host and IG enter RUNNING and exchange CIGI IGCtrl each update",
-         "[integration][sync][status][cigi][CIGI-running-igctrl]")
+SCENARIO("connected Host and IG exchange one IGCtrl on each update",
+         "[integration][sync][cigi][CIGI-running-igctrl]")
 {
     GIVEN("a Host and an IG that have completed CIGI handshake")
     {
@@ -731,9 +729,8 @@ SCENARIO("connected Host and IG enter RUNNING and exchange CIGI IGCtrl each upda
         REQUIRE(ig.initialize(makeIgLocal().udpRecvPort));
         REQUIRE(ig.connect(makeIgLocal()));
 
-        WHEN("Host runs and sends 10 CIGI IGCtrl frames while IG updates")
+        WHEN("Host sends 10 IGCtrl frames while the IG drains and updates")
         {
-            host.run();
             constexpr int kFrames = 10;
             for (int i = 0; i < kFrames; ++i)
             {
@@ -742,10 +739,8 @@ SCENARIO("connected Host and IG enter RUNNING and exchange CIGI IGCtrl each upda
                 ig.update();
             }
 
-            THEN("both are RUNNING and Host sent one IGCtrl per Update")
+            THEN("Host sent one IGCtrl per frame and the IG received them")
             {
-                REQUIRE(host.status() == HostStatus::RUNNING);
-                REQUIRE(ig.status() == IgStatus::RUNNING);
                 REQUIRE(host.igCtrlSentCount() == kFrames);
                 REQUIRE(approxAtMost(ig.igCtrlReceivedCount(), kFrames, 3));
             }
@@ -771,7 +766,6 @@ SCENARIO("Host records a positive application RTT sample",
 
         WHEN("Host sends IGCtrl frames and the IG echoes each one")
         {
-            host.run();
             constexpr int kFrames = 10;
             for (int i = 0; i < kFrames; ++i)
             {
@@ -813,7 +807,6 @@ SCENARIO("IG replies with one CIGI SOF per received IGCtrl", "[integration][sync
 
         WHEN("Host sends 10 CIGI IGCtrl and IG updates each frame (reply SOF)")
         {
-            host.run();
             constexpr int kFrames = 10;
             for (int i = 0; i < kFrames; ++i)
             {
@@ -855,7 +848,6 @@ SCENARIO("Host keeps sending CIGI IGCtrl when IG never replies SOF",
 
         WHEN("Host sends 10 CIGI IGCtrl while IG receives but never replies SOF")
         {
-            host.run();
             constexpr int kFrames = 10;
             for (int i = 0; i < kFrames; ++i)
             {
@@ -901,7 +893,6 @@ SCENARIO("IG received CIGI FrameCntr values follow Host frame numbers",
 
         WHEN("Host sends CIGI IGCtrl frames 0..N-1 and the IG processes each send")
         {
-            host.run();
             constexpr int kFrames = 10;
             // 每条帧号解出时，Host 已经发出的最大帧号（0 起）。
             std::vector<std::uint32_t> hostFrameIDS;
@@ -967,7 +958,6 @@ SCENARIO("host and IG both load standalone sync configs and exchange CIGI",
 
         auto hostSync = std::make_unique<HostSync>();
         REQUIRE(hostSync->initialize(host));
-        hostSync->run();
 
         IgSync igSync;
         REQUIRE(igSync.initialize(ig.udpRecvPort, /*channelId=*/2));

@@ -104,7 +104,6 @@ namespace aerovista::sync
         _tcp.close();
         _tcpConnected = false;
         _udpSynced = false;
-        _status = IgStatus::IDLE;
     }
 
     bool IgSync::tcpConnected() const
@@ -125,7 +124,6 @@ namespace aerovista::sync
         _channelId = channelId;
         _tcpConnected = false;
         _udpSynced = false;
-        _status = IgStatus::IDLE;
         _igCtrlReceivedCount = 0;
         _sofSentCount = 0;
         _lastFrameCntr = 0;
@@ -156,15 +154,9 @@ namespace aerovista::sync
         }
         _tcpConnected = false;
         _udpSynced = false;
-        _status = IgStatus::IDLE;
         if (_udp.valid())
             _udp.close();
         _initialized = false;
-    }
-
-    IgStatus IgSync::status() const
-    {
-        return _status.load();
     }
 
     std::uint32_t IgSync::igCtrlReceivedCount() const
@@ -280,12 +272,6 @@ namespace aerovista::sync
         // 无论是否仍连接，都检查外推冻结——Host 离线断线后 IG 仍应每帧检查，
         // 超过阈值后冻结（时间戳停住），而不是随本地流逝无限外推（时钟同步方案.md §4.3）。
         updateFreeze(nowUs());
-
-        if (!_initialized || !_udpSynced)
-            return;
-
-        if (_tcpConnected && _udpSynced)
-            _status = IgStatus::RUNNING;
     }
 
     void IgSync::drainIncoming(bool sendSof)
@@ -512,7 +498,6 @@ namespace aerovista::sync
             {
                 _tcpConnected = true;
                 _udpSynced = true;
-                _status = IgStatus::RUNNING;
                 // 新会话起点：清空相位展开状态（时钟同步方案.md §3）。
                 resetHostSession();
                 startCommandThread();

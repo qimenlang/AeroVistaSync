@@ -55,7 +55,6 @@ namespace aerovista::sync
                 *error = "HostSync::initialize failed";
             return false;
         }
-        _host.run();
         _relay = config.relay;
         _igConfig = config.igConfig;
         _cachedOwnship.reset();
@@ -235,11 +234,6 @@ namespace aerovista::sync
         if (!_virtualIg->initialize(_igConfig->udpRecvPort, 0))
             return;
         _virtualIg->connect(*_igConfig);
-    }
-
-    bool HostDriver::isRunning() const
-    {
-        return _host.status() == HostStatus::RUNNING;
     }
 
     int HostDriver::readyIgCount() const

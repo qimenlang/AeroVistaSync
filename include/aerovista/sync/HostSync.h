@@ -92,10 +92,8 @@ namespace aerovista::sync
         // ---- 生命周期 ----
         bool initialize(const HostConfig& local);
         void shutdown() override;
-        void run();
 
         // ---- 状态观测 ----
-        HostStatus status() const;
         bool hasReadyIg() const;
         int readyIgCount() const;
         /// 当前 peer 表拷贝（含尚未两端 ready 的连接；已摘除的不出现）。
@@ -336,7 +334,6 @@ namespace aerovista::sync
         TcpSocket _tcp;
 
         std::atomic<bool> _threadsRunning{false};
-        std::atomic<HostStatus> _status{HostStatus::IDLE};
         std::thread _acceptThread;
         std::thread _udpThread;
 

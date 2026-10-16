@@ -146,7 +146,6 @@ bool CPlatformView::loadConfig()
         return false;
     if (!_host.initialize(host))
         return false;
-    _host.run();
     if (!_data.loadEntityCatalog("entities.json", &error))
         AfxMessageBox(_T("加载 entities.json 失败，实体树为空"));
     return true;

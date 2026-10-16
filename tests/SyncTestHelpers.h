@@ -62,7 +62,6 @@ inline bool linkHostIg(HostSync& host, IgSync& ig, int base)
     const IgConfig igConfig = makeTestIgConfig(base + 1, base);
     if (!ig.initialize(igConfig.udpRecvPort) || !ig.connect(igConfig))
         return false;
-    host.run();
     return true;
 }
 

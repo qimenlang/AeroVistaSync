@@ -157,11 +157,6 @@ namespace aerovista::sync
         return rows;
     }
 
-    HostStatus HostSync::status() const
-    {
-        return _status.load();
-    }
-
     std::uint32_t HostSync::igCtrlSentCount() const
     {
         return _dataFrameCounter;
@@ -192,11 +187,6 @@ namespace aerovista::sync
                 return peer.netRtt.lastRtt();
         }
         return std::nullopt;
-    }
-
-    void HostSync::run()
-    {
-        _status = HostStatus::RUNNING;
     }
 
     void HostSync::pollUdp()
@@ -233,7 +223,6 @@ namespace aerovista::sync
     {
         shutdown();
         _local = local;
-        _status = HostStatus::IDLE;
         _sofProc.count = 0;
         _sofProc.lastFrameCntr = 0;
         _dataFrameCounter = 0;
@@ -267,7 +256,6 @@ namespace aerovista::sync
     void HostSync::shutdown()
     {
         _threadsRunning = false;
-        _status = HostStatus::IDLE;
         _tcp.close();
 
         // 先关 peer socket（唤醒阻塞 recv 的命令读循环），再 join 客户端线程。

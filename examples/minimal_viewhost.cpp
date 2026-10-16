@@ -35,14 +35,13 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    // 2) 纯 Host：直接持 HostSync（传输层），initialize 起 accept/UDP 线程 + run 置 RUNNING。
+    // 2) 纯 Host：直接持 HostSync（传输层），initialize 起 accept/UDP 线程。
     HostSync hostSync;
     if (!hostSync.initialize(host))
     {
         std::cerr << "HostSync initialize failed\n";
         return 1;
     }
-    hostSync.run();
 
     std::cout << "[viewhost] Host waiting on UDP "
               << host.udpPortRecv << " / TCP " << host.tcpPort << "\n";

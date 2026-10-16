@@ -121,7 +121,6 @@ namespace
     {
         if (!platform.initialize(makeTestHostConfig(platformBase)))
             return false;
-        platform.run();
         if (!viewhost.initialize(makeRelayViewhostConfig(viewhostBase, platformBase, 1)))
             return false;
         const IgConfig realCfg = makeTestIgConfig(viewhostBase + 1, viewhostBase);
@@ -137,7 +136,6 @@ namespace
     {
         if (!platform.initialize(makeTestHostConfig(platformBase)))
             return false;
-        platform.run();
         if (!viewhost.initialize(makeRelayViewhostConfig(viewhostBase, platformBase, 2)))
             return false;
         const IgConfig masterCfg = makeTestIgConfig(viewhostBase + 1, viewhostBase);
@@ -415,7 +413,6 @@ SCENARIO("virtual IG does not join the platform before real IGs have gathered",
         constexpr int kViewhost = 41200;
         HostSync platform;
         REQUIRE(platform.initialize(makeTestHostConfig(kPlatform)));
-        platform.run();
 
         HostDriver viewhost;
         REQUIRE(viewhost.initialize(makeRelayViewhostConfig(kViewhost, kPlatform, 2)));
@@ -451,7 +448,6 @@ SCENARIO("gathered real IGs let the virtual IG join the platform without becomin
         constexpr int kViewhost = 41600;
         HostSync platform;
         REQUIRE(platform.initialize(makeTestHostConfig(kPlatform)));
-        platform.run();
 
         HostDriver viewhost;
         REQUIRE(viewhost.initialize(makeRelayViewhostConfig(kViewhost, kPlatform, 2)));
@@ -1372,7 +1368,6 @@ SCENARIO("virtual IG packSof when no real IG is ready to receive UDP",
         HostSync viewhost;
         REQUIRE(linkHostIg(platform, virtualIg, 45400));
         REQUIRE(viewhost.initialize(makeTestHostConfig(45600)));
-        viewhost.run();
 
         std::uint32_t platformSof = 0xffffffffu;
         platform.addCallback<CigiSOFV4>([&](const CigiSOFV4& sof) { platformSof = sof.GetFrameCntr(); });
