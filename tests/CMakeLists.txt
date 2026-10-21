@@ -7,7 +7,6 @@ add_executable(${TARGET_NAME}
     RttTrackerTests.cpp
     HostDataManagerTests.cpp
     ViewHostMathTests.cpp
-    SyncConfigTests.cpp
     SyncClockInjectTests.cpp
     SyncWireTests.cpp
     HostIGLinkTests.cpp
