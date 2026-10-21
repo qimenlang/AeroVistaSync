@@ -1,68 +1,13 @@
 ﻿#pragma once
 
-#include <nlohmann/json_fwd.hpp>
-
-#include <cstdint>
-#include <optional>
-#include <string>
+#include <aerovista/config/HostConfig.h>
 
 namespace aerovista::sync
 {
-    /// 通道偏移：叠加在 Host 眼点之上（刚性阵列旋转，lla设计 §3.4）。
-    struct OffsetDeg
-    {
-        double yaw = 0.0;
-        double pitch = 0.0;
-        double roll = 0.0;
-    };
-
-    /// IG 侧配置。成员名与 `igConfig` JSON 键相同。
-    struct IgConfig
-    {
-        int udpRecvPort = 0;
-        std::string hostAddr;
-        int hostTcpPort = 0;
-        int hostUdpRecvPort = 0;
-    };
-
-    /// viewhost 中继开关（平台同步设计.md §9）。仅 `enable=true` 时消费 `HostConfig::igConfig`。
-    struct Relay
-    {
-        bool enable = false;
-        int expectedIgCount = 0;
-    };
-
-    /// Host 侧本地配置。
-    struct HostConfig
-    {
-        int udpPortRecv = 0;
-        int tcpPort = 0;
-        Relay relay{};
-        /// 虚 IG；`relay.enable=false` 时为空（JSON 有也忽略）。
-        std::optional<IgConfig> igConfig;
-    };
-
-    /// 通道装配（sync模块化设计.md §4.2）。
-    /// `channelId` 写入 IgSync HELLO；`requireConnectedIg` 由 Engine::initSync 消费；
-    /// `offsetDeg` 由 Engine CameraDriver 消费。
-    struct SyncSystem
-    {
-        int channelId = 0;
-        OffsetDeg offsetDeg{};
-        bool requireConnectedIg = false;
-    };
-
-    /// 解析 Host 进程配置（viewhost）。本地调试只含 `hostConfig`；
-    /// 中继时可含 `relay` / `igConfig`（平台同步设计.md §9）。顶层未知键拒绝。
-    bool loadHostConfig(const std::string& path, HostConfig& out, std::string* error = nullptr);
-
-    /// 解析只含 `igConfig` 块的文件（独立 IG 进程 / 外部引擎使用 sync 且不带引擎配置）。
-    /// 顶层未知键拒绝。与 loadHostConfig 对称。见 sync模块化设计.md §4.1。
-    bool loadIgConfig(const std::string& path, IgConfig& out, std::string* error = nullptr);
-
-    /// 从已解析的 JSON 对象解析 `hostConfig` 块（与引擎侧共用）。
-    HostConfig parseHostConfig(const nlohmann::json& obj);
-
-    /// 从已解析的 JSON 对象解析 `igConfig` 块（与引擎侧共用）。
-    IgConfig parseIgConfig(const nlohmann::json& obj);
+    using config::HostConfig;
+    using config::IgConfig;
+    using config::loadHostConfig;
+    using config::loadIgConfig;
+    using config::OffsetDeg;
+    using config::Relay;
 } // namespace aerovista::sync

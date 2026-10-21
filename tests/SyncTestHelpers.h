@@ -4,6 +4,7 @@
 // 两边的 Common.h 各自 include 本头，避免 makeTest* / hostSendFrame / linkHostIg / collectFrames
 // 在两个目录各写一份。TempConfigFile / EntitiesConfig 仍留在各自的 Common.h（engine 侧需要后者）。
 
+#include <aerovista/config/EngineChannelConfig.h>
 #include <aerovista/sync/HostSync.h>
 #include <aerovista/sync/IgSync.h>
 #include <aerovista/sync/SyncConfig.h>
@@ -16,9 +17,9 @@
 
 using aerovista::sync::HostConfig;
 using aerovista::sync::HostSync;
+using aerovista::config::ViewDefinition;
 using aerovista::sync::IgConfig;
 using aerovista::sync::IgSync;
-using aerovista::sync::SyncSystem;
 
 // =============================================================================
 // Host/IG 网络角色配置辅助。各测试文件传不同 base 隔离端口，避免并行冲突。
@@ -34,12 +35,12 @@ inline IgConfig makeTestIgConfig(int udpRecvPort, int base)
     return IgConfig{udpRecvPort, "127.0.0.1", base + 100, base};
 }
 
-inline SyncSystem makeTestSyncSystem(int channelId, bool requireConnectedIg = true)
+inline ViewDefinition makeTestViewDefinition(int viewID, bool requireConnectedIg = true)
 {
-    SyncSystem syncSystem;
-    syncSystem.channelId = channelId;
-    syncSystem.requireConnectedIg = requireConnectedIg;
-    return syncSystem;
+    ViewDefinition viewDefinition;
+    viewDefinition.viewID = viewID;
+    viewDefinition.requireConnectedIg = requireConnectedIg;
+    return viewDefinition;
 }
 
 // =============================================================================

@@ -60,7 +60,6 @@ add_library(aerovistaSync STATIC
     src/RttTracker.cpp
     src/IgSync.cpp
     src/SocketCommon.cpp
-    src/SyncConfig.cpp
     src/TcpSocket.cpp
     src/UdpSocket.cpp
 )

@@ -51,7 +51,7 @@ namespace aerovista::sync
     /// Host 侧一条 IG 连接的观测快照。身份是 HELLO 学到的 `channelId`。
     struct IgConnection
     {
-        int channelId = 0; ///< HELLO 学到的 IG syncSystem.channelId
+        int channelId = 0; ///< HELLO 学到的通道号（配置 viewID）
         bool tcpReady = false;
         bool udpReady = false;
         /// 滚动平均应用 RTT；不满 10 个匹配样本时为空（时限 appRttMatchTimeout）。
