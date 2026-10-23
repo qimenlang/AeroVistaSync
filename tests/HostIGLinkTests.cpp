@@ -25,7 +25,7 @@
 #include <thread>
 #include <vector>
 
-#include "Common.h"
+#include "Testutil.h"
 
 using aerovista::sync::HostConfig;
 using aerovista::sync::HostSync;
@@ -42,135 +42,12 @@ namespace cigi_wire = aerovista::sync::cigi_wire;
 
 namespace
 {
-    // 默认端口见 doc/design/多通道同步/多通道同步模块设计.md
-    HostConfig makeHostLocal()
-    {
-        return HostConfig{8000, 8100};
-    }
-
-    IgConfig makeIgLocal(int udpRecvPort = 8001)
-    {
-        return IgConfig{udpRecvPort, "127.0.0.1", 8100, 8000};
-    }
-
-    // 默认端口上一对已握手的 Host 与 IG。连接成败另有用例，这里只当前置。
-    void setupHostIgPair(HostSync& host, IgSync& ig)
-    {
-        REQUIRE(host.initialize(makeHostLocal()));
-        REQUIRE(ig.initialize(makeIgLocal().udpRecvPort));
-        REQUIRE(ig.connect(makeIgLocal()));
-    }
-
-    bool startHostTwoIgs(HostSync& host, IgSync& master, IgSync& side, int base)
-    {
-        if (!host.initialize(makeTestHostConfig(base)))
-            return false;
-        const IgConfig masterCfg = makeTestIgConfig(base + 1, base);
-        const IgConfig sideCfg = makeTestIgConfig(base + 3, base);
-        if (!master.initialize(masterCfg.udpRecvPort, 0))
-            return false;
-        if (!side.initialize(sideCfg.udpRecvPort, 1))
-            return false;
-        if (!master.connect(masterCfg))
-            return false;
-        if (!side.connect(sideCfg))
-            return false;
-        return host.readyIgCount() == 2;
-    }
-
-    // 条件成立即返回。短轮询只盖住 Host 就绪表晚于 IG connect 返回的缝，不空等固定超时。
-    void connectUntil(const std::function<bool()>& linked)
-    {
-        for (int i = 0; i < 10 && !linked(); ++i)
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-
     void drainHostUntil(HostSync& host, const std::function<bool()>& done)
     {
         for (int i = 0; i < 10 && !done(); ++i)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             host.drainIncoming();
-        }
-    }
-
-    bool framesIncreasing(const std::vector<std::uint32_t>& frames)
-    {
-        for (std::size_t i = 1; i < frames.size(); ++i)
-        {
-            if (frames[i] <= frames[i - 1])
-                return false;
-        }
-        return true;
-    }
-
-    // UDP 可丢：actual 落在 [expected-slack, expected]
-    bool approxAtMost(std::uint32_t actual, int expected, int slack)
-    {
-        const auto exp = static_cast<std::uint32_t>(expected);
-        const auto minOk = exp > static_cast<std::uint32_t>(slack) ? exp - static_cast<std::uint32_t>(slack) : 0u;
-        return actual >= minOk && actual <= exp;
-    }
-
-    /// IGCtrl 由 outMsgWithIgCtrlUdp() 自动前置（帧号/自计时时间戳）。
-    // hostSendFrame 已抽到 SyncTestHelpers.h，这里不再重复定义。
-
-    struct OwnshipEyeCapture
-    {
-        bool got = false;
-        std::uint16_t entityId = 0;
-        std::uint16_t parentId = 0;
-        CigiBaseEntityPositionCtrl::AttachStateGrp attachState = CigiBaseEntityPositionCtrl::Detach;
-        double lat = 0.0;
-        double lon = 0.0;
-        double alt = 0.0;
-        double yawDeg = 0.0;
-        double pitchDeg = 0.0;
-        double rollDeg = 0.0;
-    };
-
-    void captureOwnship(IgSync& ig, OwnshipEyeCapture& cap)
-    {
-        ig.addCallback<CigiEntityPositionCtrlV4>([&](const CigiEntityPositionCtrlV4& pose) {
-            if (pose.GetEntityID() != 0)
-                return;
-            cap.got = true;
-            cap.entityId = pose.GetEntityID();
-            cap.parentId = pose.GetParentID();
-            cap.attachState = pose.GetAttachState();
-            cap.lat = pose.GetLat();
-            cap.lon = pose.GetLon();
-            cap.alt = pose.GetAlt();
-            cap.yawDeg = pose.GetYaw();
-            cap.pitchDeg = pose.GetPitch();
-            cap.rollDeg = pose.GetRoll();
-        });
-    }
-
-    void hostSendEyePose(HostSync& host, const cigi_wire::EyePose& eye)
-    {
-        auto& omsg = host.outMsgWithIgCtrlUdp();
-        cigi_wire::appendEye(omsg, &eye);
-        host.flushUdp();
-    }
-
-    void pumpIgCtrlFrames(HostSync& host, IgSync& ig, int frames = 5)
-    {
-        for (int i = 0; i < frames; ++i)
-        {
-            hostSendFrame(host);
-            ig.drainIncoming();
-            ig.update();
-        }
-    }
-
-    void pumpOwnshipEyeFrames(HostSync& host, IgSync& ig, const cigi_wire::EyePose& eye, int frames = 5)
-    {
-        for (int i = 0; i < frames; ++i)
-        {
-            hostSendEyePose(host, eye);
-            ig.drainIncoming();
-            ig.update();
         }
     }
 } // namespace

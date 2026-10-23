@@ -16,7 +16,7 @@
 #include <optional>
 #include <thread>
 
-#include "Common.h"
+#include "Testutil.h"
 
 using aerovista::sync::HostSync;
 using aerovista::sync::IgSync;

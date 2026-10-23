@@ -14,7 +14,7 @@
 #include "CigiBaseEntityCtrl.h"
 #include "CigiBaseEntityPositionCtrl.h"
 
-#include "Common.h"
+#include "Testutil.h"
 
 #include <string>
 

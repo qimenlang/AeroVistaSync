@@ -28,7 +28,7 @@
 #include <thread>
 #include <vector>
 
-#include "Common.h"
+#include "Testutil.h"
 
 using aerovista::sync::HostConfig;
 using aerovista::sync::HostDriver;
@@ -187,64 +187,12 @@ namespace
         return done();
     }
 
-    bool framesIncreasing(const std::vector<std::uint32_t>& frames)
-    {
-        for (std::size_t i = 1; i < frames.size(); ++i)
-        {
-            if (frames[i] <= frames[i - 1])
-                return false;
-        }
-        return true;
-    }
-
-    /// IGCtrl 由 outMsgWithIgCtrlUdp() 自动前置（帧号/自计时时间戳）。
-    // hostSendFrame 已抽到 SyncTestHelpers.h，这里不再重复定义。
-
-    void hostSendEyePose(HostSync& host, const cigi_wire::EyePose& eye)
-    {
-        auto& omsg = host.outMsgWithIgCtrlUdp();
-        cigi_wire::appendEye(omsg, &eye);
-        host.flushUdp();
-    }
-
     std::vector<unsigned char> concatFrames(const std::vector<unsigned char>& a,
                                             const std::vector<unsigned char>& b)
     {
         std::vector<unsigned char> out = a;
         out.insert(out.end(), b.begin(), b.end());
         return out;
-    }
-
-    struct OwnshipEyeCapture
-    {
-        bool got = false;
-        std::uint16_t entityId = 0;
-        std::uint16_t parentId = 0;
-        CigiBaseEntityPositionCtrl::AttachStateGrp attachState = CigiBaseEntityPositionCtrl::Detach;
-        double lat = 0.0;
-        double lon = 0.0;
-        double alt = 0.0;
-        double yawDeg = 0.0;
-        double pitchDeg = 0.0;
-        double rollDeg = 0.0;
-    };
-
-    void captureOwnship(IgSync& ig, OwnshipEyeCapture& cap)
-    {
-        ig.addCallback<CigiEntityPositionCtrlV4>([&](const CigiEntityPositionCtrlV4& pose) {
-            if (pose.GetEntityID() != 0)
-                return;
-            cap.got = true;
-            cap.entityId = pose.GetEntityID();
-            cap.parentId = pose.GetParentID();
-            cap.attachState = pose.GetAttachState();
-            cap.lat = pose.GetLat();
-            cap.lon = pose.GetLon();
-            cap.alt = pose.GetAlt();
-            cap.yawDeg = pose.GetYaw();
-            cap.pitchDeg = pose.GetPitch();
-            cap.rollDeg = pose.GetRoll();
-        });
     }
 
     cigi_wire::EyePose makeEye(double lat, double lon, double alt, double yaw, double pitch)

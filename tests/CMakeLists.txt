@@ -1,7 +1,7 @@
 set(TARGET_NAME aerovistaSyncTests)
 
 add_executable(${TARGET_NAME}
-    Common.h
+    Testutil.h
     TcpSocketTests.cpp
     UdpSocketTests.cpp
     RttTrackerTests.cpp
