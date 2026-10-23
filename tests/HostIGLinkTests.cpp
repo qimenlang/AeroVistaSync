@@ -53,6 +53,14 @@ namespace
         return IgConfig{udpRecvPort, "127.0.0.1", 8100, 8000};
     }
 
+    // 默认端口上一对已握手的 Host 与 IG。连接成败另有用例，这里只当前置。
+    void setupHostIgPair(HostSync& host, IgSync& ig)
+    {
+        REQUIRE(host.initialize(makeHostLocal()));
+        REQUIRE(ig.initialize(makeIgLocal().udpRecvPort));
+        REQUIRE(ig.connect(makeIgLocal()));
+    }
+
     bool startHostTwoIgs(HostSync& host, IgSync& master, IgSync& side, int base)
     {
         if (!host.initialize(makeTestHostConfig(base)))
@@ -73,15 +81,15 @@ namespace
     // 条件成立即返回。短轮询只盖住 Host 就绪表晚于 IG connect 返回的缝，不空等固定超时。
     void connectUntil(const std::function<bool()>& linked)
     {
-        for (int i = 0; i < 40 && !linked(); ++i)
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        for (int i = 0; i < 10 && !linked(); ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     void drainHostUntil(HostSync& host, const std::function<bool()>& done)
     {
-        for (int i = 0; i < 40 && !done(); ++i)
+        for (int i = 0; i < 10 && !done(); ++i)
         {
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
             host.drainIncoming();
         }
     }
@@ -392,15 +400,16 @@ SCENARIO("IG connects successfully when Host is already waiting", "[integration]
     }
 }
 
+// =============================================================================
+// 握手完成后 Host 离线，IG 两侧都报断开（多通道同步模块设计.md §11，码 HS-disconnect-host-offline）。
+// =============================================================================
 SCENARIO("IG disconnects when Host goes offline", "[integration][sync][connect][disconnect][HS-disconnect-host-offline]")
 {
     GIVEN("a connected Host and IG")
     {
         HostSync host;
         IgSync ig;
-        REQUIRE(host.initialize(makeHostLocal()));
-        REQUIRE(ig.initialize(makeIgLocal().udpRecvPort));
-        REQUIRE(ig.connect(makeIgLocal()));
+        setupHostIgPair(host, ig);
         REQUIRE(ig.tcpConnected());
         REQUIRE(ig.udpSynced());
 
@@ -483,7 +492,7 @@ SCENARIO("Host accepts multiple co-located IG connections", "[integration][sync]
 }
 
 SCENARIO("Host snapshot records the channelId from IG HELLO",
-         "[acceptance][bdd][platform][PLT-hello-ch]")
+         "[acceptance][platform][PLT-hello-ch]")
 {
     GIVEN("a Host waiting for IGs")
     {
@@ -512,7 +521,7 @@ SCENARIO("Host snapshot records the channelId from IG HELLO",
 }
 
 SCENARIO("Host rejects a later IG HELLO that reuses channelId",
-         "[acceptance][bdd][platform][PLT-hello-ch]")
+         "[acceptance][platform][PLT-hello-ch]")
 {
     GIVEN("a Host with one ready IG on channel 1")
     {
@@ -550,7 +559,7 @@ SCENARIO("Host rejects a later IG HELLO that reuses channelId",
 // 侧通道完成 HELLO 后不再 recv。断言只看 Host 回调里没有侧通道正文，不验套接字缓冲。
 // =============================================================================
 SCENARIO("Host unpacks only the master IG TCP report when both IGs send",
-         "[acceptance][bdd][platform][PLT-hello-ch]")
+         "[acceptance][platform][PLT-hello-ch]")
 {
     GIVEN("a Host and two ready IGs on channel 0 and 1")
     {
@@ -597,7 +606,7 @@ SCENARIO("Host unpacks only the master IG TCP report when both IGs send",
 }
 
 SCENARIO("Host does not unpack a side-channel IG TCP report",
-         "[acceptance][bdd][platform][PLT-hello-ch]")
+         "[acceptance][platform][PLT-hello-ch]")
 {
     GIVEN("a Host and two ready IGs on channel 0 and 1")
     {
@@ -738,9 +747,7 @@ SCENARIO("connected Host and IG exchange one IGCtrl on each update",
     {
         HostSync host;
         IgSync ig;
-        REQUIRE(host.initialize(makeHostLocal()));
-        REQUIRE(ig.initialize(makeIgLocal().udpRecvPort));
-        REQUIRE(ig.connect(makeIgLocal()));
+        setupHostIgPair(host, ig);
 
         WHEN("Host sends 10 IGCtrl frames while the IG drains and updates")
         {
@@ -773,9 +780,7 @@ SCENARIO("Host records a positive application RTT sample",
     {
         HostSync host;
         IgSync ig;
-        REQUIRE(host.initialize(makeHostLocal()));
-        REQUIRE(ig.initialize(makeIgLocal().udpRecvPort));
-        REQUIRE(ig.connect(makeIgLocal()));
+        setupHostIgPair(host, ig);
 
         WHEN("Host sends IGCtrl frames and the IG echoes each one")
         {
@@ -814,9 +819,7 @@ SCENARIO("IG replies with one CIGI SOF per received IGCtrl", "[integration][sync
     {
         HostSync host;
         IgSync ig;
-        REQUIRE(host.initialize(makeHostLocal()));
-        REQUIRE(ig.initialize(makeIgLocal().udpRecvPort));
-        REQUIRE(ig.connect(makeIgLocal()));
+        setupHostIgPair(host, ig);
 
         WHEN("Host sends 10 CIGI IGCtrl and IG updates each frame (reply SOF)")
         {
@@ -855,9 +858,7 @@ SCENARIO("Host keeps sending CIGI IGCtrl when IG never replies SOF",
     {
         HostSync host;
         IgSync ig;
-        REQUIRE(host.initialize(makeHostLocal()));
-        REQUIRE(ig.initialize(makeIgLocal().udpRecvPort));
-        REQUIRE(ig.connect(makeIgLocal()));
+        setupHostIgPair(host, ig);
 
         WHEN("Host sends 10 CIGI IGCtrl while IG receives but never replies SOF")
         {
@@ -896,9 +897,7 @@ SCENARIO("IG received CIGI FrameCntr values follow Host frame numbers",
     {
         HostSync host;
         IgSync ig;
-        REQUIRE(host.initialize(makeHostLocal()));
-        REQUIRE(ig.initialize(makeIgLocal().udpRecvPort));
-        REQUIRE(ig.connect(makeIgLocal()));
+        setupHostIgPair(host, ig);
 
         // 回调只记下解出的 FrameCntr，供 Then 核对。
         std::vector<std::uint32_t> frames;
@@ -946,7 +945,7 @@ SCENARIO("IG received CIGI FrameCntr values follow Host frame numbers",
 // =============================================================================
 
 SCENARIO("host and IG both load standalone sync configs and exchange CIGI",
-         "[acceptance][bdd][sync][standalone][cigi][CIGI-standalone]")
+         "[acceptance][sync][standalone][cigi][CIGI-standalone]")
 {
     GIVEN("host HostSync from hostConfig file, and IG IgSync from igConfig file")
     {

@@ -13,7 +13,7 @@ namespace
 } // namespace
 
 SCENARIO("linked IG reports simulation time as Host base plus local elapsed",
-         "[acceptance][bdd][sync][clock][CLK-consume]")
+         "[acceptance][sync][clock][CLK-consume]")
 {
     GIVEN("an IgSync that has received one Host timestamp")
     {
@@ -36,7 +36,7 @@ SCENARIO("linked IG reports simulation time as Host base plus local elapsed",
 }
 
 SCENARIO("IG takes the last of multiple same-frame time stamps",
-         "[acceptance][bdd][sync][clock][CLK-latest][CLK-same-frame]")
+         "[acceptance][sync][clock][CLK-latest][CLK-same-frame]")
 {
     GIVEN("an IgSync that receives two packets for the same frame")
     {
@@ -57,7 +57,7 @@ SCENARIO("IG takes the last of multiple same-frame time stamps",
 }
 
 SCENARIO("IG rejects an older-frame time stamp entirely",
-         "[acceptance][bdd][sync][clock][CLK-old-frame][CLK-reorder]")
+         "[acceptance][sync][clock][CLK-old-frame][CLK-reorder]")
 {
     GIVEN("an IgSync that received frame 100 then an older frame 99")
     {
@@ -78,7 +78,7 @@ SCENARIO("IG rejects an older-frame time stamp entirely",
 }
 
 SCENARIO("IG accepts a skipped frame number as a fresh base",
-         "[acceptance][bdd][sync][clock][CLK-skip-frame]")
+         "[acceptance][sync][clock][CLK-skip-frame]")
 {
     GIVEN("an IgSync that receives frame 100 then a skipped frame 102")
     {
@@ -99,7 +99,7 @@ SCENARIO("IG accepts a skipped frame number as a fresh base",
 }
 
 SCENARIO("IG extrapolates simulation time with local elapsed while no frame arrives",
-         "[acceptance][bdd][sync][clock][CLK-extrapolate]")
+         "[acceptance][sync][clock][CLK-extrapolate]")
 {
     GIVEN("an IgSync with a large extrapolate timeout that received one frame")
     {
@@ -119,7 +119,7 @@ SCENARIO("IG extrapolates simulation time with local elapsed while no frame arri
 }
 
 SCENARIO("IG freezes beyond extrapolate timeout and returns a constant simulation time",
-         "[acceptance][bdd][sync][clock][CLK-freeze]")
+         "[acceptance][sync][clock][CLK-freeze]")
 {
     GIVEN("an IgSync with a 50ms timeout that received one frame")
     {
@@ -142,7 +142,7 @@ SCENARIO("IG freezes beyond extrapolate timeout and returns a constant simulatio
 }
 
 SCENARIO("IG does not freeze within the extrapolate timeout",
-         "[acceptance][bdd][sync][clock][CLK-freeze]")
+         "[acceptance][sync][clock][CLK-freeze]")
 {
     GIVEN("an IgSync with a 50ms timeout that received one frame")
     {
@@ -164,7 +164,7 @@ SCENARIO("IG does not freeze within the extrapolate timeout",
 }
 
 SCENARIO("IG jumps directly to a new base after freeze recovery",
-         "[acceptance][bdd][sync][clock][CLK-unfreeze]")
+         "[acceptance][sync][clock][CLK-unfreeze]")
 {
     GIVEN("an IgSync frozen after its timeout")
     {
@@ -188,7 +188,7 @@ SCENARIO("IG jumps directly to a new base after freeze recovery",
 }
 
 SCENARIO("IG phase unwrap crosses a single 2^32 wrap without a jump",
-         "[acceptance][bdd][sync][clock][wrap][CLK-wrap]")
+         "[acceptance][sync][clock][wrap][CLK-wrap]")
 {
     GIVEN("an IgSync whose raw time stamps are about to wrap")
     {
@@ -209,7 +209,7 @@ SCENARIO("IG phase unwrap crosses a single 2^32 wrap without a jump",
 }
 
 SCENARIO("IG phase unwrap stays monotonic across multiple wraps",
-         "[acceptance][bdd][sync][clock][wrap][CLK-wrap-multi]")
+         "[acceptance][sync][clock][wrap][CLK-wrap-multi]")
 {
     GIVEN("an IgSync receiving stamps that wrap several times")
     {

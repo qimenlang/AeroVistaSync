@@ -319,7 +319,7 @@ namespace
 } // namespace
 
 SCENARIO("relay forwards only the master IG TCP report to the platform",
-         "[acceptance][bdd][platform][PLT-hello-ch]")
+         "[acceptance][platform][PLT-hello-ch]")
 {
     GIVEN("a platform Host, a viewhost relay, and two ready real IGs on channel 0 and 1")
     {
@@ -367,7 +367,7 @@ SCENARIO("relay forwards only the master IG TCP report to the platform",
 }
 
 SCENARIO("relay does not forward a side-channel IG TCP report to the platform",
-         "[acceptance][bdd][platform][PLT-hello-ch]")
+         "[acceptance][platform][PLT-hello-ch]")
 {
     GIVEN("a platform Host, a viewhost relay, and two ready real IGs on channel 0 and 1")
     {
@@ -405,7 +405,7 @@ SCENARIO("relay does not forward a side-channel IG TCP report to the platform",
 }
 
 SCENARIO("virtual IG does not join the platform before real IGs have gathered",
-         "[acceptance][bdd][platform][PLT-ig-first]")
+         "[acceptance][platform][PLT-ig-first]")
 {
     GIVEN("a platform Host and a viewhost relay expecting two real IGs")
     {
@@ -440,7 +440,7 @@ SCENARIO("virtual IG does not join the platform before real IGs have gathered",
 }
 
 SCENARIO("gathered real IGs let the virtual IG join the platform without becoming a viewhost peer",
-         "[acceptance][bdd][platform][PLT-not-peer]")
+         "[acceptance][platform][PLT-not-peer]")
 {
     GIVEN("a platform Host and a viewhost relay expecting two real IGs")
     {
@@ -494,7 +494,7 @@ SCENARIO("gathered real IGs let the virtual IG join the platform without becomin
 }
 
 SCENARIO("relayed platform ownship is the IG eye, not the viewhost keyboard",
-         "[acceptance][bdd][platform][PLT-filter-ownship]")
+         "[acceptance][platform][PLT-filter-ownship]")
 {
     GIVEN("a platform Host, a viewhost relay, and one ready real IG")
     {
@@ -547,7 +547,7 @@ SCENARIO("relayed platform ownship is the IG eye, not the viewhost keyboard",
 }
 
 SCENARIO("HostDriver relay forwards platform UDP IGCtrl without adding another data-plane frame",
-         "[acceptance][bdd][platform][PLT-filter-igctrl]")
+         "[acceptance][platform][PLT-filter-igctrl]")
 {
     GIVEN("a platform Host, a viewhost relay, and one ready real IG")
     {
@@ -595,7 +595,7 @@ SCENARIO("HostDriver relay forwards platform UDP IGCtrl without adding another d
 }
 
 SCENARIO("HostDriver relay forwards a platform TCP command with the original payload",
-         "[acceptance][bdd][platform][PLT-tcp-pass]")
+         "[acceptance][platform][PLT-tcp-pass]")
 {
     GIVEN("a platform Host, a viewhost relay, and one ready real IG")
     {
@@ -634,7 +634,7 @@ SCENARIO("HostDriver relay forwards a platform TCP command with the original pay
 }
 
 SCENARIO("HostDriver relay forwards an IG TCP report to the platform",
-         "[acceptance][bdd][platform][PLT-tcp-return]")
+         "[acceptance][platform][PLT-tcp-return]")
 {
     GIVEN("a platform Host, a viewhost relay, and one ready real IG")
     {
@@ -673,7 +673,7 @@ SCENARIO("HostDriver relay forwards an IG TCP report to the platform",
 }
 
 SCENARIO("platform receives repeating collision-segment notifications through the relay",
-         "[acceptance][bdd][platform][PLT-return-collision]")
+         "[acceptance][platform][PLT-return-collision]")
 {
     GIVEN("a platform Host, a viewhost relay, and one ready master IG")
     {
@@ -735,7 +735,7 @@ SCENARIO("platform receives repeating collision-segment notifications through th
 }
 
 SCENARIO("relay keeps a side-channel collision notification off the platform",
-         "[acceptance][bdd][platform][PLT-return-collision]")
+         "[acceptance][platform][PLT-return-collision]")
 {
     GIVEN("a platform Host, a viewhost relay, and two ready real IGs on channel 0 and 1")
     {
@@ -772,7 +772,7 @@ SCENARIO("relay keeps a side-channel collision notification off the platform",
 }
 
 SCENARIO("relay keeps real IG UDP SOF from both channels on viewhost",
-         "[acceptance][bdd][platform][PLT-relay-sof]")
+         "[acceptance][platform][PLT-relay-sof]")
 {
     GIVEN("a platform Host, a viewhost relay, and two ready real IGs on channel 0 and 1")
     {
@@ -811,7 +811,7 @@ SCENARIO("relay keeps real IG UDP SOF from both channels on viewhost",
 }
 
 SCENARIO("HostDriver relay packSof after UDP forward is the only SOF the platform sees",
-         "[acceptance][bdd][platform][PLT-relay-sof]")
+         "[acceptance][platform][PLT-relay-sof]")
 {
     GIVEN("a platform Host, a viewhost relay, and one ready real IG")
     {
@@ -850,7 +850,7 @@ SCENARIO("HostDriver relay packSof after UDP forward is the only SOF the platfor
 }
 
 SCENARIO("HostDriver relay packSof even when no real IG is ready",
-         "[acceptance][bdd][platform][PLT-relay-sof]")
+         "[acceptance][platform][PLT-relay-sof]")
 {
     GIVEN("a linked virtual IG whose real IG has dropped")
     {
@@ -890,7 +890,7 @@ SCENARIO("HostDriver relay packSof even when no real IG is ready",
 }
 
 SCENARIO("HostDriver viewhost TCP command does not break platform UDP frame numbers",
-         "[acceptance][bdd][platform][PLT-splice-cmd]")
+         "[acceptance][platform][PLT-splice-cmd]")
 {
     GIVEN("a platform Host, a viewhost relay, and one ready real IG")
     {
@@ -934,7 +934,7 @@ SCENARIO("HostDriver viewhost TCP command does not break platform UDP frame numb
 }
 
 SCENARIO("relayed platform TCP command keeps the original payload",
-         "[acceptance][bdd][platform][PLT-tcp-pass]")
+         "[acceptance][platform][PLT-tcp-pass]")
 {
     GIVEN("a platform Host linked to a virtual IG, and a viewhost Host linked to a real IG")
     {
@@ -983,7 +983,7 @@ SCENARIO("relayed platform TCP command keeps the original payload",
 }
 
 SCENARIO("relay splits two Host TCP messages glued in one sendAll",
-         "[acceptance][bdd][platform][PLT-frame-msg]")
+         "[acceptance][platform][PLT-frame-msg]")
 {
     GIVEN("a platform Host linked to a virtual IG, and a viewhost Host linked to a real IG")
     {
@@ -1029,7 +1029,7 @@ SCENARIO("relay splits two Host TCP messages glued in one sendAll",
 }
 
 SCENARIO("relay splits two IG TCP messages glued in one sendAll",
-         "[acceptance][bdd][platform][PLT-frame-msg]")
+         "[acceptance][platform][PLT-frame-msg]")
 {
     GIVEN("a platform Host linked to a virtual IG, and a viewhost Host linked to a real IG")
     {
@@ -1075,7 +1075,7 @@ SCENARIO("relay splits two IG TCP messages glued in one sendAll",
 }
 
 SCENARIO("viewhost TCP weather is a separate message from the relayed platform command",
-         "[acceptance][bdd][platform][PLT-splice-cmd]")
+         "[acceptance][platform][PLT-splice-cmd]")
 {
     GIVEN("a platform Host linked to a virtual IG, and a viewhost Host linked to a real IG")
     {
@@ -1134,7 +1134,7 @@ SCENARIO("viewhost TCP weather is a separate message from the relayed platform c
 }
 
 SCENARIO("viewhost TCP weather does not break relayed platform UDP frame numbers",
-         "[acceptance][bdd][platform][PLT-splice-cmd]")
+         "[acceptance][platform][PLT-splice-cmd]")
 {
     GIVEN("a platform Host linked to a virtual IG, and a viewhost Host linked to a real IG")
     {
@@ -1201,7 +1201,7 @@ SCENARIO("viewhost TCP weather does not break relayed platform UDP frame numbers
 }
 
 SCENARIO("relayed IG TCP report keeps the original payload",
-         "[acceptance][bdd][platform][PLT-tcp-return]")
+         "[acceptance][platform][PLT-tcp-return]")
 {
     GIVEN("a platform Host linked to a virtual IG, and a viewhost Host linked to a real IG")
     {
@@ -1250,7 +1250,7 @@ SCENARIO("relayed IG TCP report keeps the original payload",
 }
 
 SCENARIO("relayed platform UDP IGCtrl keeps the original header",
-         "[acceptance][bdd][platform][PLT-filter-igctrl]")
+         "[acceptance][platform][PLT-filter-igctrl]")
 {
     GIVEN("a platform Host linked to a virtual IG, and a viewhost Host linked to a real IG")
     {
@@ -1303,7 +1303,7 @@ SCENARIO("relayed platform UDP IGCtrl keeps the original header",
 }
 
 SCENARIO("virtual IG packSof after UDP forward is the only SOF the platform sees",
-         "[acceptance][bdd][platform][PLT-relay-sof]")
+         "[acceptance][platform][PLT-relay-sof]")
 {
     GIVEN("a platform Host linked to a virtual IG, and a viewhost Host linked to a real IG")
     {
@@ -1359,7 +1359,7 @@ SCENARIO("virtual IG packSof after UDP forward is the only SOF the platform sees
 }
 
 SCENARIO("virtual IG packSof when no real IG is ready to receive UDP",
-         "[acceptance][bdd][platform][PLT-relay-sof]")
+         "[acceptance][platform][PLT-relay-sof]")
 {
     GIVEN("a platform Host linked to a virtual IG, and a viewhost Host with no ready IG")
     {
@@ -1410,7 +1410,7 @@ SCENARIO("virtual IG packSof when no real IG is ready to receive UDP",
 }
 
 SCENARIO("relay forwards multiple platform TCP and UDP messages to the IG",
-         "[acceptance][bdd][platform][PLT-multi-down]")
+         "[acceptance][platform][PLT-multi-down]")
 {
     GIVEN("a platform Host linked to a virtual IG, and a viewhost Host linked to a real IG")
     {
@@ -1476,7 +1476,7 @@ SCENARIO("relay forwards multiple platform TCP and UDP messages to the IG",
 }
 
 SCENARIO("relay forwards multiple IG TCP reports; IG UDP SOF stays on viewhost",
-         "[acceptance][bdd][platform][PLT-multi-up]")
+         "[acceptance][platform][PLT-multi-up]")
 {
     GIVEN("a platform Host linked to a virtual IG, and a viewhost Host linked to a real IG")
     {
@@ -1543,7 +1543,7 @@ SCENARIO("relay forwards multiple IG TCP reports; IG UDP SOF stays on viewhost",
 }
 
 SCENARIO("viewhost refuses to stop forwarding before a platform ownship has arrived",
-         "[acceptance][bdd][platform][PLT-relay-pause]")
+         "[acceptance][platform][PLT-relay-pause]")
 {
     GIVEN("a linked relay that has only forwarded a platform IGCtrl without ownship")
     {
@@ -1607,7 +1607,7 @@ SCENARIO("viewhost refuses to stop forwarding before a platform ownship has arri
 }
 
 SCENARIO("stopped forwarding blocks both directions and repeats the last platform eye",
-         "[acceptance][bdd][platform][PLT-relay-pause]")
+         "[acceptance][platform][PLT-relay-pause]")
 {
     GIVEN("a linked relay that has forwarded a platform ownship")
     {
@@ -1701,7 +1701,7 @@ SCENARIO("stopped forwarding blocks both directions and repeats the last platfor
 }
 
 SCENARIO("resumed forwarding drops paused traffic and applies the next platform eye",
-         "[acceptance][bdd][platform][PLT-relay-resume]")
+         "[acceptance][platform][PLT-relay-resume]")
 {
     GIVEN("a linked relay that stopped forwarding after a platform ownship, with a command queued while stopped")
     {
