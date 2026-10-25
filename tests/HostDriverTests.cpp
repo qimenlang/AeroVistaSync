@@ -266,6 +266,10 @@ namespace
     }
 } // namespace
 
+// =============================================================================
+// 两台 IG 都发 TCP 上报时，平台只收到 master 的载荷（平台同步设计.md §12，码 PLT-hello-ch）。
+// 两条分开 flush。不按包号决定转发。
+// =============================================================================
 SCENARIO("relay forwards only the master IG TCP report to the platform",
          "[acceptance][platform][PLT-hello-ch]")
 {
@@ -314,6 +318,10 @@ SCENARIO("relay forwards only the master IG TCP report to the platform",
     }
 }
 
+// =============================================================================
+// 只有侧通道发 TCP 上报时，平台什么都收不到（平台同步设计.md §12，码 PLT-hello-ch）。
+// master 在线但不发。不按包号过滤。
+// =============================================================================
 SCENARIO("relay does not forward a side-channel IG TCP report to the platform",
          "[acceptance][platform][PLT-hello-ch]")
 {
@@ -352,6 +360,10 @@ SCENARIO("relay does not forward a side-channel IG TCP report to the platform",
     }
 }
 
+// =============================================================================
+// 实 IG 还没到齐时，虚 IG 不向平台握手（平台同步设计.md §12，码 PLT-ig-first）。
+// 期望两台，只到一台。平台 ready 为 0。
+// =============================================================================
 SCENARIO("virtual IG does not join the platform before real IGs have gathered",
          "[acceptance][platform][PLT-ig-first]")
 {
@@ -387,6 +399,10 @@ SCENARIO("virtual IG does not join the platform before real IGs have gathered",
     }
 }
 
+// =============================================================================
+// 实 IG 到齐后，虚 IG 以通道 0 加入平台，并且不算 viewhost 的对端（平台同步设计.md §12，码 PLT-not-peer）。
+// 平台 ready 为 1。viewhost 快照里仍是两台实 IG。
+// =============================================================================
 SCENARIO("gathered real IGs let the virtual IG join the platform without becoming a viewhost peer",
          "[acceptance][platform][PLT-not-peer]")
 {
@@ -441,6 +457,10 @@ SCENARIO("gathered real IGs let the virtual IG join the platform without becomin
     }
 }
 
+// =============================================================================
+// 转到实 IG 的 ownship 是平台眼点，不是 viewhost 键盘眼点（平台同步设计.md §12，码 PLT-filter-ownship）。
+// EntityID 为 0。UDP 全部丢失则跳过。
+// =============================================================================
 SCENARIO("relayed platform ownship is the IG eye, not the viewhost keyboard",
          "[acceptance][platform][PLT-filter-ownship]")
 {
@@ -494,6 +514,10 @@ SCENARIO("relayed platform ownship is the IG eye, not the viewhost keyboard",
     }
 }
 
+// =============================================================================
+// 平台的 UDP IGCtrl 原样转发，viewhost 不再另发一帧数据面（平台同步设计.md §12，码 PLT-filter-igctrl）。
+// viewhost 的 igCtrlSentCount 为 0。实 IG 收到的条数不超过平台发出数。丢包则跳过。
+// =============================================================================
 SCENARIO("HostDriver relay forwards platform UDP IGCtrl without adding another data-plane frame",
          "[acceptance][platform][PLT-filter-igctrl]")
 {
@@ -542,6 +566,10 @@ SCENARIO("HostDriver relay forwards platform UDP IGCtrl without adding another d
     }
 }
 
+// =============================================================================
+// 平台 TCP 命令的原载荷到达实 IG（平台同步设计.md §12，码 PLT-tcp-pass）。
+// TimeStampValid 为 false。
+// =============================================================================
 SCENARIO("HostDriver relay forwards a platform TCP command with the original payload",
          "[acceptance][platform][PLT-tcp-pass]")
 {
@@ -581,6 +609,10 @@ SCENARIO("HostDriver relay forwards a platform TCP command with the original pay
     }
 }
 
+// =============================================================================
+// 实 IG 的 TCP 上报到达平台（平台同步设计.md §12，码 PLT-tcp-return）。
+// 报文号是 0x3001，正文是发出的那串。
+// =============================================================================
 SCENARIO("HostDriver relay forwards an IG TCP report to the platform",
          "[acceptance][platform][PLT-tcp-return]")
 {
@@ -620,6 +652,10 @@ SCENARIO("HostDriver relay forwards an IG TCP report to the platform",
     }
 }
 
+// =============================================================================
+// 碰撞段命中经中继按序到达平台（平台同步设计.md §12，码 PLT-return-collision）。
+// 材质顺序是 1、2、3。命中时的 SOF 帧号不是 0，来自虚 IG。实 IG 自己的 IGCtrl 帧号仍是 0。
+// =============================================================================
 SCENARIO("platform receives repeating collision-segment notifications through the relay",
          "[acceptance][platform][PLT-return-collision]")
 {
@@ -682,6 +718,10 @@ SCENARIO("platform receives repeating collision-segment notifications through th
     }
 }
 
+// =============================================================================
+// 侧通道的碰撞通知不到平台（平台同步设计.md §12，码 PLT-return-collision）。
+// 平台只有 master 的材质。
+// =============================================================================
 SCENARIO("relay keeps a side-channel collision notification off the platform",
          "[acceptance][platform][PLT-return-collision]")
 {
@@ -719,6 +759,10 @@ SCENARIO("relay keeps a side-channel collision notification off the platform",
     }
 }
 
+// =============================================================================
+// 两台实 IG 的 UDP SOF 留在 viewhost，平台收不到（平台同步设计.md §12，码 PLT-relay-sof）。
+// viewhost 的 SOF 计数增加，平台的计数不变。丢包则跳过。
+// =============================================================================
 SCENARIO("relay keeps real IG UDP SOF from both channels on viewhost",
          "[acceptance][platform][PLT-relay-sof]")
 {
@@ -758,6 +802,10 @@ SCENARIO("relay keeps real IG UDP SOF from both channels on viewhost",
     }
 }
 
+// =============================================================================
+// UDP 转发之后，平台看到的 SOF 只来自虚 IG 的 packSof（平台同步设计.md §12，码 PLT-relay-sof）。
+// 帧号不是 0xffffffff。丢包则跳过。
+// =============================================================================
 SCENARIO("HostDriver relay packSof after UDP forward is the only SOF the platform sees",
          "[acceptance][platform][PLT-relay-sof]")
 {
@@ -797,6 +845,10 @@ SCENARIO("HostDriver relay packSof after UDP forward is the only SOF the platfor
     }
 }
 
+// =============================================================================
+// 没有就绪实 IG 时，虚 IG 仍 packSof，平台能收到（平台同步设计.md §12，码 PLT-relay-sof）。
+// 虚 IG 握手还在。丢包则跳过。
+// =============================================================================
 SCENARIO("HostDriver relay packSof even when no real IG is ready",
          "[acceptance][platform][PLT-relay-sof]")
 {
@@ -837,6 +889,10 @@ SCENARIO("HostDriver relay packSof even when no real IG is ready",
     }
 }
 
+// =============================================================================
+// viewhost 自己的 TCP 命令不打断平台 UDP 帧号（平台同步设计.md §12，码 PLT-splice-cmd）。
+// 到达的 UDP 帧号保持递增，TCP 正文单独是那条命令。丢包则跳过。
+// =============================================================================
 SCENARIO("HostDriver viewhost TCP command does not break platform UDP frame numbers",
          "[acceptance][platform][PLT-splice-cmd]")
 {
@@ -881,6 +937,10 @@ SCENARIO("HostDriver viewhost TCP command does not break platform UDP frame numb
     }
 }
 
+// =============================================================================
+// 转发后的平台 TCP 命令保持原载荷（平台同步设计.md §12，码 PLT-tcp-pass）。
+// TimeStampValid 仍是 false。与走 HostDriver 的那条共用码，这里直接转分帧后的字节。
+// =============================================================================
 SCENARIO("relayed platform TCP command keeps the original payload",
          "[acceptance][platform][PLT-tcp-pass]")
 {
@@ -930,6 +990,10 @@ SCENARIO("relayed platform TCP command keeps the original payload",
     }
 }
 
+// =============================================================================
+// 一次 TCP 写里粘住的两条 Host 消息被拆开转发（平台同步设计.md §12，码 PLT-frame-msg）。
+// 实 IG 收到帧号 10 然后 11。
+// =============================================================================
 SCENARIO("relay splits two Host TCP messages glued in one sendAll",
          "[acceptance][platform][PLT-frame-msg]")
 {
@@ -976,6 +1040,10 @@ SCENARIO("relay splits two Host TCP messages glued in one sendAll",
     }
 }
 
+// =============================================================================
+// 一次 TCP 写里粘住的两条 IG 消息被拆开转发（平台同步设计.md §12，码 PLT-frame-msg）。
+// 平台收到 SOF 帧号 20 然后 21。
+// =============================================================================
 SCENARIO("relay splits two IG TCP messages glued in one sendAll",
          "[acceptance][platform][PLT-frame-msg]")
 {
@@ -1022,6 +1090,10 @@ SCENARIO("relay splits two IG TCP messages glued in one sendAll",
     }
 }
 
+// =============================================================================
+// viewhost 的天气 TCP 与转发来的平台命令是两条消息（平台同步设计.md §12，码 PLT-splice-cmd）。
+// 两条的 TimeStampValid 都是 false。天气在第二条。
+// =============================================================================
 SCENARIO("viewhost TCP weather is a separate message from the relayed platform command",
          "[acceptance][platform][PLT-splice-cmd]")
 {
@@ -1081,6 +1153,10 @@ SCENARIO("viewhost TCP weather is a separate message from the relayed platform c
     }
 }
 
+// =============================================================================
+// viewhost 的天气 TCP 不打断已转发的平台 UDP 帧号（平台同步设计.md §12，码 PLT-splice-cmd）。
+// UDP 帧号保持递增，天气在单独的 TCP 消息里。丢包则跳过。
+// =============================================================================
 SCENARIO("viewhost TCP weather does not break relayed platform UDP frame numbers",
          "[acceptance][platform][PLT-splice-cmd]")
 {
@@ -1148,6 +1224,10 @@ SCENARIO("viewhost TCP weather does not break relayed platform UDP frame numbers
     }
 }
 
+// =============================================================================
+// 转发后的 IG TCP 上报保持原载荷（平台同步设计.md §12，码 PLT-tcp-return）。
+// 报文号 0x3001，正文是发出的那串。
+// =============================================================================
 SCENARIO("relayed IG TCP report keeps the original payload",
          "[acceptance][platform][PLT-tcp-return]")
 {
@@ -1197,6 +1277,10 @@ SCENARIO("relayed IG TCP report keeps the original payload",
     }
 }
 
+// =============================================================================
+// 转发后的 UDP IGCtrl 保持平台的帧号和时间戳（平台同步设计.md §12，码 PLT-filter-igctrl）。
+// TimeStampValid 为 true。实 IG 只收到这一条，viewhost 没有再发 IGCtrl。
+// =============================================================================
 SCENARIO("relayed platform UDP IGCtrl keeps the original header",
          "[acceptance][platform][PLT-filter-igctrl]")
 {
@@ -1250,6 +1334,10 @@ SCENARIO("relayed platform UDP IGCtrl keeps the original header",
     }
 }
 
+// =============================================================================
+// 虚 IG 回给平台的 SOF 与平台帧号一致，实 IG 的 SOF 留在 viewhost（平台同步设计.md §12，码 PLT-relay-sof）。
+// 两边的 SOF 计数都是 1。
+// =============================================================================
 SCENARIO("virtual IG packSof after UDP forward is the only SOF the platform sees",
          "[acceptance][platform][PLT-relay-sof]")
 {
@@ -1306,6 +1394,10 @@ SCENARIO("virtual IG packSof after UDP forward is the only SOF the platform sees
     }
 }
 
+// =============================================================================
+// 没有实 IG 可收 UDP 时，虚 IG 仍按平台帧号回 SOF（平台同步设计.md §12，码 PLT-relay-sof）。
+// 丢包则跳过。
+// =============================================================================
 SCENARIO("virtual IG packSof when no real IG is ready to receive UDP",
          "[acceptance][platform][PLT-relay-sof]")
 {
@@ -1357,6 +1449,10 @@ SCENARIO("virtual IG packSof when no real IG is ready to receive UDP",
     }
 }
 
+// =============================================================================
+// 多条平台 TCP 和 UDP 都按序到达实 IG（平台同步设计.md §12，码 PLT-multi-down）。
+// 两条文本是 tcp-0、tcp-1，两条 UDP 帧号是 0、1。
+// =============================================================================
 SCENARIO("relay forwards multiple platform TCP and UDP messages to the IG",
          "[acceptance][platform][PLT-multi-down]")
 {
@@ -1423,6 +1519,10 @@ SCENARIO("relay forwards multiple platform TCP and UDP messages to the IG",
     }
 }
 
+// =============================================================================
+// 多条 IG TCP 上报到达平台，实 IG 的 UDP SOF 留在 viewhost（平台同步设计.md §12，码 PLT-multi-up）。
+// 平台 SOF 计数停在转发 TCP 之后的值。
+// =============================================================================
 SCENARIO("relay forwards multiple IG TCP reports; IG UDP SOF stays on viewhost",
          "[acceptance][platform][PLT-multi-up]")
 {
@@ -1490,6 +1590,10 @@ SCENARIO("relay forwards multiple IG TCP reports; IG UDP SOF stays on viewhost",
     }
 }
 
+// =============================================================================
+// 还没有平台 ownship 时，拒绝停止转发（平台同步设计.md §12，码 PLT-relay-pause）。
+// 拒绝之后，随后的平台 ownship 仍能到达。viewhost 不发数据面 IGCtrl。ownship 丢包则跳过。
+// =============================================================================
 SCENARIO("viewhost refuses to stop forwarding before a platform ownship has arrived",
          "[acceptance][platform][PLT-relay-pause]")
 {
@@ -1554,6 +1658,10 @@ SCENARIO("viewhost refuses to stop forwarding before a platform ownship has arri
     }
 }
 
+// =============================================================================
+// 停止转发后，双向都不再放行，缓存眼点停在已到达的平台 ownship（平台同步设计.md §12，码 PLT-relay-pause）。
+// 停转期间的平台命令、新眼点和 IG 上报都到不了对端。viewhost 再发两次当前眼点，IG 两次收到的都是这条平台 ownship。丢包则跳过。
+// =============================================================================
 SCENARIO("stopped forwarding blocks both directions and repeats the last platform eye",
          "[acceptance][platform][PLT-relay-pause]")
 {
@@ -1648,6 +1756,10 @@ SCENARIO("stopped forwarding blocks both directions and repeats the last platfor
     }
 }
 
+// =============================================================================
+// 恢复转发后，丢掉停转期间排队的命令，并采用下一条平台眼点（平台同步设计.md §12，码 PLT-relay-resume）。
+// 恢复后立刻 tick，排队命令不到。新眼点到达后，viewhost 仍不发数据面 IGCtrl。丢包则跳过。
+// =============================================================================
 SCENARIO("resumed forwarding drops paused traffic and applies the next platform eye",
          "[acceptance][platform][PLT-relay-resume]")
 {

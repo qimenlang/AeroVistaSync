@@ -46,6 +46,10 @@ namespace
 
 // ===== applyManualStep（viewhost设计.md §4.2 / §4.5） =====
 
+// =============================================================================
+// 航向为 0 时向前一步，只增加纬度，经度和高度不动（viewhost设计.md §10，码 VH-step-forward）。
+// 步长 10 m，1° 纬度按 111320 m 换算。不验夹紧和归一化。
+// =============================================================================
 TEST_CASE("applyManualStep forward at yaw=0 increases latitude only", "[unit][viewhost][step][VH-step-forward]")
 {
     auto eye = makeLlaEye(39.9, 116.4, 500.0, 0.0);
@@ -57,6 +61,10 @@ TEST_CASE("applyManualStep forward at yaw=0 increases latitude only", "[unit][vi
     REQUIRE(nearlyEqual(eye.z, 500.0));
 }
 
+// =============================================================================
+// 航向为 0 时向右平移，经度增量按 cos(纬度) 放大（viewhost设计.md §10，码 VH-step-strafe）。
+// 纬度取 60°，cos 为 0.5，同样的米数经度增量翻倍。纬度本身不变。
+// =============================================================================
 TEST_CASE("applyManualStep strafe right at yaw=0 increases longitude scaled by cos(lat)", "[unit][viewhost][step][VH-step-strafe]")
 {
     auto eye = makeLlaEye(60.0, 116.4, 500.0, 0.0); // cos(60°)=0.5 → 经度增量翻倍
@@ -67,6 +75,10 @@ TEST_CASE("applyManualStep strafe right at yaw=0 increases longitude scaled by c
     REQUIRE(nearlyEqual(eye.y, 116.4 + 10.0 / (kMetersPerDeg * 0.5)));
 }
 
+// =============================================================================
+// 航向 +90° 时向前一步改向西，只减经度（viewhost设计.md §10，码 VH-step-yaw90）。
+// 纬度保持不变。
+// =============================================================================
 TEST_CASE("applyManualStep forward at yaw=90 moves west", "[unit][viewhost][step][VH-step-yaw90]")
 {
     auto eye = makeLlaEye(30.0, 116.4, 500.0, 90.0); // §4.2：+yaw → 西
@@ -77,6 +89,9 @@ TEST_CASE("applyManualStep forward at yaw=90 moves west", "[unit][viewhost][step
     REQUIRE(nearlyEqual(eye.y, 116.4 - 10.0 / (kMetersPerDeg * std::cos(degToRad(30.0)))));
 }
 
+// =============================================================================
+// 航向 -90° 时向前一步改向东，只加经度（viewhost设计.md §10，码 VH-step-yaw-neg90）。
+// =============================================================================
 TEST_CASE("applyManualStep forward at yaw=-90 moves east", "[unit][viewhost][step][VH-step-yaw-neg90]")
 {
     auto eye = makeLlaEye(30.0, 116.4, 500.0, -90.0); // §4.2：-yaw → 东
@@ -87,6 +102,10 @@ TEST_CASE("applyManualStep forward at yaw=-90 moves east", "[unit][viewhost][ste
     REQUIRE(nearlyEqual(eye.y, 116.4 + 10.0 / (kMetersPerDeg * std::cos(degToRad(30.0)))));
 }
 
+// =============================================================================
+// 垂直步进只改高度，不随机头转动（viewhost设计.md §10，码 VH-step-alt）。
+// 先上升 20 m 再下降 20 m，高度回到原点。
+// =============================================================================
 TEST_CASE("applyManualStep up and down adjust altitude only", "[unit][viewhost][step][VH-step-alt]")
 {
     auto eye = makeLlaEye(30.0, 116.4, 500.0);
@@ -98,6 +117,10 @@ TEST_CASE("applyManualStep up and down adjust altitude only", "[unit][viewhost][
     REQUIRE(nearlyEqual(eye.z, 500.0));
 }
 
+// =============================================================================
+// 航向和俯仰先累加，俯仰越界再夹到 89.9°（viewhost设计.md §10，码 VH-step-clamp-pitch）。
+// 同一次用例里先确认未越界的累加，再确认夹紧。
+// =============================================================================
 TEST_CASE("applyManualStep accumulates yaw and pitch then clamps pitch", "[unit][viewhost][step][VH-step-clamp-pitch]")
 {
     auto eye = makeLlaEye(30.0, 116.4, 500.0, 0.0);
@@ -110,6 +133,10 @@ TEST_CASE("applyManualStep accumulates yaw and pitch then clamps pitch", "[unit]
     REQUIRE(nearlyEqual(eye.pitchDeg, 89.9));
 }
 
+// =============================================================================
+// 纬度已经在北极限时再向北推，停在 89.9°（viewhost设计.md §10，码 VH-step-clamp-lat-n）。
+// 不接受未夹紧的 89.9° 加步进。
+// =============================================================================
 TEST_CASE("applyManualStep clamps latitude near the pole", "[unit][viewhost][step][VH-step-clamp-lat-n]")
 {
     auto eye = makeLlaEye(89.9, 116.4, 500.0, 0.0); // 已在 clamp 上限
@@ -119,6 +146,9 @@ TEST_CASE("applyManualStep clamps latitude near the pole", "[unit][viewhost][ste
     REQUIRE(nearlyEqual(eye.x, 89.9)); // 被 clamp，而非 89.9 + 1000/111320
 }
 
+// =============================================================================
+// 纬度已经在南极限时再向南推，停在 -89.9°（viewhost设计.md §10，码 VH-step-clamp-lat-s）。
+// =============================================================================
 TEST_CASE("applyManualStep clamps latitude near the south pole", "[unit][viewhost][step][VH-step-clamp-lat-s]")
 {
     auto eye = makeLlaEye(-89.9, 116.4, 500.0, 0.0); // 已在 clamp 下限
@@ -128,6 +158,10 @@ TEST_CASE("applyManualStep clamps latitude near the south pole", "[unit][viewhos
     REQUIRE(nearlyEqual(eye.x, -89.9)); // 被 clamp，而非 -89.9 - 1000/111320
 }
 
+// =============================================================================
+// 航向越过 180° 后归一化到 (-180, 180]（viewhost设计.md §10，码 VH-norm-yaw）。
+// 170° 再转 20° 必须落到 -170°，不接受等价角的别种写法。
+// =============================================================================
 TEST_CASE("applyManualStep normalizes yaw to (-180, 180]", "[unit][viewhost][step][VH-norm-yaw]")
 {
     auto eye = makeLlaEye(30.0, 116.4, 500.0, 170.0);
@@ -137,6 +171,10 @@ TEST_CASE("applyManualStep normalizes yaw to (-180, 180]", "[unit][viewhost][ste
     REQUIRE(nearlyEqual(eye.yawDeg, -170.0)); // 钉死 normalize 域，而非 angleNear（放过等价表示）
 }
 
+// =============================================================================
+// 航向从 +180° 再增加，仍归一化到 (-180, 180]（viewhost设计.md §10，码 VH-norm-yaw-pos）。
+// 180° 加 20° 落到 -160°。
+// =============================================================================
 TEST_CASE("applyManualStep normalizes yaw across the +180 boundary", "[unit][viewhost][step][VH-norm-yaw-pos]")
 {
     auto eye = makeLlaEye(30.0, 116.4, 500.0, 180.0);
@@ -146,6 +184,10 @@ TEST_CASE("applyManualStep normalizes yaw across the +180 boundary", "[unit][vie
     REQUIRE(nearlyEqual(eye.yawDeg, -160.0));
 }
 
+// =============================================================================
+// 负航向越过 -180° 后归一化到 (-180, 180]（viewhost设计.md §10，码 VH-norm-yaw-neg）。
+// -170° 再减 20° 落到 170°。
+// =============================================================================
 TEST_CASE("applyManualStep normalizes negative yaw across the -180 boundary", "[unit][viewhost][step][VH-norm-yaw-neg]")
 {
     auto eye = makeLlaEye(30.0, 116.4, 500.0, -170.0);
@@ -155,6 +197,10 @@ TEST_CASE("applyManualStep normalizes negative yaw across the -180 boundary", "[
     REQUIRE(nearlyEqual(eye.yawDeg, 170.0));
 }
 
+// =============================================================================
+// 向东平移越过 180° 经线后，经度归一化到 (-180, 180]（viewhost设计.md §10，码 VH-norm-lon）。
+// 起点经度 179.9°，向东 1° 后是 -179.1°。
+// =============================================================================
 TEST_CASE("applyManualStep normalizes longitude across 180", "[unit][viewhost][step][VH-norm-lon]")
 {
     auto eye = makeLlaEye(0.0, 179.9, 500.0, 0.0);

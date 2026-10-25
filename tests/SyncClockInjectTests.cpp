@@ -12,6 +12,10 @@ namespace
     using HostTimeStamp = IgSync::HostTimeStamp;
 } // namespace
 
+// =============================================================================
+// 注入一帧 Host 时间戳后，模拟时间等于基准加上本地流逝（时钟同步方案.md §6，码 CLK-consume）。
+// 基准是 raw 乘 10 微秒。用 simTimeUsAt 注入现在时刻，不读墙钟。
+// =============================================================================
 SCENARIO("linked IG reports simulation time as Host base plus local elapsed",
          "[acceptance][sync][clock][CLK-consume]")
 {
@@ -35,6 +39,9 @@ SCENARIO("linked IG reports simulation time as Host base plus local elapsed",
     }
 }
 
+// =============================================================================
+// 同一帧号的多条时间戳里，后到的那条成为基准（时钟同步方案.md §6，码 CLK-latest、CLK-same-frame）。
+// =============================================================================
 SCENARIO("IG takes the last of multiple same-frame time stamps",
          "[acceptance][sync][clock][CLK-latest][CLK-same-frame]")
 {
@@ -56,6 +63,9 @@ SCENARIO("IG takes the last of multiple same-frame time stamps",
     }
 }
 
+// =============================================================================
+// 更旧的帧号整条丢弃，基准仍是较新的那一帧（时钟同步方案.md §6，码 CLK-old-frame、CLK-reorder）。
+// =============================================================================
 SCENARIO("IG rejects an older-frame time stamp entirely",
          "[acceptance][sync][clock][CLK-old-frame][CLK-reorder]")
 {
@@ -77,6 +87,9 @@ SCENARIO("IG rejects an older-frame time stamp entirely",
     }
 }
 
+// =============================================================================
+// 帧号跳过一帧时，新帧号仍被接受并成为基准（时钟同步方案.md §6，码 CLK-skip-frame）。
+// =============================================================================
 SCENARIO("IG accepts a skipped frame number as a fresh base",
          "[acceptance][sync][clock][CLK-skip-frame]")
 {
@@ -98,6 +111,10 @@ SCENARIO("IG accepts a skipped frame number as a fresh base",
     }
 }
 
+// =============================================================================
+// 外推时限之内没有新帧时，模拟时间随本地流逝继续增加（时钟同步方案.md §6，码 CLK-extrapolate）。
+// 时限设得足够大，这条不进入冻结。
+// =============================================================================
 SCENARIO("IG extrapolates simulation time with local elapsed while no frame arrives",
          "[acceptance][sync][clock][CLK-extrapolate]")
 {
@@ -118,6 +135,10 @@ SCENARIO("IG extrapolates simulation time with local elapsed while no frame arri
     }
 }
 
+// =============================================================================
+// 超过外推时限后进入冻结，模拟时间停在基准上不再增加（时钟同步方案.md §6，码 CLK-freeze）。
+// 时限 50 ms。两个更晚的时刻读到同一个值。
+// =============================================================================
 SCENARIO("IG freezes beyond extrapolate timeout and returns a constant simulation time",
          "[acceptance][sync][clock][CLK-freeze]")
 {
@@ -141,6 +162,10 @@ SCENARIO("IG freezes beyond extrapolate timeout and returns a constant simulatio
     }
 }
 
+// =============================================================================
+// 外推时限之内不冻结，模拟时间仍含本地流逝（时钟同步方案.md §6，码 CLK-freeze）。
+// 与上一条共用冻结码，这一条钉的是时限内的反面。
+// =============================================================================
 SCENARIO("IG does not freeze within the extrapolate timeout",
          "[acceptance][sync][clock][CLK-freeze]")
 {
@@ -163,6 +188,10 @@ SCENARIO("IG does not freeze within the extrapolate timeout",
     }
 }
 
+// =============================================================================
+// 冻结之后新帧到达，直接改用新基准，并清除冻结（时钟同步方案.md §6，码 CLK-unfreeze）。
+// 不把冻结期间的流逝补进新基准。
+// =============================================================================
 SCENARIO("IG jumps directly to a new base after freeze recovery",
          "[acceptance][sync][clock][CLK-unfreeze]")
 {
@@ -187,6 +216,10 @@ SCENARIO("IG jumps directly to a new base after freeze recovery",
     }
 }
 
+// =============================================================================
+// 32 位原始时间戳回绕一次时，展开后的模拟时间只增加相应的 tick（时钟同步方案.md §6，码 CLK-wrap）。
+// 不允许出现一次 2^32 的跳跃。
+// =============================================================================
 SCENARIO("IG phase unwrap crosses a single 2^32 wrap without a jump",
          "[acceptance][sync][clock][wrap][CLK-wrap]")
 {
@@ -208,6 +241,10 @@ SCENARIO("IG phase unwrap crosses a single 2^32 wrap without a jump",
     }
 }
 
+// =============================================================================
+// 多次越过 32 位回绕时，展开后的模拟时间严格递增（时钟同步方案.md §6，码 CLK-wrap-multi）。
+// 不钉每一拍的绝对微秒数，只钉单调。
+// =============================================================================
 SCENARIO("IG phase unwrap stays monotonic across multiple wraps",
          "[acceptance][sync][clock][wrap][CLK-wrap-multi]")
 {
@@ -235,6 +272,10 @@ SCENARIO("IG phase unwrap stays monotonic across multiple wraps",
     }
 }
 
+// =============================================================================
+// Host 重启后的新会话从小 raw 起算，不继承旧会话的大基准（时钟同步方案.md §6，码 CLK-session-restart）。
+// resetHostSession 之后 simTimeUs 等于新 raw 乘 10，而不是旧的大值。
+// =============================================================================
 TEST_CASE("session reset after Host restart starts from the small raw without inheriting the old base",
           "[unit][sync][clock][session][CLK-session-restart]")
 {

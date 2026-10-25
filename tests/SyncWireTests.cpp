@@ -74,6 +74,10 @@ namespace
 // 1. 线格式契约（单元，直接测 CCL，绿，锚定 §4.1）
 // =============================================================================
 
+// =============================================================================
+// EntityPositionCtrl 打成固定 48 字节（状态同步设计.md §10，码 CMD-posctrl-48b）。
+// 包头的长度和包号按小端读出，与定长常量一致。
+// =============================================================================
 TEST_CASE("CigiEntityPositionCtrlV4 packs to fixed 48B", "[unit][sync][cmd][wire-contract][CMD-posctrl-48b]")
 {
     CigiEntityPositionCtrlV4 place;
@@ -93,6 +97,10 @@ TEST_CASE("CigiEntityPositionCtrlV4 packs to fixed 48B", "[unit][sync][cmd][wire
     REQUIRE(packetId == CIGI_ENTITY_POSITION_CTRL_PACKET_ID_V4);
 }
 
+// =============================================================================
+// 变长文本包的长度至少为定长头，并且按 8 字节对齐（状态同步设计.md §10，码 CMD-symbol-text）。
+// 包头里的 PacketSize、PacketID 与打包返回值一致。不验文本正文。
+// =============================================================================
 TEST_CASE("CigiSymbolTextDefV4 packs variable-length Text", "[unit][sync][cmd][wire-contract][CMD-symbol-text]")
 {
     CigiSymbolTextDefV4 cmd("place 7 121.47 31.23 500");
@@ -110,6 +118,10 @@ TEST_CASE("CigiSymbolTextDefV4 packs variable-length Text", "[unit][sync][cmd][w
 // 4. TCP 分帧器（CigiFrameAssembler）单元测试——§4.2 消息级切流
 // =============================================================================
 
+// =============================================================================
+// 一次 feed 一条完整消息，分帧器切出一帧并清空缓冲（状态同步设计.md §10，码 FRM-one-message）。
+// 输入由 CCL 打出。分帧器只按包头切字节，不调用 CCL。
+// =============================================================================
 TEST_CASE("CigiFrameAssembler emits one complete message as one frame",
           "[unit][sync][cmd][framing][FRM-one-message]")
 {
@@ -126,6 +138,10 @@ TEST_CASE("CigiFrameAssembler emits one complete message as one frame",
     REQUIRE(assembler.bufferEmpty());
 }
 
+// =============================================================================
+// 一次 feed 里两条消息首尾相接，分帧器按消息切成两帧（状态同步设计.md §10，码 FRM-sticky）。
+// 顺序与输入一致，切完缓冲为空。
+// =============================================================================
 TEST_CASE("CigiFrameAssembler splits sticky messages (two messages in one feed)",
           "[unit][sync][cmd][framing][FRM-sticky]")
 {
@@ -148,6 +164,9 @@ TEST_CASE("CigiFrameAssembler splits sticky messages (two messages in one feed)"
     REQUIRE(assembler.bufferEmpty());
 }
 
+// =============================================================================
+// 消息被拆成两次 feed 时，半包先留在缓冲，补齐后才切出一帧（状态同步设计.md §10，码 FRM-split-buffer）。
+// =============================================================================
 TEST_CASE("CigiFrameAssembler buffers a split message across feeds",
           "[unit][sync][cmd][framing][FRM-split-buffer]")
 {
@@ -169,6 +188,10 @@ TEST_CASE("CigiFrameAssembler buffers a split message across feeds",
     REQUIRE(assembler.bufferEmpty());
 }
 
+// =============================================================================
+// 一条消息里含 IGCtrl、位姿和文本多个包时，仍切成一帧（状态同步设计.md §10，码 FRM-multi-packet）。
+// 不按单个 Packet 切开。
+// =============================================================================
 TEST_CASE("CigiFrameAssembler keeps a multi-packet message as one frame",
           "[unit][sync][cmd][framing][FRM-multi-packet]")
 {

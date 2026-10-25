@@ -32,6 +32,9 @@ namespace
     }
 } // namespace
 
+// =============================================================================
+// 目录里已有实体时，未知 id 查不到行（实体与运动控制设计.md §11，码 ENT-04-table-miss）。
+// =============================================================================
 TEST_CASE("HostDataManager lookup misses unknown entity id",
           "[unit][sync][host-data][ENT-04-table-miss]")
 {
@@ -42,6 +45,10 @@ TEST_CASE("HostDataManager lookup misses unknown entity id",
     REQUIRE_FALSE(manager.entityRow(99).has_value());
 }
 
+// =============================================================================
+// 再次加载失败时，权威表保持上一次成功的内容（实体与运动控制设计.md §11，码 ENT-04-table-reload-keep）。
+// 失败文件是重复 id。表里仍是 id 4，名字 keep。
+// =============================================================================
 TEST_CASE("HostDataManager failed reload leaves existing table unchanged",
           "[unit][sync][host-data][negative][ENT-04-table-reload-keep]")
 {
@@ -56,6 +63,10 @@ TEST_CASE("HostDataManager failed reload leaves existing table unchanged",
     REQUIRE(manager.entityRow(4)->name == "keep");
 }
 
+// =============================================================================
+// setEntityState 只改被点名的那一行（实体与运动控制设计.md §11，码 ENT-04-update-state）。
+// 另一行的状态保持不动。
+// =============================================================================
 TEST_CASE("HostDataManager updates entityState of one row",
           "[unit][sync][host-data][ENT-04-update-state]")
 {
@@ -77,6 +88,9 @@ TEST_CASE("HostDataManager updates entityState of one row",
     REQUIRE(manager.entityRow(2)->entityState == EntityAuthorityState::ACTIVE);
 }
 
+// =============================================================================
+// setEntityPose 把纬度、经度、高度和三个姿态角写入该行（实体与运动控制设计.md §11，码 ENT-04-update-pose）。
+// =============================================================================
 TEST_CASE("HostDataManager updates last pose of one row",
           "[unit][sync][host-data][ENT-04-update-pose]")
 {
@@ -97,6 +111,9 @@ TEST_CASE("HostDataManager updates last pose of one row",
     REQUIRE(row->pose.rollDeg == 60.0);
 }
 
+// =============================================================================
+// setEntityAlpha 只更新该行的透明度（实体与运动控制设计.md §11，码 ENT-04-update-alpha）。
+// =============================================================================
 TEST_CASE("HostDataManager updates alpha of one row",
           "[unit][sync][host-data][ENT-04-update-alpha]")
 {
@@ -109,6 +126,10 @@ TEST_CASE("HostDataManager updates alpha of one row",
     REQUIRE(manager.entityRow(1)->alpha == 128);
 }
 
+// =============================================================================
+// 对未知 id 改状态、位姿或透明度都会拒绝，已有行不变（实体与运动控制设计.md §11，码 ENT-04-update-miss）。
+// 错误文本只要求含 unknown，不钉全文。
+// =============================================================================
 TEST_CASE("HostDataManager rejects runtime update of unknown entity id",
           "[unit][sync][host-data][negative][ENT-04-update-miss]")
 {
@@ -131,6 +152,10 @@ TEST_CASE("HostDataManager rejects runtime update of unknown entity id",
     REQUIRE(manager.entityRow(1)->alpha == 255);
 }
 
+// =============================================================================
+// EntityCtrl 打包读的是表里的当前行：缺省 Active，显式 Standby（实体与运动控制设计.md §11，码 ENT-04-pack-ctrl）。
+// 不走网络。EntityType 为 0，alpha 为 255。
+// =============================================================================
 TEST_CASE("HostDataManager packs EntityCtrl from the current row",
           "[unit][sync][host-data][ENT-04-pack-ctrl]")
 {
@@ -158,6 +183,9 @@ TEST_CASE("HostDataManager packs EntityCtrl from the current row",
     REQUIRE(standby->GetEntityType() == 0);
 }
 
+// =============================================================================
+// 运行期把状态改成 Standby 之后，EntityCtrl 打包读的是新状态（实体与运动控制设计.md §11，码 ENT-04-pack-ctrl-current）。
+// =============================================================================
 TEST_CASE("HostDataManager packs EntityCtrl from table after runtime update",
           "[unit][sync][host-data][ENT-04-pack-ctrl-current]")
 {
@@ -173,6 +201,10 @@ TEST_CASE("HostDataManager packs EntityCtrl from table after runtime update",
     REQUIRE(packet->GetEntityState() == CigiBaseEntityCtrl::Standby);
 }
 
+// =============================================================================
+// EntityPositionCtrl 从目录位姿打包，且为 Detach（实体与运动控制设计.md §11，码 ENT-04-pack-pose）。
+// EntityID 不是 0。0 留给 ownship。
+// =============================================================================
 TEST_CASE("HostDataManager packs EntityPositionCtrl from the current row",
           "[unit][sync][host-data][ENT-04-pack-pose]")
 {
@@ -197,6 +229,10 @@ TEST_CASE("HostDataManager packs EntityPositionCtrl from the current row",
     REQUIRE(packet->GetRoll() == Catch::Approx(30.0f));
 }
 
+// =============================================================================
+// 运行期 setEntityPose 之后，位置包读的是新位姿（实体与运动控制设计.md §11，码 ENT-04-pack-pose-current）。
+// 仍是 Detach。
+// =============================================================================
 TEST_CASE("HostDataManager packs EntityPositionCtrl from table after runtime update",
           "[unit][sync][host-data][ENT-04-pack-pose-current]")
 {
@@ -220,6 +256,9 @@ TEST_CASE("HostDataManager packs EntityPositionCtrl from table after runtime upd
     REQUIRE(packet->GetRoll() == Catch::Approx(60.0f));
 }
 
+// =============================================================================
+// 未知 id 打不出 EntityCtrl，也打不出 EntityPositionCtrl（实体与运动控制设计.md §11，码 ENT-04-pack-miss）。
+// =============================================================================
 TEST_CASE("HostDataManager pack misses unknown entity id",
           "[unit][sync][host-data][negative][ENT-04-pack-miss]")
 {

@@ -52,6 +52,10 @@ namespace
     }
 } // namespace
 
+// =============================================================================
+// 握手后，IG 收到的 ownship 眼点是 EntityID 0 的 Detach LLA（lla位姿传输设计.md §7，码 CIGI-ownship-lla）。
+// ParentID 为 0。纬度、经度、高度、偏航、俯仰与发出值一致。
+// =============================================================================
 SCENARIO("linked IG receives Host ownship eye as Detach LLA EntityID 0",
          "[integration][sync][cigi][wire-contract][lla][CIGI-ownship-lla]")
 {
@@ -91,6 +95,9 @@ SCENARIO("linked IG receives Host ownship eye as Detach LLA EntityID 0",
     }
 }
 
+// =============================================================================
+// Host 只发 IGCtrl、不带眼点时，IG 收到节拍，ownship 回调不触发（状态同步设计.md §10，码 CIGI-igctrl-no-eye）。
+// =============================================================================
 SCENARIO("linked IG receives IGCtrl when Host sends a frame without eye",
          "[integration][sync][cigi][wire-contract][CIGI-igctrl-no-eye]")
 {
@@ -132,6 +139,10 @@ namespace
     }
 } // namespace
 
+// =============================================================================
+// IG 入站消息的首包不是 IGCtrl 时，CCL 拒绝整条（状态同步设计.md §10，码 CIGI-first-igctrl）。
+// 手工首包的包号是 EntityPosition。只验返回不是成功。
+// =============================================================================
 TEST_CASE("CIGI IG rejects a message whose first packet is not IGCtrl",
           "[unit][cigi][wire-contract][negative][CIGI-first-igctrl]")
 {
@@ -153,6 +164,10 @@ TEST_CASE("CIGI IG rejects a message whose first packet is not IGCtrl",
     REQUIRE(stat != CIGI_SUCCESS);
 }
 
+// =============================================================================
+// Host 入站消息的首包不是 SOF 时，CCL 拒绝整条（状态同步设计.md §10，码 CIGI-first-sof）。
+// 手工首包的包号不是 SOF。只验返回不是成功。
+// =============================================================================
 TEST_CASE("CIGI Host rejects a message whose first packet is not SOF",
           "[unit][cigi][wire-contract][negative][CIGI-first-sof]")
 {
@@ -202,6 +217,10 @@ SCENARIO("Host initializes with no ready IG", "[integration][sync][initialize][H
     }
 }
 
+// =============================================================================
+// IgSync 刚 initialize 时尚未连接 Host（多通道同步模块设计.md §11，码 HS-ig-init-disconnected）。
+// initialize 成功。TCP 与 UDP 都未同步。
+// =============================================================================
 SCENARIO("IG initializes disconnected from any Host", "[integration][sync][initialize][HS-ig-init-disconnected]")
 {
     GIVEN("a new IgSync")
@@ -222,6 +241,10 @@ SCENARIO("IG initializes disconnected from any Host", "[integration][sync][initi
     }
 }
 
+// =============================================================================
+// 没有 Host 在听时，IG connect 失败（多通道同步模块设计.md §11，码 HS-connect-fail-no-host）。
+// TCP 与 UDP 都保持未连接。
+// =============================================================================
 SCENARIO("IG connect fails when Host is not running", "[integration][sync][connect][failure][HS-connect-fail-no-host]")
 {
     GIVEN("an IG initialized without a running Host")
@@ -339,6 +362,10 @@ SCENARIO("IG connect fails when UDP peer ports are wrong but TCP port is valid",
     }
 }
 
+// =============================================================================
+// Host 接受两台同机 IG，ready 台数为 2（多通道同步模块设计.md §11，码 HS-multi-ig-ready）。
+// 两台的 TCP 与 UDP 都已同步。UDP 收包端口不同。
+// =============================================================================
 SCENARIO("Host accepts multiple co-located IG connections", "[integration][sync][connect][multi-ig][HS-multi-ig-ready]")
 {
     GIVEN("a Host waiting for IGs")
@@ -368,6 +395,10 @@ SCENARIO("Host accepts multiple co-located IG connections", "[integration][sync]
     }
 }
 
+// =============================================================================
+// IG HELLO 里的通道号写入 Host 快照（平台同步设计.md §12，码 PLT-hello-ch）。
+// 这条钉通道 2。ready 台数为 1。
+// =============================================================================
 SCENARIO("Host snapshot records the channelId from IG HELLO",
          "[acceptance][platform][PLT-hello-ch]")
 {
@@ -397,6 +428,10 @@ SCENARIO("Host snapshot records the channelId from IG HELLO",
     }
 }
 
+// =============================================================================
+// 后到的 IG 复用已有通道号时，HELLO 被拒绝（平台同步设计.md §12，码 PLT-hello-ch）。
+// 先到的那台保持连接，ready 仍是 1，快照里的通道号仍是 1。
+// =============================================================================
 SCENARIO("Host rejects a later IG HELLO that reuses channelId",
          "[acceptance][platform][PLT-hello-ch]")
 {
@@ -482,6 +517,10 @@ SCENARIO("Host unpacks only the master IG TCP report when both IGs send",
     }
 }
 
+// =============================================================================
+// 侧通道的 TCP 上报不被 Host 解出（平台同步设计.md §12，码 PLT-hello-ch）。
+// master 在线但不发。回调为空，ready 仍是 2。不按包号过滤。
+// =============================================================================
 SCENARIO("Host does not unpack a side-channel IG TCP report",
          "[acceptance][platform][PLT-hello-ch]")
 {
@@ -519,6 +558,10 @@ SCENARIO("Host does not unpack a side-channel IG TCP report",
     }
 }
 
+// =============================================================================
+// IG 在 TCP 上的 HELLO 以 CIGI SOF 开头（多通道同步模块设计.md §11，码 HS-hello-cigi）。
+// 只读前 4 字节里的包号。
+// =============================================================================
 TEST_CASE("IG HELLO on TCP starts with CIGI SOF", "[unit][sync][wire-contract][HS-hello-cigi]")
 {
     TcpSocket listener;
@@ -546,6 +589,10 @@ TEST_CASE("IG HELLO on TCP starts with CIGI SOF", "[unit][sync][wire-contract][H
     REQUIRE(packetId == CIGI_SOF_PACKET_ID_V4);
 }
 
+// =============================================================================
+// sendUdpMessage 原样转发数据报，不另加 SOF（状态同步设计.md §10，码 CIGI-endpoint-udp）。
+// sofSentCount 不增加。UDP 可丢：重发到 Host 解到为止，全部丢失则跳过。
+// =============================================================================
 TEST_CASE("IgSync sendUdpMessage forwards raw datagram without adding SOF",
           "[unit][sync][CIGI-endpoint-udp]")
 {
@@ -577,6 +624,10 @@ TEST_CASE("IgSync sendUdpMessage forwards raw datagram without adding SOF",
     REQUIRE(host.sofReceivedCount() > sofBefore);
 }
 
+// =============================================================================
+// takeIncomingUdp 取走 UDP 队列，随后的 drain 不再把它们计成 SOF（状态同步设计.md §10，码 CIGI-endpoint-udp）。
+// 取到的内容是 SOF。丢包则跳过。
+// =============================================================================
 TEST_CASE("HostSync takeIncomingUdp consumes the UDP queue without drainIncoming",
           "[unit][sync][CIGI-endpoint-udp]")
 {

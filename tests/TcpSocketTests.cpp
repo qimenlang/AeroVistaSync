@@ -45,6 +45,10 @@ namespace
     }
 } // namespace
 
+// =============================================================================
+// listen、connect、accept 在回环上得到一条已连接的两端（sync模块化设计.md §7，码 TCP-loopback-connect）。
+// 监听套接字保持 listening。accept 和 connect 得到的套接字不再监听。
+// =============================================================================
 TEST_CASE("TcpSocket listen/accept/connect 建立 loopback 连接", "[unit][TCP-loopback-connect]")
 {
     LoopbackPair pair;
@@ -56,6 +60,10 @@ TEST_CASE("TcpSocket listen/accept/connect 建立 loopback 连接", "[unit][TCP-
     REQUIRE_FALSE(pair.client.listening());
 }
 
+// =============================================================================
+// sendAll 发出的字节由对端 recvAll 按长度收齐（sync模块化设计.md §7，码 TCP-send-recv-all）。
+// 比对整段内容，包含结尾的空字符。
+// =============================================================================
 TEST_CASE("TcpSocket sendAll/recvAll 双向收发完整字节", "[unit][TCP-send-recv-all]")
 {
     LoopbackPair pair;
@@ -69,6 +77,10 @@ TEST_CASE("TcpSocket sendAll/recvAll 双向收发完整字节", "[unit][TCP-send
     REQUIRE(std::memcmp(buf, msg, sizeof(msg)) == 0);
 }
 
+// =============================================================================
+// 对端 close 之后，本端 recv 的结果是 PEER_CLOSED（sync模块化设计.md §7，码 TCP-peer-closed）。
+// 只验种类，不验剩余字节。
+// =============================================================================
 TEST_CASE("TcpSocket recv 区分 PEER_CLOSED(对端关闭)", "[unit][TCP-peer-closed]")
 {
     LoopbackPair pair;
@@ -81,6 +93,9 @@ TEST_CASE("TcpSocket recv 区分 PEER_CLOSED(对端关闭)", "[unit][TCP-peer-cl
     REQUIRE(outcome.kind == RecvKind::PEER_CLOSED);
 }
 
+// =============================================================================
+// 连接仍在但没有数据时，recv 在超时后返回 TIMEOUT 且字节数为 0（sync模块化设计.md §7，码 TCP-recv-timeout）。
+// =============================================================================
 TEST_CASE("TcpSocket recv 无数据超时返回 TIMEOUT", "[unit][TCP-recv-timeout]")
 {
     LoopbackPair pair;
@@ -94,6 +109,10 @@ TEST_CASE("TcpSocket recv 无数据超时返回 TIMEOUT", "[unit][TCP-recv-timeo
     REQUIRE(outcome.bytes == 0);
 }
 
+// =============================================================================
+// 连向一个已经关掉的端口时 connect 失败，套接字无效（sync模块化设计.md §7，码 TCP-connect-fail）。
+// 先 listen(0) 再关闭，得到一个确定没有监听者的端口。
+// =============================================================================
 TEST_CASE("TcpSocket connect 到未监听端口失败", "[unit][TCP-connect-fail]")
 {
     // 先 listen(0) 取端口再关闭，得到一个确定无监听的端口。
@@ -109,6 +128,9 @@ TEST_CASE("TcpSocket connect 到未监听端口失败", "[unit][TCP-connect-fail
     REQUIRE_FALSE(client.valid());
 }
 
+// =============================================================================
+// accept 回填对端 IPv4 为 127.0.0.1（sync模块化设计.md §7，码 TCP-accept-peer-ip）。
+// =============================================================================
 TEST_CASE("TcpSocket accept 回填对端 IPv4", "[unit][TCP-accept-peer-ip]")
 {
     TcpSocket listener;
@@ -127,6 +149,9 @@ TEST_CASE("TcpSocket accept 回填对端 IPv4", "[unit][TCP-accept-peer-ip]")
     REQUIRE(peerIp == "127.0.0.1");
 }
 
+// =============================================================================
+// 已连接套接字 close 之后再次 close 仍保持无效，且不崩溃（sync模块化设计.md §7，码 TCP-close-idempotent）。
+// =============================================================================
 TEST_CASE("TcpSocket close 幂等", "[unit][TCP-close-idempotent]")
 {
     LoopbackPair pair;
@@ -139,6 +164,10 @@ TEST_CASE("TcpSocket close 幂等", "[unit][TCP-close-idempotent]")
     REQUIRE_FALSE(pair.server.valid());
 }
 
+// =============================================================================
+// 多线程反复创建和销毁套接字之后，仍能 listen（sync模块化设计.md §7，码 TCP-wsa-refcount）。
+// Winsock 引用计数若不是原子加减，会提前 WSACleanup，随后 socket 失败。不把耗时写进断言。
+// =============================================================================
 TEST_CASE("TcpSocket 并发 create/destroy 压力不破坏 WSA 引用计数", "[unit][stress][TCP-wsa-refcount]")
 {
     // 多线程高频 acquire/release WSA 引用计数。若 fetch_add/fetch_sub 非原子，

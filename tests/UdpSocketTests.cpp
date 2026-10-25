@@ -24,6 +24,10 @@ namespace
     }
 } // namespace
 
+// =============================================================================
+// 本机回环上 sendTo 的字节能被 recv 原样读回（sync模块化设计.md §7，码 UDP-loopback）。
+// 不经过 HostSync。非阻塞 recv 允许少量重试，躲开入队竞态。
+// =============================================================================
 TEST_CASE("UdpSocket sendTo/recv loopback 自环收发", "[unit][UDP-loopback]")
 {
     UdpSocket recvSock;
@@ -45,6 +49,10 @@ TEST_CASE("UdpSocket sendTo/recv loopback 自环收发", "[unit][UDP-loopback]")
     REQUIRE(std::memcmp(buf, msg, sizeof(msg)) == 0);
 }
 
+// =============================================================================
+// recvFrom 回填发送方 IPv4（sync模块化设计.md §7，码 UDP-recvfrom-peer）。
+// 地址钉 127.0.0.1。对端端口由系统分配，只要求大于 0。
+// =============================================================================
 TEST_CASE("UdpSocket recvFrom 回填源 IP 与端口", "[unit][UDP-recvfrom-peer]")
 {
     UdpSocket recvSock;
@@ -66,6 +74,10 @@ TEST_CASE("UdpSocket recvFrom 回填源 IP 与端口", "[unit][UDP-recvfrom-peer
     REQUIRE(fromPort > 0);
 }
 
+// =============================================================================
+// sendTo 遇到空地址、非法地址、空缓冲或长度为 0 时返回 -1（sync模块化设计.md §7，码 UDP-send-bad-arg）。
+// 四次都是参数拒绝，不要求错误字符串。
+// =============================================================================
 TEST_CASE("UdpSocket sendTo 非法参数返回 -1", "[unit][UDP-send-bad-arg]")
 {
     UdpSocket sock;
@@ -78,6 +90,10 @@ TEST_CASE("UdpSocket sendTo 非法参数返回 -1", "[unit][UDP-send-bad-arg]")
     REQUIRE(sock.sendTo("127.0.0.1", 12345, msg, 0) == -1);               // size<=0
 }
 
+// =============================================================================
+// 未 initialize 时 recv、recvFrom 和 sendTo 都返回 -1（sync模块化设计.md §7，码 UDP-uninit）。
+// 先确认 valid() 为假。
+// =============================================================================
 TEST_CASE("UdpSocket 未初始化时 recv/sendTo 返回 -1", "[unit][UDP-uninit]")
 {
     UdpSocket sock;
@@ -93,6 +109,10 @@ TEST_CASE("UdpSocket 未初始化时 recv/sendTo 返回 -1", "[unit][UDP-uninit]
     REQUIRE(sock.sendTo("127.0.0.1", 1, buf, sizeof(buf)) == -1);
 }
 
+// =============================================================================
+// 端口已被占用时 initialize 失败，套接字保持无效（sync模块化设计.md §7，码 UDP-port-busy）。
+// 错误文本非空即可，不钉原文。
+// =============================================================================
 TEST_CASE("UdpSocket initialize 端口占用冲突返回 false", "[unit][UDP-port-busy]")
 {
     UdpSocket first;
@@ -106,6 +126,9 @@ TEST_CASE("UdpSocket initialize 端口占用冲突返回 false", "[unit][UDP-por
     REQUIRE_FALSE(second.valid());
 }
 
+// =============================================================================
+// close 之后再次 close 仍然是无效套接字，且不崩溃（sync模块化设计.md §7，码 UDP-close-idempotent）。
+// =============================================================================
 TEST_CASE("UdpSocket close 幂等", "[unit][UDP-close-idempotent]")
 {
     UdpSocket sock;
